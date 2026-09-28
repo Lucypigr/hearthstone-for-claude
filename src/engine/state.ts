@@ -1,7 +1,14 @@
 // 對戰狀態（純資料，可 structuredClone，供 AI 模擬使用）
-import type { Ability, Aura, CardClass, Keyword, Race } from './types';
+import type { Ability, Aura, CardClass, Effect, Keyword, Race } from './types';
 
 export type PlayerId = 0 | 1;
+
+/** 組裝進星艦的組件（打出時的攻擊力 / 生命值） */
+export interface StarshipPiece {
+  id: string;
+  atk: number;
+  hp: number;
+}
 
 export interface HandCard {
   uid: number;
@@ -15,6 +22,8 @@ export interface HandCard {
   parts?: [string, string];
   /** 回音產生的複製：回合結束時從手牌消失 */
   echo?: boolean;
+  /** 被移回手牌的星艦 */
+  starship?: StarshipPiece[];
 }
 
 export interface Minion {
@@ -51,6 +60,8 @@ export interface Minion {
   dead: boolean;
   /** 殭屍獸的兩個部位 */
   parts?: [string, string];
+  /** 星艦：由這些組件組成 */
+  starship?: StarshipPiece[];
 }
 
 export interface Hero {
@@ -106,6 +117,16 @@ export interface PlayerState {
   graveyard: string[];
   /** 本場對戰中你的克蘇恩累積獲得的加成（無論它在哪裡） */
   cthun?: { atk: number; hp: number; taunt: boolean };
+  /** 正在建造的星艦（已組裝的組件） */
+  starship?: StarshipPiece[];
+  /** 本場對戰中發射過的星艦 */
+  launched?: StarshipPiece[][];
+  /** 下一次星艦發射的折扣 */
+  launchDiscount?: number;
+  /** 本回合施放的法術數 */
+  spellsThisTurn?: number;
+  /** 延遲的效果（例如「2 回合後召喚…」） */
+  delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
@@ -168,6 +189,8 @@ export type Action =
   | { type: 'attack'; attacker: number; target: number }
   | { type: 'heroPower'; target?: number; option?: number }
   | { type: 'trade'; handUid: number }
+  /** 發射星艦 */
+  | { type: 'launch' }
   | { type: 'endTurn' }
   | { type: 'mulligan'; player: PlayerId; replace: number[] }
   | { type: 'choose'; index: number }

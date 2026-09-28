@@ -265,7 +265,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setMode({ k: 'idle' });
       return;
     }
-    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts ? g.minionDef(c) : undefined });
+    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts || c.starship ? g.minionDef(c) : undefined });
   };
 
   const onHeroPower = () => {
@@ -281,6 +281,22 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (g.heroPowerOptions()) setMode({ k: 'powerChoose' });
     else if (g.heroPowerNeedsTarget()) setMode({ k: 'heroPower' });
     else act({ type: 'heroPower' });
+  };
+
+  const onLaunch = () => {
+    if (!myTurn) return;
+    const r = g.canLaunch();
+    if (!r.ok) {
+      flash(r.reason ?? '無法發射星艦');
+      return;
+    }
+    setMode({ k: 'idle' });
+    act({ type: 'launch' });
+  };
+
+  const inspectShip = (pid: PlayerId) => (on: boolean) => {
+    const def = g.starshipPreview(pid);
+    setInspect(on && def ? { cardId: def.id, def, atk: def.attack, hp: def.health } : null);
   };
 
   const onPowerOption = (option: number) => {
@@ -332,7 +348,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       g={g}
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
-      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts ? g.minionDef(m) : undefined } : null)}
+      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts || m.starship ? g.minionDef(m) : undefined } : null)}
     >
       {floatsFor(m.uid)}
     </MinionView>
@@ -389,6 +405,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             {floatsFor(foe.hero.uid)}
           </HeroView>
           <HeroPowerView p={foe} g={g} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
+          <StarshipView p={foe} g={g} usable={false} onHover={inspectShip(AI)} />
         </div>
       </div>
 
@@ -436,6 +453,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             onClick={onHeroPower}
             onHover={(on) => setInspect(on ? { power: ME } : null)}
           />
+          <StarshipView p={me} g={g} usable={myTurn && g.canLaunch().ok} onClick={onLaunch} onHover={inspectShip(ME)} />
         </div>
         <div className="hand my-hand" style={{ '--n': me.hand.length } as CSSProperties}>
           {me.hand.map((h, i) => {
@@ -666,6 +684,9 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   const kinds = new Set((def.abilities ?? []).map((a) => a.on.k));
   if (kinds.has('deathrattle')) lines.push('亡語：死亡時觸發效果');
   if (kinds.has('secret')) lines.push('奧秘：在對手回合滿足條件時才會揭露並觸發');
+  if (def.starshipPiece) lines.push('星艦組件：上場時組裝進你的星艦。花 5 點法力發射星艦，它會擁有所有組件的攻擊力、生命值與效果');
+  if (kinds.has('launch')) lines.push('發射時：星艦發射時觸發');
+  if (def.starship) lines.push('星艦：由組件組成，擁有所有組件的攻擊力、生命值與效果');
   if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);
   if (def.spellDamage) lines.push(`法術傷害 +${def.spellDamage}：你的法術多造成 ${def.spellDamage} 點傷害`);
   if (minion?.frozen) lines.push('已被冰凍：錯過下一次攻擊');
@@ -822,6 +843,42 @@ function HeroPowerView({
       <Art cardId={p.heroPower.id} className="hp-art" label={info.name.slice(0, 2)} color={CLASS_COLORS[p.heroClass]} />
       <span className="hp-cost">{p.heroPower.cost}</span>
       <span className="hp-name">{info.name}</span>
+    </button>
+  );
+}
+
+/** 正在建造的星艦：顯示組件數量、目前的數值與發射消耗 */
+function StarshipView({
+  p,
+  g,
+  usable,
+  onClick,
+  onHover,
+}: {
+  p: PlayerState;
+  g: Game;
+  usable: boolean;
+  onClick?: () => void;
+  onHover?: (on: boolean) => void;
+}) {
+  const def = g.starshipPreview(p.id);
+  if (!def) return null;
+  return (
+    <button
+      className={`starship ${usable ? 'usable' : ''}`}
+      title={`${def.name}：${p.starship!.length} 個組件，花 ${g.launchCost(p)} 點法力發射`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+    >
+      <Art cardId={def.id} className="ship-art" label="星艦" color="#3c4f7a" />
+      <span className="ship-cost">{g.launchCost(p)}</span>
+      <span className="ship-atk">{def.attack}</span>
+      <span className="ship-hp">{def.health}</span>
+      <span className="ship-label">{usable ? '發射！' : `星艦 ×${p.starship!.length}`}</span>
     </button>
   );
 }

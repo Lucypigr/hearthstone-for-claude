@@ -93,7 +93,6 @@ const UNSUPPORTED_TAGS = [
   'EXCAVATE',
   'DREDGE',
   'MINIATURIZE',
-  'STARSHIP_PIECE',
   'QUICKDRAW',
   'SIGIL',
   'TWINSPELL',
@@ -248,6 +247,9 @@ async function main() {
       }
       if (classes.length) def.classes = classes;
     }
+    if (r.tags.STARSHIP_PIECE) def.starshipPiece = true;
+    if (r.tags.STARSHIP) def.starship = true;
+    if (r.tags.TERRAN) def.terran = true;
 
     const ov = OVERRIDES[r.id];
     if (ov) {
@@ -334,6 +336,7 @@ async function main() {
     if (parsed.enrage) def.enrage = parsed.enrage;
     if (parsed.secret) def.secret = true;
     if (parsed.costRule) def.costRule = parsed.costRule;
+    if (parsed.starshipPiece) def.starshipPiece = true;
     return def;
   }
 
@@ -373,6 +376,8 @@ async function main() {
 
   // ------------------------------------------------------------------ 英雄與基本英雄能力用到的卡
   const extra = ['GAME_005', 'CS2_101t', 'CS2_082', 'CS2_050', 'CS2_051', 'NEW1_009', 'CS2_052', 'HERO_11bpt'];
+  // 各職業的星艦本體
+  extra.push('GDB_100t2', 'GDB_100t4', 'GDB_100t5', 'GDB_100t6', 'GDB_100t7', 'GDB_100t8', 'GDB_100t9', 'SC_999t');
   for (const id of extra) {
     const def = buildToken(id);
     if (!def) throw new Error(`必要衍生卡 ${id} 解析失敗`);

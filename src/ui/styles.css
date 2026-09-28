@@ -1298,6 +1298,83 @@ textarea {
   filter: grayscale(1) brightness(0.4);
 }
 
+.starship {
+  position: relative;
+  width: calc(var(--hw) * 0.62);
+  height: calc(var(--hw) * 0.62);
+  border-radius: 12px;
+  border: 3px solid #1a120b;
+  padding: 0;
+  overflow: visible;
+  background: #1c2438;
+  flex: none;
+  cursor: pointer;
+}
+
+.starship .ship-art {
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+  object-fit: cover;
+  filter: saturate(0.6);
+}
+
+.starship.usable {
+  box-shadow: 0 0 0 3px #6fb8ff, 0 0 16px #6fb8ff;
+}
+
+.starship.usable .ship-art {
+  filter: none;
+}
+
+.starship .ship-cost,
+.starship .ship-atk,
+.starship .ship-hp {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  border: 2px solid #1a120b;
+  text-shadow: 0 1px 2px #000;
+}
+
+.starship .ship-cost {
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--mana);
+}
+
+.starship .ship-atk {
+  bottom: -8px;
+  left: -8px;
+  background: #d9a52b;
+}
+
+.starship .ship-hp {
+  bottom: -8px;
+  right: -8px;
+  background: var(--red);
+}
+
+.starship .ship-label {
+  position: absolute;
+  bottom: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text);
+  background: #0009;
+  padding: 1px 5px;
+  border-radius: 6px;
+}
+
 .hero-power.active {
   box-shadow: 0 0 0 4px var(--gold), 0 0 18px var(--gold);
 }

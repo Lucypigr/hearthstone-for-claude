@@ -198,6 +198,143 @@ export const OVERRIDES: Record<string, Override> = {
   // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
   ICC_828t: {},
 
+  // ------------------------------------------------------------------ 星艦
+  // 星艦本體：數值與效果由組件組成（見 src/cards/starship.ts）
+  GDB_100t2: {},
+  GDB_100t4: {},
+  GDB_100t5: {},
+  GDB_100t6: {},
+  GDB_100t7: {},
+  GDB_100t8: {},
+  GDB_100t9: {},
+  SC_999t: {},
+  // 星艦結構圖：發現一張其他職業的星艦組件，其消耗減少 (1)
+  GDB_102: {
+    abilities: play({ e: 'discover', pool: { type: 'MINION', starshipPiece: true, otherClass: true } }, { e: 'costMod', amount: -1, scope: 'it' }),
+  },
+  // 薩塔隱蔽力場：法術免疫；你每回合的第一張法術消耗減少 (1)
+  GDB_103: { keywords: ['ELUSIVE'], auras: [{ scope: 'firstSpellDiscount', cost: 1 }] },
+  // 魔焰推進器：法術迸發：對 2 個隨機敵方手下造成等同此手下攻擊力的傷害
+  GDB_104: {
+    abilities: [
+      {
+        on: { k: 'spellCast', side: 'friendly' },
+        once: true,
+        effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 2 }, amount: { dyn: 'selfAttack' } }],
+      },
+    ],
+  },
+  // 船首刻像：法術迸發：觸發一個隨機友方手下的亡語
+  GDB_106: { abilities: [{ on: { k: 'spellCast', side: 'friendly' }, once: true, effects: [{ e: 'custom', fn: 'triggerRandomDeathrattle' }] }] },
+  // 樣本鉗爪：在你的對手打出一個手下後，攻擊它
+  GDB_107: { abilities: [{ on: { k: 'cardPlayed', side: 'enemy', cardType: 'MINION' }, effects: [{ e: 'custom', fn: 'attackIt' }] }] },
+  // 星光反應爐：在你施放一個秘法法術後，再施放一次（目標隨機）
+  GDB_108: { abilities: [{ on: { k: 'spellCast', side: 'friendly', school: 'ARCANE' }, effects: [{ e: 'custom', fn: 'recastIt' }] }] },
+  // 縛魂尖塔：亡語：召喚一個消耗等同此手下攻擊力的隨機手下（最多 10）
+  GDB_112: { abilities: [{ on: { k: 'deathrattle' }, effects: [{ e: 'custom', fn: 'summonCostEqualAttack' }] }] },
+  // 艾克索達：戰吼：若你正在建造星艦，發射它並選擇一個協定
+  GDB_120: {
+    abilities: play({ e: 'cond', cond: { c: 'buildingStarship' }, then: [{ e: 'custom', fn: 'exodar' }] }),
+    tokens: ['GDB_100a', 'GDB_100b', 'GDB_100c'],
+  },
+  GDB_100a: {},
+  GDB_100b: {},
+  GDB_100c: {},
+  // 不祥之兆：2 回合後召喚兩個 6/6 嘲諷惡魔；若你正在建造星艦，立刻召喚
+  GDB_124: {
+    abilities: play({
+      e: 'cond',
+      cond: { c: 'buildingStarship' },
+      then: [{ e: 'summon', card: 'GDB_124t2', count: 2, who: 'self' }],
+      else: [{ e: 'delayed', turns: 2, effects: [{ e: 'summon', card: 'GDB_124t2', count: 2, who: 'self' }] }],
+    }),
+    tokens: ['GDB_124t2'],
+  },
+  // 星際狐狸人：戰吼：摧毀一艘敵方星艦或星艦組件
+  GDB_340: {
+    keywords: ['TRADEABLE'],
+    target: { filter: { type: 'minion', side: 'enemy', starship: true }, optional: true },
+    abilities: play({ e: 'destroy', target: { t: 'chosen' } }),
+  },
+  // 翻滾：對一個未受傷的角色造成 5 點傷害；若你正在建造星艦，消耗為 (1)
+  GDB_465: {
+    target: { filter: { type: 'character', side: 'any', undamaged: true } },
+    abilities: play({ e: 'damage', target: { t: 'chosen' }, amount: 5, spell: true }),
+    costIf: { cond: { c: 'buildingStarship' }, cost: 1 },
+  },
+  // 重力移轉裝置：發射時召喚一艘星艦的複製
+  GDB_466: { abilities: [{ on: { k: 'launch' }, effects: [{ e: 'summonCopy', target: { t: 'self' }, count: 1 }] }] },
+  // 曲速引擎：抽 2 張牌；若你正在建造星艦，它們的消耗減少 (2)
+  GDB_474: { abilities: play({ e: 'custom', fn: 'warpDrive' }) },
+  // 窒息：消滅一個手下；若你正在建造星艦，也消滅一個隨機的相鄰手下
+  GDB_476: { target: chosenMinion, abilities: play({ e: 'custom', fn: 'suffocate' }) },
+  // 雷射彈幕：對一個手下造成 3 點傷害；若你正在建造星艦，也對其相鄰手下造成傷害
+  GDB_845: {
+    target: chosenMinion,
+    abilities: play(
+      { e: 'damage', target: { t: 'chosen' }, amount: 3, spell: true },
+      { e: 'cond', cond: { c: 'buildingStarship' }, then: [{ e: 'damage', target: { t: 'adjacent', of: 'chosen' }, amount: 3, spell: true }] },
+    ),
+  },
+  // 奧薩爾主教：戰吼：若你正在建造星艦，獲得 3 張不同的秘法法術，其消耗減少 (2)
+  GDB_856: { abilities: play({ e: 'cond', cond: { c: 'buildingStarship' }, then: [{ e: 'custom', fn: 'othaar' }] }) },
+  // 費心張羅的船匠：戰吼：隨機獲得一張其他職業的星艦組件
+  GDB_876: { abilities: play({ e: 'addRandom', pool: { type: 'MINION', starshipPiece: true, otherClass: true }, count: 1, who: 'self' }) },
+
+  // ------------------------------------------------------------------ 星海爭霸：人類
+  // 吉姆‧雷諾：戰吼：重新發射本場對戰中你發射過的每一艘星艦
+  SC_400: {
+    abilities: play({ e: 'custom', fn: 'relaunchAll' }),
+    heroPower: {
+      effects: [
+        { e: 'summon', card: 'SC_403t', count: 1, who: 'self' },
+        { e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', terran: true } }, atk: 2 },
+      ],
+    },
+    tokens: ['SC_403t'],
+  },
+  // 幽靈特務：戰吼：若你正在建造星艦，摧毀對手手牌中消耗最低的卡
+  SC_408: {
+    keywords: ['STEALTH'],
+    abilities: play({ e: 'cond', cond: { c: 'buildingStarship' }, then: [{ e: 'custom', fn: 'destroyLowestInOppHand' }] }),
+  },
+  // 升空：抽 2 張人類卡；召喚一個有發射效果的 2/1 星艦組件
+  SC_410: {
+    abilities: play(
+      { e: 'draw', count: 2, who: 'self', pool: { terran: true } },
+      { e: 'custom', fn: 'summonOneOf', args: { cards: ['SC_403a', 'SC_403b', 'SC_403d', 'SC_403f'] } },
+    ),
+    tokens: ['SC_403a', 'SC_403b', 'SC_403d', 'SC_403f'],
+  },
+  // 惡狼：你的其他手下 +1 攻擊力（發射過星艦後變成戰狼）
+  SC_412: { auras: [{ scope: 'otherFriendly', atk: 1 }], launchTransform: 'SC_412t', tokens: ['SC_412t'] },
+  SC_412t: { auras: [{ scope: 'otherFriendly', atk: 2, keywords: ['RUSH'] }] },
+  // 攻城坦克：戰吼：對一個隨機敵方手下造成 10 點傷害（發射過星艦後，多餘的傷害會打到敵方英雄）
+  SC_413: {
+    abilities: play({ e: 'damage', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 }, amount: 10 }),
+    launchTransform: 'SC_413t',
+    tokens: ['SC_413t'],
+  },
+  SC_413t: { abilities: play({ e: 'custom', fn: 'siegeTank' }) },
+  // 雷神號：戰吼：造成 5 點傷害（發射過星艦後，每發射過一艘星艦就對隨機敵人再造成一次）
+  SC_414: {
+    target: { filter: { type: 'character', side: 'any' }, optional: true },
+    abilities: play({ e: 'damage', target: { t: 'chosen' }, amount: 5 }),
+    launchTransform: 'SC_414t',
+    tokens: ['SC_414t'],
+  },
+  SC_414t: {
+    target: { filter: { type: 'character', side: 'any' }, optional: true },
+    abilities: play(
+      { e: 'damage', target: { t: 'chosen' }, amount: 5 },
+      {
+        e: 'repeat',
+        times: { dyn: 'starshipsLaunched' },
+        effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 5 }],
+      },
+    ),
+  },
+
   // ------------------------------------------------------------------ 克蘇恩
   // 克蘇恩：造成等同其攻擊力的傷害，隨機分配到所有敵人身上
   OG_280: {

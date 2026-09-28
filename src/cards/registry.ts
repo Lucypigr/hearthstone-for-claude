@@ -82,6 +82,12 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.hasBattlecry && !(c.type === 'MINION' && c.abilities?.some((a) => a.on.k === 'play'))) return false;
     if (pool.isSecret && !c.secret) return false;
     if (pool.spellSchool && c.spellSchool !== pool.spellSchool) return false;
+    if (pool.starshipPiece && !c.starshipPiece) return false;
+    if (pool.terran && !c.terran) return false;
+    if (pool.otherClass) {
+      const classes = cardClasses(c);
+      if (classes.includes('NEUTRAL') || classes.includes(ownClass)) return false;
+    }
     if (pool.cls) {
       const want = pool.cls === 'own' ? ownClass : pool.cls === 'opponent' ? oppClass : pool.cls;
       if (!cardClasses(c).includes(want)) return false;
