@@ -17,6 +17,7 @@ function cloneSnap(snap: Snap): HTMLElement | null {
   holder.innerHTML = snap.html;
   const el = holder.firstElementChild as HTMLElement | null;
   el?.removeAttribute('data-uid');
+  el?.classList.add('fx-clone');
   return el;
 }
 
@@ -136,10 +137,14 @@ export function shatter(root: HTMLElement, snap: Snap, delay: number, ghost?: HT
   const params = [0, 1, 2, 3];
   for (let i = 0; i < 8; i++) params.push(Math.random() * 4);
   params.sort((a, b) => a - b);
+  // 碎片的外框比卡片大一圈，把超出卡片的部分（例如嘲諷盾牌）也一起切進碎片裡
+  const [x0, x1, y0, y1] = [-20, 120, -15, 115];
   const edge = (t: number): [number, number] => {
     const side = Math.floor(t) % 4;
-    const u = (t - Math.floor(t)) * 100;
-    return side === 0 ? [u, 0] : side === 1 ? [100, u] : side === 2 ? [100 - u, 100] : [0, 100 - u];
+    const u = t - Math.floor(t);
+    const x = x0 + (x1 - x0) * u;
+    const y = y0 + (y1 - y0) * u;
+    return side === 0 ? [x, y0] : side === 1 ? [x1, y] : side === 2 ? [x1 + x0 - x, y1] : [x0, y1 + y0 - y];
   };
   const pts = params.map(edge);
 

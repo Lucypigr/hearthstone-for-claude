@@ -509,17 +509,17 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </button>
       )}
       {turnBanner > 0 && (
-        <div className="turn-banner" key={turnBanner}>
+        <div className="turn-banner" key={`turn-${turnBanner}`}>
           你的回合
         </div>
       )}
       {cast && (
-        <div className={`cast-card ${cast.player === ME ? 'mine' : 'theirs'}`} key={cast.id}>
+        <div className={`cast-card ${cast.player === ME ? 'mine' : 'theirs'}`} key={`cast-${cast.id}`}>
           {cast.player !== ME && getCard(cast.cardId).secret ? <div className="secret-card">?</div> : <CardView cardId={cast.cardId} width={210} />}
         </div>
       )}
       {banner && (
-        <div className="play-banner" key={banner.id}>
+        <div className="play-banner" key={`banner-${banner.id}`}>
           <div className="banner-text">{banner.text}</div>
           {banner.cardId && <CardView cardId={banner.cardId} width={200} />}
         </div>
