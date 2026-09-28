@@ -123,6 +123,9 @@ export interface PlayerState {
   launched?: StarshipPiece[][];
   /** 下一次星艦發射的折扣 */
   launchDiscount?: number;
+  /** 死亡騎士的屍體（友方手下死亡時獲得） */
+  corpses?: number;
+  corpsesSpent?: number;
   /** 已召喚的翠玉魔像數 */
   jade?: number;
   /** 本回合施放的法術數 */

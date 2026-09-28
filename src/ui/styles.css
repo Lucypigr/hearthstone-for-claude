@@ -2054,6 +2054,78 @@ textarea {
   top: -15px;
 }
 
+.corpse-count {
+  color: #c9f29a;
+  font-weight: 700;
+}
+
+.corpse-n {
+  display: inline-block;
+  animation: corpse-pop 0.4s ease-out;
+}
+
+@keyframes corpse-pop {
+  from {
+    transform: scale(1.6);
+    color: #fff;
+  }
+}
+
+.deck-runes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.rune {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #1a120b;
+  box-shadow: 0 0 4px rgb(0 0 0 / 0.6);
+}
+
+.rune.blood {
+  background: radial-gradient(circle at 35% 30%, #ff9a8a, #c0182a 60%, #5a0610);
+}
+
+.rune.frost {
+  background: radial-gradient(circle at 35% 30%, #d8f4ff, #3aa6e8 60%, #0d3f66);
+}
+
+.rune.unholy {
+  background: radial-gradient(circle at 35% 30%, #d8ff9a, #5caa1c 60%, #1f4706);
+}
+
+.rune.empty {
+  background: #2a2230;
+  border-style: dashed;
+  border-color: #6a5a70;
+}
+
+.rune.over {
+  outline: 2px solid #ff5a4a;
+}
+
+.card-runes {
+  position: absolute;
+  top: calc(var(--w) * 0.2);
+  left: -2%;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 4;
+}
+
+.card-runes .rune {
+  width: calc(var(--w) * 0.09);
+  height: calc(var(--w) * 0.09);
+  border-width: 1px;
+}
+
 .deck-count {
   text-align: center;
   font-weight: 800;

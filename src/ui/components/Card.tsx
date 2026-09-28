@@ -135,6 +135,11 @@ function DrawnCard(p: CardViewProps) {
         {label && <div className="card-race">{label}</div>}
       </div>
       <div className={`card-cost ${costClass}`}>{cost}</div>
+      {def.runes && (
+        <div className="card-runes">
+          {(['blood', 'frost', 'unholy'] as const).flatMap((k) => Array.from({ length: def.runes?.[k] ?? 0 }, (_, i) => <span key={k + i} className={`rune ${k}`} />))}
+        </div>
+      )}
       {def.type === 'HERO' && !!def.armor && <div className="card-hp is-armor">{def.armor}</div>}
       {(def.type === 'MINION' || def.type === 'WEAPON') && (
         <>

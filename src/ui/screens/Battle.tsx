@@ -6,6 +6,7 @@ import { CLASS_NAMES } from '../../engine/heroes';
 import type { Action, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
 import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
+import { RUNE_NAMES } from '../../game/decks';
 import { makeAiDeck } from '../../game/opponents';
 import { recordMatch } from '../../game/profile';
 import type { BattleConfig } from '../App';
@@ -693,6 +694,11 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   if (def.starshipPiece) lines.push('星艦組件：上場時組裝進你的星艦。花 5 點法力發射星艦，它會擁有所有組件的攻擊力、生命值與效果');
   if (kinds.has('launch')) lines.push('發射時：星艦發射時觸發');
   if (kinds.has('overkill')) lines.push('滅殺：在你的回合造成的傷害超過消滅手下所需時觸發');
+  if (def.runes) {
+    const need = (['blood', 'frost', 'unholy'] as const).filter((k) => def.runes?.[k]).map((k) => `${RUNE_NAMES[k]}×${def.runes![k]}`).join('、');
+    lines.push(`符文：套牌需要 ${need}（一副套牌最多 3 個符文）`);
+  }
+  if (/屍體/.test(def.text)) lines.push('屍體：友方手下死亡時，死亡騎士獲得 1 個屍體，可以被卡牌消耗');
   if (def.starship) lines.push('星艦：由組件組成，擁有所有組件的攻擊力、生命值與效果');
   if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);
   if (def.spellDamage) lines.push(`法術傷害 +${def.spellDamage}：你的法術多造成 ${def.spellDamage} 點傷害`);
@@ -911,6 +917,13 @@ function PlayerInfo({ p }: { p: PlayerState }) {
       <div className="hand-count" title="手牌數">
         ✋ {p.hand.length}
       </div>
+      {(p.heroClass === 'DEATHKNIGHT' || !!p.corpses) && (
+        <div className="corpse-count" title="屍體：友方手下死亡時獲得，可被死亡騎士的卡牌消耗">
+          <span key={p.corpses} className="corpse-n">
+            💀 {p.corpses ?? 0}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

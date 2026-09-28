@@ -96,7 +96,6 @@ const UNSUPPORTED_TAGS = [
   'QUICKDRAW',
   'SIGIL',
   'MANATHIRST',
-  'CORPSE_SPENDER',
   'OVERHEAL',
   'HERALD',
   'OBJECTIVE',
@@ -113,9 +112,6 @@ const UNSUPPORTED_TAGS = [
   'LIBRAM',
   'HONORABLE_KILL',
   'DISCOVER_STUDIES_VISUAL',
-  'COST_BLOOD',
-  'COST_FROST',
-  'COST_UNHOLY',
   'DECK_RULE_MOD_DECK_SIZE',
   'TOURIST',
   'FABLED',
@@ -161,6 +157,20 @@ async function main() {
           if (!r.strs.CARDNAME?.zhTW) return false;
           return true;
         });
+        if (!cands.length) {
+          // 敘述裡的簡稱：「a 2/2 Zombie」→ 來源卡自己的衍生卡「Rampaging Zombie」
+          const suffix = ' ' + q.name.toLowerCase();
+          for (const r of raws) {
+            if (!r.id.startsWith(sourceId) || r.tags.COLLECTIBLE) continue;
+            if (!r.strs.CARDNAME?.enUS?.toLowerCase().endsWith(suffix) || !r.strs.CARDNAME?.zhTW) continue;
+            const t = typeOf(r);
+            if (!t || (q.type && t !== q.type)) continue;
+            if (q.atk !== undefined && (r.tags.ATK ?? 0) !== q.atk) continue;
+            if (q.hp !== undefined && (r.tags.HEALTH ?? 0) !== q.hp) continue;
+            if (q.keywords && !q.keywords.every((k) => hasKw(r, k))) continue;
+            cands.push(r);
+          }
+        }
         const raceWord = RACE_WORDS[q.name.toLowerCase()];
         if (!cands.length && raceWord !== undefined && q.atk !== undefined) {
           // 「召喚一個 4/2 的元素」：用種族 + 數值 + 來源卡 ID 前綴找衍生卡
@@ -247,6 +257,13 @@ async function main() {
     if (r.tags.STARSHIP_PIECE) def.starshipPiece = true;
     if (r.tags.STARSHIP) def.starship = true;
     if (r.tags.TERRAN) def.terran = true;
+    // 死亡騎士的符文需求
+    if (r.tags.COST_BLOOD || r.tags.COST_FROST || r.tags.COST_UNHOLY) {
+      def.runes = {};
+      if (r.tags.COST_BLOOD) def.runes.blood = r.tags.COST_BLOOD;
+      if (r.tags.COST_FROST) def.runes.frost = r.tags.COST_FROST;
+      if (r.tags.COST_UNHOLY) def.runes.unholy = r.tags.COST_UNHOLY;
+    }
     // 雙生法術：施放後加入手牌的複製是官方的「ts」衍生卡
     if (r.tags.TWINSPELL) {
       const copy = buildToken(`${r.id}ts`);
@@ -343,6 +360,7 @@ async function main() {
     if (parsed.secret) def.secret = true;
     if (parsed.costRule) def.costRule = parsed.costRule;
     if (parsed.starshipPiece) def.starshipPiece = true;
+    if (parsed.noCorpse) def.noCorpse = true;
     return def;
   }
 

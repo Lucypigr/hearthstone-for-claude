@@ -1,7 +1,7 @@
 // 套牌規則與自動組牌（新手套牌 / 電腦套牌）
 import { cardClasses, COLLECTIBLE, getCard } from '../cards/registry';
 import { nextRandom, shuffle } from '../engine/rng';
-import type { Ability, Amount, CardClass, CardDef, Effect } from '../engine/types';
+import type { Ability, Amount, CardClass, CardDef, Effect, Runes } from '../engine/types';
 
 export const DECK_SIZE = 30;
 
@@ -27,6 +27,37 @@ export function cardAllowed(def: CardDef, heroClass: HeroClass, freeform: boolea
   return classes.includes('NEUTRAL') || classes.includes(heroClass);
 }
 
+export const MAX_RUNES = 3;
+export const RUNE_KINDS = ['blood', 'frost', 'unholy'] as const;
+export const RUNE_NAMES: Record<keyof Runes, string> = { blood: '血魄', frost: '冰霜', unholy: '穢邪' };
+
+/** 套牌需要的符文：每種符文取卡牌中最高的需求 */
+export function deckRunes(cards: string[]): Required<Runes> {
+  const r = { blood: 0, frost: 0, unholy: 0 };
+  for (const id of new Set(cards)) {
+    let def: CardDef;
+    try {
+      def = getCard(id);
+    } catch {
+      continue;
+    }
+    for (const k of RUNE_KINDS) r[k] = Math.max(r[k], def.runes?.[k] ?? 0);
+  }
+  return r;
+}
+
+export function runeTotal(r: Runes): number {
+  return (r.blood ?? 0) + (r.frost ?? 0) + (r.unholy ?? 0);
+}
+
+/** 放入這張卡後符文是否仍在 3 個以內 */
+export function runesFit(current: Runes, def: CardDef): boolean {
+  if (!def.runes) return true;
+  let total = 0;
+  for (const k of RUNE_KINDS) total += Math.max(current[k] ?? 0, def.runes[k] ?? 0);
+  return total <= MAX_RUNES;
+}
+
 export interface DeckProblem {
   ok: boolean;
   errors: string[];
@@ -48,6 +79,11 @@ export function validateDeck(deck: Deck, owned?: Record<string, number>): DeckPr
     if (n > maxCopies(def)) errors.push(`【${def.name}】最多只能放 ${maxCopies(def)} 張`);
     if (!cardAllowed(def, deck.heroClass, deck.freeform)) errors.push(`【${def.name}】不屬於此職業`);
     if (owned && (owned[id] ?? 0) < n) errors.push(`你沒有足夠的【${def.name}】`);
+  }
+  const runes = deckRunes(deck.cards);
+  if (runeTotal(runes) > MAX_RUNES) {
+    const need = RUNE_KINDS.filter((k) => runes[k]).map((k) => `${RUNE_NAMES[k]}×${runes[k]}`).join('、');
+    errors.push(`符文最多 ${MAX_RUNES} 個（目前需要 ${need}）`);
   }
   return { ok: errors.length === 0, errors };
 }
@@ -200,6 +236,8 @@ export interface BuildOptions {
   rarities?: CardDef['rarity'][];
   /** 可用卡牌數量（例如玩家的收藏） */
   owned?: Record<string, number>;
+  /** 已經佔用的符文（補滿既有套牌時） */
+  runes?: Runes;
 }
 
 export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
@@ -219,8 +257,13 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
   const deck: string[] = [];
   const perCost = new Map<number, number>();
   let legendaries = 0;
+  const runes: Required<Runes> = { blood: 0, frost: 0, unholy: 0, ...opts.runes };
+  const takeRunes = (c: CardDef) => {
+    for (const k of RUNE_KINDS) runes[k] = Math.max(runes[k], c.runes?.[k] ?? 0);
+  };
   const add = (c: CardDef, respectCurve: boolean) => {
     const copies = Math.min(maxCopies(c), opts.owned ? opts.owned[c.id] ?? 0 : 2);
+    if (!runesFit(runes, c)) return;
     for (let i = 0; i < copies && deck.length < DECK_SIZE; i++) {
       const cost = Math.min(c.cost, 10);
       if (respectCurve && (perCost.get(cost) ?? 0) >= (CURVE[cost] ?? 1)) return;
@@ -228,6 +271,7 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
         if (legendaries >= (opts.maxLegendary ?? 3)) return;
         legendaries++;
       }
+      takeRunes(c);
       deck.push(c.id);
       perCost.set(cost, (perCost.get(cost) ?? 0) + 1);
     }
@@ -246,6 +290,8 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
     if (deck.length >= DECK_SIZE) break;
     const have = deck.filter((x) => x === c.id).length;
     const limit = Math.min(maxCopies(c), opts.owned ? opts.owned[c.id] ?? 0 : 2);
+    if (have >= limit || !runesFit(runes, c)) continue;
+    takeRunes(c);
     for (let i = have; i < limit && deck.length < DECK_SIZE; i++) deck.push(c.id);
   }
   return shuffle(rng, deck).sort((a, b) => getCard(a).cost - getCard(b).cost);
