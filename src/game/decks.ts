@@ -238,22 +238,34 @@ export interface BuildOptions {
   owned?: Record<string, number>;
   /** 已經佔用的符文（補滿既有套牌時） */
   runes?: Runes;
+  /** 只從符合條件的卡中挑選（不夠 30 張時才用其他卡補滿） */
+  filter?: (c: CardDef) => boolean;
+  /** 額外的偏好分數（例如偏好低費或某個種族） */
+  bias?: (c: CardDef) => number;
+  /** 每個費用的張數上限，預設為均衡的曲線 */
+  curve?: Record<number, number>;
+  /** 每張卡只放一張 */
+  singleton?: boolean;
 }
 
 export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
   const rng = { rng: opts.seed };
-  const pool = COLLECTIBLE.filter((c) => {
+  const base = COLLECTIBLE.filter((c) => {
     if (!cardAllowed(c, heroClass, false)) return false;
     if (opts.rarities && !opts.rarities.includes(c.rarity)) return false;
     if (opts.owned && !opts.owned[c.id]) return false;
-    if (c.custom) return true;
     return true;
   });
-  const scored = pool.map((c) => ({
-    c,
-    score: cardQuality(c) + (cardClasses(c).includes(heroClass) ? 0.6 : 0) + (nextRandom(rng) - 0.5) * opts.noise,
-  }));
-  scored.sort((a, b) => b.score - a.score);
+  const score = (c: CardDef) =>
+    cardQuality(c) + (cardClasses(c).includes(heroClass) ? 0.6 : 0) + (opts.bias?.(c) ?? 0) + (nextRandom(rng) - 0.5) * opts.noise;
+  const rank = (cards: CardDef[]) =>
+    cards
+      .map((c) => ({ c, score: score(c) }))
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.c);
+  const scored = rank(opts.filter ? base.filter(opts.filter) : base);
+  const curve = opts.curve ?? CURVE;
+  const copiesOf = (c: CardDef) => Math.min(opts.singleton ? 1 : maxCopies(c), opts.owned ? opts.owned[c.id] ?? 0 : 2);
   const deck: string[] = [];
   const perCost = new Map<number, number>();
   let legendaries = 0;
@@ -262,11 +274,11 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
     for (const k of RUNE_KINDS) runes[k] = Math.max(runes[k], c.runes?.[k] ?? 0);
   };
   const add = (c: CardDef, respectCurve: boolean) => {
-    const copies = Math.min(maxCopies(c), opts.owned ? opts.owned[c.id] ?? 0 : 2);
     if (!runesFit(runes, c)) return;
-    for (let i = 0; i < copies && deck.length < DECK_SIZE; i++) {
+    const have = deck.filter((x) => x === c.id).length;
+    for (let i = have; i < copiesOf(c) && deck.length < DECK_SIZE; i++) {
       const cost = Math.min(c.cost, 10);
-      if (respectCurve && (perCost.get(cost) ?? 0) >= (CURVE[cost] ?? 1)) return;
+      if (respectCurve && (perCost.get(cost) ?? 0) >= (curve[cost] ?? 1)) return;
       if (c.rarity === 'LEGENDARY') {
         if (legendaries >= (opts.maxLegendary ?? 3)) return;
         legendaries++;
@@ -276,24 +288,28 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
       perCost.set(cost, (perCost.get(cost) ?? 0) + 1);
     }
   };
-  for (const { c } of scored) {
-    if (deck.length >= DECK_SIZE) break;
-    add(c, true);
-  }
-  for (const { c } of scored) {
-    if (deck.length >= DECK_SIZE) break;
-    const have = deck.filter((x) => x === c.id).length;
-    if (have === 0) add(c, false);
-  }
-  // 卡不夠時（收藏太少）重複補滿
-  for (const { c } of scored) {
-    if (deck.length >= DECK_SIZE) break;
-    const have = deck.filter((x) => x === c.id).length;
-    const limit = Math.min(maxCopies(c), opts.owned ? opts.owned[c.id] ?? 0 : 2);
-    if (have >= limit || !runesFit(runes, c)) continue;
-    takeRunes(c);
-    for (let i = have; i < limit && deck.length < DECK_SIZE; i++) deck.push(c.id);
-  }
+  const fill = (cards: CardDef[]) => {
+    for (const c of cards) {
+      if (deck.length >= DECK_SIZE) break;
+      add(c, true);
+    }
+    for (const c of cards) {
+      if (deck.length >= DECK_SIZE) break;
+      if (!deck.includes(c.id)) add(c, false);
+    }
+    // 卡不夠時（收藏太少）重複補滿
+    for (const c of cards) {
+      if (deck.length >= DECK_SIZE) break;
+      const have = deck.filter((x) => x === c.id).length;
+      const limit = copiesOf(c);
+      if (have >= limit || !runesFit(runes, c)) continue;
+      takeRunes(c);
+      for (let i = have; i < limit && deck.length < DECK_SIZE; i++) deck.push(c.id);
+    }
+  };
+  fill(scored);
+  // 主題卡不夠 30 張時，用一般的卡補滿
+  if (deck.length < DECK_SIZE && opts.filter) fill(rank(base));
   return shuffle(rng, deck).sort((a, b) => getCard(a).cost - getCard(b).cost);
 }
 
