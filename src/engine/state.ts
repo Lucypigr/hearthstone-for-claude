@@ -123,6 +123,8 @@ export interface PlayerState {
   launched?: StarshipPiece[][];
   /** 下一次星艦發射的折扣 */
   launchDiscount?: number;
+  /** 已召喚的翠玉魔像數 */
+  jade?: number;
   /** 本回合施放的法術數 */
   spellsThisTurn?: number;
   /** 延遲的效果（例如「2 回合後召喚…」） */

@@ -95,7 +95,6 @@ const UNSUPPORTED_TAGS = [
   'MINIATURIZE',
   'QUICKDRAW',
   'SIGIL',
-  'TWINSPELL',
   'MANATHIRST',
   'CORPSE_SPENDER',
   'OVERHEAL',
@@ -112,9 +111,7 @@ const UNSUPPORTED_TAGS = [
   'FINALE',
   'PREPARE',
   'LIBRAM',
-  'JADE_LOTUS',
   'HONORABLE_KILL',
-  'OVERKILL',
   'DISCOVER_STUDIES_VISUAL',
   'COST_BLOOD',
   'COST_FROST',
@@ -250,6 +247,15 @@ async function main() {
     if (r.tags.STARSHIP_PIECE) def.starshipPiece = true;
     if (r.tags.STARSHIP) def.starship = true;
     if (r.tags.TERRAN) def.terran = true;
+    // 雙生法術：施放後加入手牌的複製是官方的「ts」衍生卡
+    if (r.tags.TWINSPELL) {
+      const copy = buildToken(`${r.id}ts`);
+      if (!copy) {
+        if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: '雙生法術複製無法建立' });
+        return null;
+      }
+      def.twinspellCopy = copy.id;
+    }
 
     const ov = OVERRIDES[r.id];
     if (ov) {
@@ -318,12 +324,12 @@ async function main() {
     }
     // 衍生卡的解析失敗 → 母卡也不收錄
     for (const t of parsed.tokens) {
-      if (!tokenDefs.get(t)) {
+      if (!tokenDefs.get(t) && !buildToken(t)) {
         if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `衍生卡 ${t} 不支援` });
         return null;
       }
     }
-    if (type === 'SPELL' && parsed.keywords.length && !parsed.keywords.every((k) => k === 'LIFESTEAL' || k === 'TRADEABLE' || k === 'ECHO')) {
+    if (type === 'SPELL' && parsed.keywords.length && !parsed.keywords.every((k) => k === 'LIFESTEAL' || k === 'TRADEABLE' || k === 'ECHO' || k === 'TWINSPELL')) {
       if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: '法術含手下關鍵字' });
       return null;
     }

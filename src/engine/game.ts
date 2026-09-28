@@ -61,6 +61,8 @@ export const opp = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 export const CTHUN_ID = 'OG_280';
 const isCthun = (id: string) => getCard(id).nameEn === "C'Thun";
 const isEyestalk = (id: string) => getCard(id).nameEn === "Eyestalk of C'Thun";
+/** 翠玉魔像（官方只有一張 1/1 衍生卡，大小由召喚次數決定） */
+const JADE_GOLEM = 'CFM_712_t01';
 
 interface ItRef {
   kind: 'char' | 'hand';
@@ -83,6 +85,8 @@ interface Ctx {
   outcast: boolean;
   position?: number;
   lifesteal: boolean;
+  /** 比武揭露的我方牌堆卡牌（uid） */
+  revealed?: number;
 }
 
 interface Ev {
@@ -106,6 +110,8 @@ interface DmgSource {
   poisonous?: boolean;
   lifesteal?: boolean;
   freeze?: boolean;
+  /** 造成傷害的法術（滅殺用） */
+  cardId?: string;
 }
 
 interface AttackState {
@@ -868,6 +874,8 @@ export class Game {
     p.hand.splice(idx, 1);
     // 回音：把一張複製加入手牌，回合結束時消失
     if (echo && p.hand.length < MAX_HAND) p.hand.push({ ...structuredClone(hc), uid: this.uid(), echo: true });
+    // 雙生法術：把一張沒有雙生法術的複製加入手牌
+    if (def.twinspellCopy && p.hand.length < MAX_HAND) p.hand.push(this.newHandCard(def.twinspellCopy));
     p.cardsPlayedThisTurn++;
     p.nextCardDiscount = 0;
     if (def.overload) p.overloadOwed += def.overload;
@@ -1076,6 +1084,7 @@ export class Game {
   private *damage(src: DmgSource, targetUid: number, amount: number): Gen<number> {
     const t = this.char(targetUid);
     if (!t || amount <= 0 || this.over) return 0;
+    let overkill = false;
     if (isHero(t)) {
       if (t.immune) return 0;
       if (amount >= t.hp + t.armor && this.s.current !== t.owner) {
@@ -1099,6 +1108,8 @@ export class Game {
         this.fx({ kind: 'shield', uid: t.uid });
         return 0;
       }
+      // 滅殺：在自己的回合造成超過消滅手下所需的傷害
+      if (amount > t.hp && this.s.current === src.owner) overkill = true;
       t.hp -= amount;
       if (src.poisonous) t.dead = true;
     }
@@ -1117,7 +1128,36 @@ export class Game {
         yield* this.runEffects(ab.effects, ctx);
       }
     }
+    if (overkill) yield* this.overkill(src);
     return amount;
+  }
+
+  /** 觸發滅殺：造成傷害的手下 / 武器 / 法術 */
+  private *overkill(src: DmgSource): Gen {
+    const p = this.s.players[src.owner];
+    const ctx = this.baseCtx(src.owner);
+    let abilities: Ability[] = [];
+    const m = src.uid !== null ? this.minion(src.uid) : null;
+    if (m) {
+      if (!m.silenced) abilities = m.abilities;
+      ctx.sourceUid = m.uid;
+      ctx.sourceCardId = m.cardId;
+    } else if (src.uid === p.hero.uid && p.weapon) {
+      abilities = p.weapon.abilities;
+      ctx.sourceUid = p.weapon.uid;
+      ctx.sourceCardId = p.weapon.cardId;
+    } else if (src.cardId && getCard(src.cardId).type === 'SPELL') {
+      abilities = getCard(src.cardId).abilities ?? [];
+      ctx.sourceCardId = src.cardId;
+      ctx.isSpell = true;
+    }
+    const list = abilities.filter((a) => a.on.k === 'overkill');
+    if (list.length) this.log(src.owner, `${this.name(ctx.sourceCardId)}觸發了滅殺`);
+    for (const ab of list) {
+      if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
+      yield* this.runEffects(ab.effects, ctx);
+      if (this.over) return;
+    }
   }
 
   private *heal(targetUid: number, amount: number): Gen<number> {
@@ -1674,7 +1714,7 @@ export class Game {
   private dmgSource(ctx: Ctx): DmgSource {
     const m = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
     if (m && !ctx.isSpell) return { ...this.charSource(m), freeze: false };
-    return { owner: ctx.controller, uid: ctx.sourceUid, lifesteal: ctx.lifesteal };
+    return { owner: ctx.controller, uid: ctx.sourceUid, lifesteal: ctx.lifesteal, cardId: ctx.isSpell ? ctx.sourceCardId : undefined };
   }
 
   private amount(a: Amount, ctx: Ctx): number {
@@ -2248,6 +2288,49 @@ export class Game {
       case 'cthunBuff':
         this.cthunBuff(ctx.controller, e.atk, e.hp, !!e.taunt);
         break;
+      case 'joust': {
+        // 比武：雙方各揭露牌堆中一張隨機手下，你的消耗較高就贏
+        const mine = pick(s, me.deck.filter((h) => getCard(h.cardId).type === 'MINION'));
+        const theirs = pick(s, foe.deck.filter((h) => getCard(h.cardId).type === 'MINION'));
+        const won = !!mine && (!theirs || getCard(mine.cardId).cost > getCard(theirs.cardId).cost);
+        const desc = (h: HandCard | undefined) => (h ? `${this.name(h.cardId)}（${getCard(h.cardId).cost} 費）` : '（沒有手下）');
+        this.log(me.id, `比武：${desc(mine)} 對上 ${desc(theirs)}，${won ? '獲勝！' : '落敗'}`);
+        ctx.revealed = mine?.uid;
+        if (won) yield* this.runEffects(e.then, ctx);
+        else if (e.else) yield* this.runEffects(e.else, ctx);
+        break;
+      }
+      case 'summonJade': {
+        // 翠玉魔像：第 n 個是 n/n（最多 30/30）
+        me.jade = (me.jade ?? 0) + 1;
+        const n = Math.min(30, me.jade);
+        const m = yield* this.doSummon(ctx, ctx.controller, JADE_GOLEM);
+        if (m) {
+          m.baseAtk = n;
+          m.baseHp = n;
+          m.maxHp = n + m.auraHp;
+          m.hp = m.maxHp;
+        }
+        break;
+      }
+      case 'recruit':
+        for (let i = 0; i < e.count; i++) {
+          if (me.board.length >= MAX_BOARD) break;
+          const list = me.deck.filter((h) => {
+            const d = getCard(h.cardId);
+            if (d.type !== 'MINION') return false;
+            if (e.race && !(d.races?.includes(e.race) || d.races?.includes('ALL'))) return false;
+            if (e.cost !== undefined && d.cost !== e.cost) return false;
+            if (e.maxCost !== undefined && d.cost > e.maxCost) return false;
+            return true;
+          });
+          const hc = pick(s, list);
+          if (!hc) break;
+          me.deck.splice(me.deck.indexOf(hc), 1);
+          this.log(me.id, `號召了${this.name(hc.cardId)}`);
+          yield* this.doSummon(ctx, ctx.controller, hc.cardId);
+        }
+        break;
       case 'launchDiscount':
         me.launchDiscount = (me.launchDiscount ?? 0) + e.amount;
         break;
@@ -2461,6 +2544,65 @@ export class Game {
         const t = pick(s, others);
         const into = pick(s, args.cards as string[]);
         if (t && into) this.transform(t.uid, into);
+        break;
+      }
+      // ------------------------------------------------------------ 比武 / 滅殺 / 號召 / 翠玉
+      case 'drawRevealed': {
+        // 抽出比武揭露的那張牌
+        const hc = me.deck.find((h) => h.uid === ctx.revealed);
+        if (!hc) break;
+        me.deck.splice(me.deck.indexOf(hc), 1);
+        if (me.hand.length >= MAX_HAND) {
+          this.fx({ kind: 'burn', cardId: hc.cardId, player: me.id });
+          break;
+        }
+        me.hand.push(hc);
+        me.drawnThisTurn++;
+        break;
+      }
+      case 'attackAgain':
+        // 蘇薩斯：你可以再攻擊一次
+        me.hero.attacks = Math.max(0, me.hero.attacks - 1);
+        break;
+      case 'summonFromHand': {
+        // 從手牌召喚一個（某種族的）手下
+        const race = args.race as Race | undefined;
+        const hc = pick(
+          s,
+          me.hand.filter((h) => {
+            const d = this.handDef(h);
+            return d.type === 'MINION' && (!race || !!d.races?.includes(race) || !!d.races?.includes('ALL'));
+          }),
+        );
+        if (!hc || me.board.length >= MAX_BOARD) break;
+        me.hand = me.hand.filter((h) => h !== hc);
+        const m = this.makeMinion(me.id, hc.cardId, hc);
+        me.board.push(m);
+        this.recalcAuras();
+        this.countSummon(me, hc.cardId);
+        this.log(me.id, `從手牌召喚了${this.name(hc.cardId)}`);
+        yield* this.emit({ k: 'summon', player: me.id, subject: m.uid, races: getCard(hc.cardId).races });
+        break;
+      }
+      case 'oakheart':
+        // 橡心大師：號召攻擊力 1、2、3 的手下各一個
+        for (const atk of [1, 2, 3]) {
+          if (me.board.length >= MAX_BOARD) break;
+          const hc = pick(s, me.deck.filter((h) => getCard(h.cardId).type === 'MINION' && getCard(h.cardId).attack === atk));
+          if (!hc) continue;
+          me.deck.splice(me.deck.indexOf(hc), 1);
+          this.log(me.id, `號召了${this.name(hc.cardId)}`);
+          yield* this.doSummon(ctx, ctx.controller, hc.cardId);
+        }
+        break;
+      case 'jadeTelegram': {
+        // 翠玉通訊：看對手手牌中的 3 張牌，把其中一張洗進他的牌堆
+        const options = shuffle(s, [...foe.hand]).slice(0, 3);
+        if (!options.length) break;
+        const i = yield { player: ctx.controller, kind: 'discover', options: options.map((h) => h.cardId), title: '選擇一張洗回對手的牌堆' };
+        const hc = options[Math.max(0, Math.min(options.length - 1, i ?? 0))];
+        foe.hand = foe.hand.filter((h) => h !== hc);
+        foe.deck.splice(randomInt(s, foe.deck.length + 1), 0, hc);
         break;
       }
       // ------------------------------------------------------------ 星艦
