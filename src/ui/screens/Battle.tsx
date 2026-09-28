@@ -48,7 +48,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     gameRef.current = g;
     return '';
   });
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [mode, setMode] = useState<Mode>({ k: 'idle' });
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number } | { power: PlayerId } | null>(null);
@@ -93,6 +93,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   };
 
   // ------------------------------------------------------------ 電腦回合
+  // 只在遊戲狀態改變（version）時排程，滑鼠移動等重繪不會打斷電腦
   useEffect(() => {
     if (!s || s.phase !== 'play' || s.current !== AI || s.pendingChoice) return;
     const t = window.setTimeout(() => {
@@ -101,7 +102,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       refresh();
     }, AI_DELAY[profile.settings.aiSpeed]);
     return () => window.clearTimeout(t);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, profile.settings.aiSpeed]);
 
   // ------------------------------------------------------------ 特效
   useEffect(() => {
@@ -131,9 +133,12 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (!s || s.phase !== 'play' || s.current !== ME || s.turn === lastTurn.current) return;
     lastTurn.current = s.turn;
     setTurnBanner(s.turn);
+  });
+  useEffect(() => {
+    if (!turnBanner) return;
     const t = window.setTimeout(() => setTurnBanner(0), 1300);
     return () => window.clearTimeout(t);
-  });
+  }, [turnBanner]);
 
   useEffect(() => {
     if (!banner) return;
@@ -464,7 +469,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           🔁 交易（1 法力：洗回牌堆並抽一張）
         </button>
       )}
-      {turnBanner && (
+      {turnBanner > 0 && (
         <div className="turn-banner" key={turnBanner}>
           你的回合
         </div>
