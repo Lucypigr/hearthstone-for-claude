@@ -460,3 +460,74 @@ describe('回音', () => {
     expect(g.atkOf(enemy)).toBe(4);
   });
 });
+
+describe('克蘇恩', () => {
+  it('賦予克蘇恩加成：手牌與牌堆中的克蘇恩都會變強', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const handUid = give(g, 'OG_280');
+    const inHand = me.hand.find((h) => h.uid === handUid)!;
+    const inDeck = g.newHandCard('OG_280');
+    me.deck.push(inDeck);
+    play(g, 'OG_281'); // 召邪者 +2/+2
+    play(g, 'OG_284'); // 暮光地卜師 +1/+1 與嘲諷
+    expect(g.handStats(0, inHand)).toEqual({ atk: 9, hp: 9 });
+    expect(g.handStats(0, inDeck)).toEqual({ atk: 9, hp: 9 });
+    expect(g.cthunAttack(0)).toBe(9);
+    expect(g.apply({ type: 'play', handUid: inHand.uid })).toBe(true);
+    const ct = me.board.find((m) => m.cardId === 'OG_280')!;
+    expect(g.atkOf(ct)).toBe(9);
+    expect(ct.hp).toBe(9);
+    expect(g.hasKw(ct, 'TAUNT')).toBe(true);
+  });
+
+  it('克蘇恩的戰吼：造成等同攻擊力的傷害，隨機分配到敵人身上', () => {
+    const g = newGame();
+    const foe = g.s.players[1];
+    const hp = foe.hero.hp;
+    play(g, 'OG_339'); // +2/+2 → 8 攻擊力
+    play(g, 'OG_280');
+    expect(hp - foe.hero.hp).toBe(8);
+  });
+
+  it('至少 10 點攻擊力的條件', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'OG_301'); // 6 攻擊力：沒有護甲
+    expect(me.hero.armor).toBe(0);
+    play(g, 'OG_293'); // +4/+4 → 10
+    play(g, 'OG_301');
+    expect(me.hero.armor).toBe(10);
+    play(g, 'OG_131');
+    expect(me.board.some((m) => m.cardId === 'OG_319')).toBe(true);
+  });
+
+  it('克蘇恩之刃：把被消滅手下的攻擊力和生命值加給克蘇恩', () => {
+    const g = newGame();
+    const enemy = put(g, 'CS2_182', 1); // 4/5
+    play(g, 'OG_282', enemy.uid);
+    expect(g.minion(enemy.uid)).toBeFalsy();
+    expect(g.cthunAttack(0)).toBe(10);
+  });
+
+  it('厄運召喚者：克蘇恩死亡後洗回牌堆並保留加成', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'OG_280');
+    const ct = me.board.find((m) => m.cardId === 'OG_280')!;
+    ct.dead = true;
+    play(g, 'CS2_182'); // 觸發死亡處理
+    expect(me.graveyard).toContain('OG_280');
+    play(g, 'OG_255');
+    const back = me.deck.find((h) => h.cardId === 'OG_280');
+    expect(back && g.handStats(0, back).atk).toBe(8);
+  });
+
+  it('克蘇恩眼柄會跟著克蘇恩成長', () => {
+    const g = newGame();
+    const eye = put(g, 'WON_144', 0);
+    play(g, 'OG_283'); // +3/+3
+    expect(g.atkOf(eye)).toBe(4);
+    expect(eye.hp).toBe(4);
+  });
+});

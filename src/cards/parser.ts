@@ -649,6 +649,14 @@ function amountOf(s: string): { amount: number; spell: boolean } {
 }
 
 const ACTIONS: ActionRule[] = [
+  // ----- 克蘇恩 -----
+  (s) => {
+    const m = /^(?:[Gg]ive|and give) your C'Thun \+(\d+)\/\+(\d+)( and Taunt)? \(wherever it is\)/.exec(s);
+    if (!m) return null;
+    const eff: Effect = { e: 'cthunBuff', atk: Number(m[1]), hp: Number(m[2]) };
+    if (m[3]) eff.taunt = true;
+    return { effects: [eff], rest: s.slice(m[0].length) };
+  },
   // ----- 傷害 -----
   (s, ctx) => {
     const m = /^[Dd]eal (\$?\d+) damage randomly split (?:among|between) /.exec(s);
@@ -1147,6 +1155,7 @@ const CONDITIONS: [RegExp, (m: RegExpExecArray) => Condition][] = [
   [/^your hand is empty/, () => ({ c: 'handSize', op: '<=', n: 0 })],
   [/^you have (\d+) or (more|fewer|less) cards in (?:your )?hand/, (m) => ({ c: 'handSize', op: m[2] === 'more' ? '>=' : '<=', n: Number(m[1]) })],
   [/^your deck is empty/, () => ({ c: 'deckEmpty' })],
+  [/^your C'Thun has at least (\d+) Attack/, (m) => ({ c: 'cthunAttack', n: Number(m[1]) })],
   [/^your hero has (\d+) or (less|more) Health/, (m) => ({ c: 'heroHealth', op: m[2] === 'less' ? '<=' : '>=', n: Number(m[1]) })],
   [/^(?:it|that minion) (?:dies|is destroyed)/, () => ({ c: 'itDied' })],
   [/^(?:it|that minion) survives/, () => ({ c: 'itAlive' })],

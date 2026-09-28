@@ -64,7 +64,9 @@ function effectValue(e: Effect): number {
       return n * 1.1;
     }
     case 'splitDamage':
-      return e.amount * 0.9;
+      return amt(e.amount) * 0.9;
+    case 'cthunBuff':
+      return (e.atk + e.hp) * 0.45 + (e.taunt ? 0.5 : 0);
     case 'heal':
     case 'armor':
       return amt('amount' in e ? e.amount : 0) * 0.4;

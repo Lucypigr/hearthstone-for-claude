@@ -454,8 +454,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                   def={h.parts ? def : undefined}
                   width={cw}
                   cost={g.costOf(me, h)}
-                  attack={def.type === 'MINION' ? (def.attack ?? 0) + h.atkBuff : undefined}
-                  health={def.type === 'MINION' ? (def.health ?? 0) + h.hpBuff : undefined}
+                  attack={def.type === 'MINION' ? g.handStats(ME, h).atk : undefined}
+                  health={def.type === 'MINION' ? g.handStats(ME, h).hp : undefined}
                   spellDamage={g.spellDamage(ME)}
                   playable={playable}
                   selected={selectedHand === h.uid}

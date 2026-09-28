@@ -55,6 +55,11 @@ export function isHero(c: Char): c is Hero {
 
 export const opp = (p: PlayerId): PlayerId => (p === 0 ? 1 : 0);
 
+/** 克蘇恩（以英文名判斷，重印版本也算） */
+export const CTHUN_ID = 'OG_280';
+const isCthun = (id: string) => getCard(id).nameEn === "C'Thun";
+const isEyestalk = (id: string) => getCard(id).nameEn === "Eyestalk of C'Thun";
+
 interface ItRef {
   kind: 'char' | 'hand';
   uid: number;
@@ -404,6 +409,56 @@ export class Game {
   /** 場上手下的卡牌定義 */
   minionDef(m: Minion): CardDef {
     return m.parts ? zombeastDef(m.parts) : getCard(m.cardId);
+  }
+
+  // ==========================================================================
+  // 克蘇恩
+  // ==========================================================================
+
+  /** 你的克蘇恩目前的攻擊力（在場上就看場上的，否則是 6 + 累積加成） */
+  cthunAttack(pid: PlayerId): number {
+    const p = this.s.players[pid];
+    let best = (getCard(CTHUN_ID).attack ?? 6) + (p.cthun?.atk ?? 0);
+    for (const m of p.board) if (isCthun(m.cardId) && !m.dead) best = Math.max(best, this.atkOf(m));
+    return best;
+  }
+
+  /** 手牌中卡牌目前的攻擊力 / 生命值（含手牌增益與克蘇恩的累積加成） */
+  handStats(pid: PlayerId, hc: HandCard): { atk: number; hp: number } {
+    const def = this.handDef(hc);
+    const bonus = isCthun(hc.cardId) ? this.s.players[pid].cthun : undefined;
+    return { atk: (def.attack ?? 0) + hc.atkBuff + (bonus?.atk ?? 0), hp: (def.health ?? 0) + hc.hpBuff + (bonus?.hp ?? 0) };
+  }
+
+  /**
+   * 賦予你的克蘇恩加成。加成記在玩家身上：手牌、牌堆裡（包括之後才拿到）的克蘇恩都會有，
+   * 場上的克蘇恩直接獲得；克蘇恩眼柄無論在哪裡都會跟著成長。
+   */
+  cthunBuff(pid: PlayerId, atk: number, hp: number, taunt: boolean) {
+    const p = this.s.players[pid];
+    const c = (p.cthun ??= { atk: 0, hp: 0, taunt: false });
+    c.atk += atk;
+    c.hp += hp;
+    if (taunt) c.taunt = true;
+    const grow = (match: (id: string) => boolean, a: number, h: number, t: boolean, inHand: boolean) => {
+      if (inHand) {
+        for (const hc of [...p.hand, ...p.deck]) {
+          if (!match(hc.cardId)) continue;
+          hc.atkBuff += a;
+          hc.hpBuff += h;
+        }
+      }
+      for (const m of p.board) {
+        if (!match(m.cardId) || m.dead) continue;
+        m.atkBuff += a;
+        m.maxHp += h;
+        m.hp += h;
+        if (t && !m.keywords.includes('TAUNT')) m.keywords.push('TAUNT');
+      }
+    };
+    grow(isCthun, atk, hp, taunt, false);
+    if (atk > 0 || hp > 0) grow(isEyestalk, Math.max(0, atk), Math.max(0, hp), false, true);
+    this.log(pid, `克蘇恩獲得 +${atk}/+${hp}${taunt ? ' 與嘲諷' : ''}（目前 ${this.cthunAttack(pid)} 攻擊力）`);
   }
 
   /** 手牌是否具有回音（卡牌本身，或場上有「你手牌中的手下具有回音」） */
@@ -1113,20 +1168,24 @@ export class Game {
     const parts = hand?.parts && cardId === ZOMBEAST_ID ? hand.parts : undefined;
     const def = parts ? zombeastDef(parts) : getCard(cardId);
     const baseHp = def.health ?? 1;
-    const hpBuff = hand?.hpBuff ?? 0;
+    const keywords = [...(def.keywords ?? [])];
+    // 克蘇恩上場時帶著累積的加成
+    const bonus = isCthun(cardId) ? this.s.players[owner].cthun : undefined;
+    if (bonus?.taunt && !keywords.includes('TAUNT')) keywords.push('TAUNT');
+    const hpBuff = (hand?.hpBuff ?? 0) + (bonus?.hp ?? 0);
     return {
       uid: this.uid(),
       cardId,
       owner,
       baseAtk: def.attack ?? 0,
       baseHp,
-      atkBuff: hand?.atkBuff ?? 0,
+      atkBuff: (hand?.atkBuff ?? 0) + (bonus?.atk ?? 0),
       tempAtk: 0,
       auraAtk: 0,
       auraHp: 0,
       maxHp: baseHp + hpBuff,
       hp: baseHp + hpBuff,
-      keywords: [...(def.keywords ?? [])],
+      keywords,
       tempKeywords: [],
       nextTurnKeywords: [],
       auraKeywords: [],
@@ -1676,6 +1735,8 @@ export class Game {
       }
       case 'deckEmpty':
         return p.deck.length === 0;
+      case 'cthunAttack':
+        return this.cthunAttack(p.id) >= c.n;
       case 'not':
         return !this.evalCond(c.cond, ctx, excludeHandUid);
     }
@@ -1729,7 +1790,7 @@ export class Game {
         break;
       }
       case 'splitDamage': {
-        let n = e.amount;
+        let n = this.amount(e.amount, ctx);
         if (e.spell && ctx.isSpell) n += this.spellDamage(ctx.controller);
         const src = this.dmgSource(ctx);
         for (let i = 0; i < n; i++) {
@@ -2033,6 +2094,9 @@ export class Game {
           me.weapon.durability += e.dur ?? 0;
         }
         break;
+      case 'cthunBuff':
+        this.cthunBuff(ctx.controller, e.atk, e.hp, !!e.taunt);
+        break;
       case 'shuffle':
         for (let i = 0; i < e.count; i++) me.deck.splice(randomInt(s, me.deck.length + 1), 0, this.newHandCard(e.card));
         break;
@@ -2236,6 +2300,26 @@ export class Game {
         const t = pick(s, others);
         const into = pick(s, args.cards as string[]);
         if (t && into) this.transform(t.uid, into);
+        break;
+      }
+      case 'bladeOfCthun': {
+        // 克蘇恩之刃：消滅一個手下，把它的攻擊力和生命值加到你的克蘇恩
+        const m = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!m) break;
+        const atk = this.atkOf(m);
+        const hp = Math.max(0, m.hp);
+        m.dead = true;
+        this.cthunBuff(me.id, atk, hp, false);
+        break;
+      }
+      case 'cthunRevive': {
+        // 厄運召喚者：克蘇恩已經死亡的話，把它洗入你的牌堆（保留所有加成）
+        const alive = [...me.hand, ...me.deck, ...me.board].some((c) => isCthun(c.cardId));
+        const deadId = me.graveyard.find((id) => isCthun(id));
+        if (alive || !deadId) break;
+        const hc = this.newHandCard(deadId);
+        me.deck.splice(randomInt(s, me.deck.length + 1), 0, hc);
+        this.log(me.id, '克蘇恩被洗回了牌堆');
         break;
       }
       case 'buildABeast': {
