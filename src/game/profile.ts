@@ -5,6 +5,7 @@ import type { Difficulty } from '../engine/ai';
 import { CLASS_NAMES } from '../engine/heroes';
 import type { Rarity } from '../engine/types';
 import { buildDeck, maxCopies, type Deck, type HeroClass } from './decks';
+import { sanitizeLadder, type LadderState } from './ladder';
 import {
   CARDS_PER_PACK,
   CRAFT_COST,
@@ -26,6 +27,12 @@ export interface MatchRecord {
   gold: number;
   myClass: HeroClass;
   oppClass: HeroClass;
+  /** 天梯對戰 */
+  mode?: 'ladder';
+  /** 對手名稱（天梯） */
+  opp?: string;
+  /** 賽後的牌階（天梯） */
+  rank?: string;
 }
 
 export interface Profile {
@@ -41,6 +48,7 @@ export interface Profile {
   lastDailyWin: string | null;
   history: MatchRecord[];
   settings: { aiSpeed: 'slow' | 'normal' | 'fast' };
+  ladder?: LadderState;
 }
 
 export type Rand = () => number;
@@ -99,6 +107,7 @@ export function sanitizeProfile(raw: unknown): Profile {
     pity: { ...(p.pity ?? {}) },
     history: (p.history ?? []).slice(-30),
     settings: { ...base.settings, ...(p.settings ?? {}) },
+    ladder: p.ladder ? sanitizeLadder(p.ladder) : undefined,
   };
 }
 
@@ -232,8 +241,10 @@ export function recordMatch(
   myClass: HeroClass,
   oppClass: HeroClass,
   date = today(),
+  extra: { gold?: number; mode?: 'ladder'; opp?: string; rank?: string } = {},
 ): { profile: Profile; gold: number; dailyBonus: number } {
-  let gold = result === 'win' ? WIN_REWARD[difficulty] : LOSS_REWARD[difficulty];
+  const { gold: baseGold, ...info } = extra;
+  let gold = baseGold ?? (result === 'win' ? WIN_REWARD[difficulty] : LOSS_REWARD[difficulty]);
   let dailyBonus = 0;
   let lastDailyWin = p.lastDailyWin;
   if (result === 'win' && p.lastDailyWin !== date) {
@@ -241,7 +252,7 @@ export function recordMatch(
     lastDailyWin = date;
   }
   gold += dailyBonus;
-  const record: MatchRecord = { date: new Date().toISOString(), result, difficulty, gold, myClass, oppClass };
+  const record: MatchRecord = { date: new Date().toISOString(), result, difficulty, gold, myClass, oppClass, ...info };
   return {
     gold,
     dailyBonus,

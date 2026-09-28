@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { getCard, hasCard, HEROES } from '../../cards/registry';
-import { aiMulligan, chooseAction } from '../../engine/ai';
+import { AiBrain, aiMulligan, chooseAction, EMOTE_NAMES, EMOTE_TEXT, type Emote } from '../../engine/ai';
 import { Game, isHero } from '../../engine/game';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { Action, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
 import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
 import { RUNE_NAMES } from '../../game/decks';
+import { DECK_KIND_NAMES, recordLadderMatch, type LadderChange } from '../../game/ladder';
 import { makeAiDeck } from '../../game/opponents';
 import { recordMatch } from '../../game/profile';
 import type { BattleConfig } from '../App';
 import { CLASS_COLORS, formatCardText } from '../cardText';
 import { Art, CardBack, CardView } from '../components/Card';
+import { RankBadge, RankPips } from '../components/Rank';
 import { direct, type Snap } from '../fx';
 import { clamp, useViewport } from '../hooks';
 import { getProfile, setProfile, useProfile } from '../store';
@@ -28,20 +30,28 @@ const AI_DELAY = { slow: 1300, normal: 800, fast: 350 };
 const ME: PlayerId = 0;
 const AI: PlayerId = 1;
 
+const SPEED_FACTOR = { slow: 1.35, normal: 1, fast: 0.55 };
+/** 兩次表情之間至少間隔（毫秒） */
+const EMOTE_GAP = 6000;
+const MAX_AI_EMOTES = 6;
+
 export function Battle({ config, onExit, onRematch }: { config: BattleConfig; onExit: () => void; onRematch: () => void }) {
   const profile = useProfile();
   const gameRef = useRef<Game | null>(null);
+  const ladder = config.ladder;
+  // 天梯對手的大腦（每場一個）
+  const brain = useMemo(() => (ladder ? new AiBrain(ladder.persona) : null), [ladder]);
   const [error] = useState(() => {
     const deck = getProfile().decks.find((d) => d.id === config.deckId);
     if (!deck) return '找不到套牌';
-    const aiDeck = makeAiDeck(config.oppClass, config.difficulty, Math.floor(Math.random() * 1e9));
+    const aiDeck = ladder ? ladder.deck : makeAiDeck(config.oppClass, config.difficulty, Math.floor(Math.random() * 1e9));
     const g = Game.create({
       decks: [deck.cards, aiDeck],
       classes: [deck.heroClass, config.oppClass],
-      names: ['你', HEROES[config.oppClass].name],
+      names: ['你', ladder ? ladder.name : HEROES[config.oppClass].name],
       ai: [false, true],
     });
-    g.apply({ type: 'mulligan', player: AI, replace: aiMulligan(g, AI, config.difficulty) });
+    g.apply({ type: 'mulligan', player: AI, replace: brain ? brain.mulligan(g, AI) : aiMulligan(g, AI, config.difficulty) });
     gameRef.current = g;
     return '';
   });
@@ -51,7 +61,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId } | null>(null);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
   const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
-  const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw' } | null>(null);
+  const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw'; change?: LadderChange } | null>(null);
+  const [emotes, setEmotes] = useState<{ id: number; player: PlayerId; emote: Emote }[]>([]);
+  const [emoteMenu, setEmoteMenu] = useState(false);
+  const lastEmote = useRef<Record<PlayerId, number>>({ 0: -Infinity, 1: -Infinity });
+  const aiEmotes = useRef(0);
   const [showLog, setShowLog] = useState(false);
   const [turnBanner, setTurnBanner] = useState(0);
   const lastTurn = useRef(0);
@@ -66,7 +80,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const g = gameRef.current!;
   const s = g?.s;
   // 開發模式：讓自動化測試可以直接擺好盤面（正式版不會包含）
-  if (import.meta.env.DEV) (window as unknown as { __battle?: unknown }).__battle = { g, refresh };
+  if (import.meta.env.DEV) (window as unknown as { __battle?: unknown }).__battle = { g, refresh, brain };
 
   // ------------------------------------------------------------ 動作
   const act = useCallback(
@@ -93,14 +107,68 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   // 只在遊戲狀態改變（version）時排程，滑鼠移動等重繪不會打斷電腦
   useEffect(() => {
     if (!s || s.phase !== 'play' || s.current !== AI || s.pendingChoice) return;
+    const wait = brain ? brain.thinkTime(g) * SPEED_FACTOR[profile.settings.aiSpeed] : AI_DELAY[profile.settings.aiSpeed];
     const t = window.setTimeout(() => {
-      const a = chooseAction(g, config.difficulty);
-      if (!g.apply(a)) g.apply({ type: 'endTurn' });
+      if (brain) {
+        // 真人會在沒救的時候投降
+        if (brain.shouldConcede(g)) {
+          const e = brain.react('concede');
+          if (e) say(AI, e, true);
+          window.setTimeout(() => {
+            g.apply({ type: 'concede', player: AI });
+            refresh();
+          }, e ? 1400 : 300);
+          return;
+        }
+        const a = brain.choose(g);
+        if (!g.apply(a)) g.apply({ type: 'endTurn' });
+        if (brain.blundered) aiSay(brain.react('blunder'), 900);
+        else if (brain.swing(g, AI) > 14) aiSay(brain.react('swingFor'), 700);
+      } else {
+        const a = chooseAction(g, config.difficulty);
+        if (!g.apply(a)) g.apply({ type: 'endTurn' });
+      }
       refresh();
-    }, Math.max(AI_DELAY[profile.settings.aiSpeed], busyUntil.current - performance.now() + 150));
+    }, Math.max(wait, busyUntil.current - performance.now() + 150));
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, profile.settings.aiSpeed]);
+
+  // ------------------------------------------------------------ 表情
+  const say = (player: PlayerId, emote: Emote, force = false, gap = player === AI ? EMOTE_GAP : 1500) => {
+    const now = performance.now();
+    if (!force && now - lastEmote.current[player] < gap) return false;
+    if (player === AI && !force && aiEmotes.current >= MAX_AI_EMOTES) return false;
+    lastEmote.current[player] = now;
+    if (player === AI) aiEmotes.current++;
+    const id = now + Math.random();
+    setEmotes((list) => [...list.filter((x) => x.player !== player), { id, player, emote }]);
+    window.setTimeout(() => setEmotes((list) => list.filter((x) => x.id !== id)), 2600);
+    return true;
+  };
+  const aiSay = (e: Emote | null, delay: number, gap = EMOTE_GAP) => {
+    if (!e) return;
+    window.setTimeout(() => say(AI, e, false, gap), delay * (0.7 + Math.random() * 0.8));
+  };
+  const playerEmote = (e: Emote) => {
+    setEmoteMenu(false);
+    if (!say(ME, e)) return;
+    // 回應玩家的表情不用等太久
+    if (brain) aiSay(brain.react('playerEmote', e), 1500, 2000);
+  };
+  // 開場打招呼
+  const greeted = useRef(false);
+  useEffect(() => {
+    if (!brain || greeted.current || !s || s.phase !== 'play') return;
+    greeted.current = true;
+    aiSay(brain.react('start'), 1800);
+  });
+  // 玩家打出漂亮的一手時，對手可能會說「哇！」或「打得好」
+  useEffect(() => {
+    if (!brain || !s || s.phase !== 'play' || s.current !== ME) return;
+    if (brain.swing(g, AI) < -14) aiSay(brain.react('swingAgainst'), 1200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
 
   // ------------------------------------------------------------ 特效
   useEffect(() => {
@@ -172,6 +240,14 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   useEffect(() => {
     if (!s || s.phase !== 'over' || reward) return;
     const result = s.winner === ME ? 'win' : s.winner === 'draw' ? 'draw' : 'loss';
+    if (ladder) {
+      const r = recordLadderMatch(getProfile(), result, s.players[ME].heroClass, ladder);
+      setProfile(r.profile);
+      setReward({ gold: r.gold, daily: r.dailyBonus, result, change: r.change });
+      const conceded = s.log.some((l) => l.player === AI && l.text.endsWith('投降了'));
+      if (brain && !conceded) aiSay(brain.react(result === 'win' ? 'lose' : 'win'), 600);
+      return;
+    }
     const r = recordMatch(getProfile(), result, config.difficulty, s.players[ME].heroClass, config.oppClass);
     setProfile(r.profile);
     setReward({ gold: r.gold, daily: r.dailyBonus, result });
@@ -370,7 +446,16 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           ☰ 選單
         </button>
         <span className="battle-title">
-          對戰 {CLASS_NAMES[foe.heroClass]}（{DIFFICULTY_NAMES[config.difficulty]}）・第 {Math.max(1, Math.ceil(s.turn / 2))} 回合
+          {ladder ? (
+            <>
+              🏆 天梯・{foe.name}（{ladder.rank.label}・{CLASS_NAMES[foe.heroClass]}）
+            </>
+          ) : (
+            <>
+              對戰 {CLASS_NAMES[foe.heroClass]}（{DIFFICULTY_NAMES[config.difficulty]}）
+            </>
+          )}
+          ・第 {Math.max(1, Math.ceil(s.turn / 2))} 回合
         </span>
         <button className="btn small" onClick={() => setShowLog(!showLog)}>
           📜 紀錄
@@ -405,7 +490,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="hero-row">
           <PlayerInfo p={foe} />
           <WeaponView p={foe} />
-          <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)} />
+          <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
+            {emotes
+              .filter((x) => x.player === AI)
+              .map((x) => (
+                <div key={x.id} className="emote-bubble">
+                  {EMOTE_TEXT[x.emote]}
+                </div>
+              ))}
+          </HeroView>
           <HeroPowerView p={foe} g={g} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
           <StarshipView p={foe} g={g} usable={false} onHover={inspectShip(AI)} />
         </div>
@@ -444,7 +537,36 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="hero-row">
           <PlayerInfo p={me} />
           <WeaponView p={me} />
-          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)} />
+          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)}>
+            {emotes
+              .filter((x) => x.player === ME)
+              .map((x) => (
+                <div key={x.id} className="emote-bubble">
+                  {EMOTE_TEXT[x.emote]}
+                </div>
+              ))}
+            {ladder && (
+              <button
+                className="emote-toggle"
+                title="表情"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEmoteMenu(!emoteMenu);
+                }}
+              >
+                💬
+              </button>
+            )}
+            {emoteMenu && (
+              <div className="emote-menu" onClick={(e) => e.stopPropagation()}>
+                {(Object.keys(EMOTE_NAMES) as Emote[]).map((e) => (
+                  <button key={e} onClick={() => playerEmote(e)}>
+                    {EMOTE_NAMES[e]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </HeroView>
           <HeroPowerView
             p={me}
             g={g}
@@ -639,6 +761,12 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="modal">
           <div className={`modal-box result ${reward?.result ?? ''}`}>
             <h1>{s.winner === ME ? '🏆 勝利！' : s.winner === 'draw' ? '平手' : '💀 落敗'}</h1>
+            {reward?.change && ladder && <RankChangeView change={reward.change} />}
+            {ladder && (
+              <p className="muted small">
+                對手：{ladder.name}・{ladder.deckName}（{DECK_KIND_NAMES[ladder.deckKind]}）
+              </p>
+            )}
             {reward && (
               <p className="reward-line">
                 獲得 <b>🪙 {reward.gold}</b> 金幣{reward.daily > 0 && <>（含每日首勝 {reward.daily}）</>}
@@ -647,10 +775,10 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             <p className="muted">目前金幣：{profile.gold}</p>
             <div className="row">
               <button className="btn big primary" onClick={onRematch}>
-                再戰一場
+                {ladder ? '🔍 繼續配對' : '再戰一場'}
               </button>
               <button className="btn big" onClick={onExit}>
-                返回主選單
+                {ladder ? '返回天梯' : '返回主選單'}
               </button>
             </div>
           </div>
@@ -663,6 +791,31 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 // ============================================================================
 // 子元件
 // ============================================================================
+
+function RankChangeView({ change }: { change: LadderChange }) {
+  const { before, after } = change;
+  const legendDelta = before.legend && after.legend ? before.legend - after.legend : 0;
+  return (
+    <div className="rank-change">
+      <div className="rank-change-row">
+        <RankBadge info={after} size={72} />
+        <div>
+          <b style={{ color: after.color }}>{after.label}</b>
+          <RankPips info={after} />
+        </div>
+      </div>
+      <div className="rank-change-note">
+        {change.promoted && <span className="promoted">🎉 {change.promoted}</span>}
+        {change.stars > 0 && <span className="up">+{change.stars} ★{change.streakBonus && '（連勝加成）'}</span>}
+        {change.stars < 0 && <span className="down">−1 ★</span>}
+        {change.protectedByFloor && <span className="muted">保底：這個牌階不會再往下掉</span>}
+        {legendDelta > 0 && <span className="up">名次上升 {legendDelta}</span>}
+        {legendDelta < 0 && <span className="down">名次下降 {-legendDelta}</span>}
+        {before.label !== after.label && !after.legend && <span className="muted">{before.label} → {after.label}</span>}
+      </div>
+    </div>
+  );
+}
 
 const KEYWORD_HELP: [string, string][] = [
   ['TAUNT', '嘲諷：敵人必須先攻擊有嘲諷的角色'],

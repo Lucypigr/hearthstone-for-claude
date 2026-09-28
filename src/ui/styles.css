@@ -2650,3 +2650,425 @@ textarea {
 .import-box {
   width: min(560px, 92vw);
 }
+
+/* ----------------------------------------------------------------- 天梯 */
+.rank-badge {
+  --size: 64px;
+  width: var(--size);
+  height: var(--size);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  background:
+    radial-gradient(circle at 50% 35%, rgb(255 255 255 / 0.45), transparent 55%),
+    linear-gradient(160deg, var(--league), color-mix(in srgb, var(--league) 45%, #000));
+  box-shadow: inset 0 0 0 3px rgb(0 0 0 / 0.4);
+}
+
+.rank-badge .rank-num {
+  font-weight: 900;
+  font-size: calc(var(--size) * 0.42);
+  color: #fff;
+  text-shadow: 0 0 4px #000, 0 2px 0 #000;
+}
+
+.rank-badge.league-5 {
+  animation: legend-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes legend-glow {
+  50% {
+    filter: brightness(1.25) drop-shadow(0 0 8px #ffb347);
+  }
+}
+
+.rank-pips {
+  display: inline-flex;
+  gap: 4px;
+  font-size: 1.3em;
+}
+
+.rank-pips .pip {
+  color: #4a3b2c;
+  text-shadow: 0 1px 0 #000;
+}
+
+.rank-pips .pip.on {
+  color: #ffd75a;
+  text-shadow: 0 0 6px #ffb300;
+}
+
+.rank-pips.legend {
+  font-weight: 800;
+  color: #ffb347;
+}
+
+.ladder h2 {
+  margin: 18px 0 10px;
+}
+
+.ladder-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  border-color: color-mix(in srgb, var(--league) 60%, var(--border));
+  background: linear-gradient(120deg, color-mix(in srgb, var(--league) 18%, var(--panel)), var(--panel) 60%);
+}
+
+.ladder-rank h2 {
+  margin: 2px 0 4px;
+  font-size: 2em;
+}
+
+.ladder-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 6px;
+}
+
+.ladder-stats .streak {
+  color: #ff9b3d;
+  font-weight: 800;
+}
+
+.league-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.league-step {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 50%, transparent);
+  color: color-mix(in srgb, var(--c) 55%, #777);
+  font-size: 0.85em;
+}
+
+.league-step.done {
+  color: var(--c);
+  opacity: 0.75;
+}
+
+.league-step.current {
+  background: var(--c);
+  color: #1a120b;
+  font-weight: 800;
+}
+
+.season-reward {
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.notice {
+  background: #3b2d12;
+  border: 1px solid #b08a3a;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.queue-box {
+  text-align: center;
+  min-width: 280px;
+}
+
+.queue-spinner {
+  width: 72px;
+  height: 72px;
+  margin: 6px auto 4px;
+  border-radius: 50%;
+  border: 6px solid #4a3a26;
+  border-top-color: #ffc84a;
+  border-right-color: #ff9b3d;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.queue-time {
+  font-size: 2em;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0;
+}
+
+.versus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4vw;
+  width: 100%;
+  padding: 0 16px;
+}
+
+.vs-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  animation: vs-in-left 0.6s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+
+.vs-side.foe {
+  animation-name: vs-in-right;
+}
+
+.vs-art {
+  width: min(28vw, 220px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 5px solid var(--class);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--class) 70%, transparent);
+  overflow: hidden;
+}
+
+.vs-name {
+  font-size: 1.6em;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-rank {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #d8c7a5;
+}
+
+.vs-mark {
+  font-size: min(12vw, 5em);
+  font-weight: 900;
+  color: #ffc84a;
+  text-shadow: 0 0 20px #ff7a00, 0 4px 0 #000;
+  animation: vs-pop 0.5s 0.4s ease-out both;
+}
+
+@keyframes vs-in-left {
+  from {
+    transform: translateX(-60vw);
+    opacity: 0;
+  }
+}
+
+@keyframes vs-in-right {
+  from {
+    transform: translateX(60vw);
+    opacity: 0;
+  }
+}
+
+@keyframes vs-pop {
+  from {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
+/* 表情 */
+.emote-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -18px);
+  z-index: 30;
+  background: #fff8e8;
+  color: #2a1c0e;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 16px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px #0008;
+  pointer-events: none;
+  animation: emote-in 0.25s ease-out, emote-out 0.4s 2.2s ease-in forwards;
+}
+
+.emote-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: #fff8e8;
+}
+
+.foe-side .emote-bubble {
+  bottom: auto;
+  top: 100%;
+  transform: translate(-50%, 18px);
+}
+
+.foe-side .emote-bubble::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: #fff8e8;
+}
+
+@keyframes emote-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@keyframes emote-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.emote-toggle {
+  position: absolute;
+  left: -10px;
+  top: 30%;
+  z-index: 6;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #1a120b;
+  background: #fff8e8;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.emote-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 6px;
+}
+
+.emote-menu button {
+  background: linear-gradient(#5a4127, #3a2915);
+  border: 2px solid #c9a86a;
+  color: #fff4d6;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.emote-menu button:hover {
+  filter: brightness(1.3);
+}
+
+/* 賽後牌階變化 */
+.rank-change {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.rank-change-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 1.3em;
+  text-align: left;
+}
+
+.rank-change-row b {
+  display: block;
+}
+
+.rank-change-note {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+}
+
+.rank-change-note .up {
+  color: #8fe0a0;
+  font-weight: 800;
+}
+
+.rank-change-note .down {
+  color: #ff8a7a;
+  font-weight: 800;
+}
+
+.rank-change-note .promoted {
+  color: #ffc84a;
+  font-weight: 900;
+  font-size: 1.2em;
+  animation: vs-pop 0.5s ease-out both;
+}
+
+.rank-change .rank-badge {
+  animation: vs-pop 0.5s ease-out both;
+}
+
+@media (max-width: 600px) {
+  .league-track {
+    margin-left: 0;
+  }
+
+  .versus {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .vs-art {
+    width: 34vw;
+  }
+
+  @keyframes vs-in-left {
+    from {
+      transform: translateY(-50vh);
+      opacity: 0;
+    }
+  }
+
+  @keyframes vs-in-right {
+    from {
+      transform: translateY(50vh);
+      opacity: 0;
+    }
+  }
+}
+
+.queue-modal {
+  background: radial-gradient(circle at 50% 45%, #3a2410e6, #000f 75%);
+}
+
+@media (max-width: 600px) {
+  /* 手機：導覽列放在標誌與金幣下方的一整行 */
+  .topbar nav {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .topbar nav button {
+    padding: 4px 8px;
+  }
+
+  .wallet {
+    margin-left: auto;
+  }
+}

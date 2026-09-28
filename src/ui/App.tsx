@@ -1,27 +1,33 @@
 import { useState } from 'react';
 import type { Difficulty } from '../engine/ai';
 import type { HeroClass } from '../game/decks';
+import type { LadderOpponent } from '../game/ladder';
 import { useProfile } from './store';
 import { Battle } from './screens/Battle';
 import { Collection } from './screens/Collection';
 import { Home } from './screens/Home';
+import { Ladder } from './screens/Ladder';
 import { PackOpen } from './screens/PackOpen';
 import { PlaySetup } from './screens/PlaySetup';
 import { Settings } from './screens/Settings';
 import { Shop } from './screens/Shop';
 
-export type Screen = 'home' | 'play' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings';
+export type Screen = 'home' | 'play' | 'ladder' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings';
 
 export interface BattleConfig {
   deckId: string;
   difficulty: Difficulty;
   oppClass: HeroClass;
+  /** 天梯配對到的對手 */
+  ladder?: LadderOpponent;
 }
 
 export function App() {
   const [screen, setScreen] = useState<Screen>('home');
   const [battle, setBattle] = useState<BattleConfig | null>(null);
   const [battleKey, setBattleKey] = useState(0);
+  /** 從對戰按「繼續配對」回到天梯時，用這副套牌自動開始配對 */
+  const [autoQueue, setAutoQueue] = useState<string | null>(null);
   const profile = useProfile();
   const unopened = Object.values(profile.packs).reduce((a, b) => a + b, 0);
 
@@ -30,8 +36,15 @@ export function App() {
       <Battle
         key={battleKey}
         config={battle}
-        onExit={() => setScreen('home')}
-        onRematch={() => setBattleKey((k) => k + 1)}
+        onExit={() => {
+          setAutoQueue(null);
+          setScreen(battle.ladder ? 'ladder' : 'home');
+        }}
+        onRematch={() => {
+          if (!battle.ladder) return setBattleKey((k) => k + 1);
+          setAutoQueue(battle.deckId);
+          setScreen('ladder');
+        }}
       />
     );
   }
@@ -43,8 +56,11 @@ export function App() {
           爐石戰記 <small>for Claude</small>
         </button>
         <nav>
+          <button className={screen === 'ladder' ? 'active' : ''} onClick={() => setScreen('ladder')}>
+            天梯
+          </button>
           <button className={screen === 'play' ? 'active' : ''} onClick={() => setScreen('play')}>
-            對戰
+            練習
           </button>
           <button className={screen === 'collection' ? 'active' : ''} onClick={() => setScreen('collection')}>
             收藏與套牌
@@ -72,6 +88,18 @@ export function App() {
         {screen === 'home' && <Home go={setScreen} />}
         {screen === 'play' && (
           <PlaySetup
+            onStart={(cfg) => {
+              setBattle(cfg);
+              setBattleKey((k) => k + 1);
+              setScreen('battle');
+            }}
+            go={setScreen}
+          />
+        )}
+        {screen === 'ladder' && (
+          <Ladder
+            autoQueueDeck={autoQueue}
+            onAutoQueued={() => setAutoQueue(null)}
             onStart={(cfg) => {
               setBattle(cfg);
               setBattleKey((k) => k + 1);
