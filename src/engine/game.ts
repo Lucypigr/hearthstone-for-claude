@@ -2493,6 +2493,24 @@ export class Game {
         if (id) this.addToHand(me, id);
         break;
       }
+      case 'yseraAwakens': {
+        // 伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成傷害
+        const n = (args.amount as number) + (ctx.isSpell ? this.spellDamage(ctx.controller) : 0);
+        const src = this.dmgSource(ctx);
+        for (const c of this.chars()) {
+          if (!this.alive(c) || (!isHero(c) && getCard(c.cardId).nameEn.startsWith('Ysera'))) continue;
+          yield* this.damage(src, c.uid, n);
+        }
+        break;
+      }
+      case 'nightmare': {
+        // 夢魘：+5/+5，並在施放者的下個回合開始時消滅它
+        const m = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!m) break;
+        yield* this.runEffect({ e: 'buff', target: { t: 'chosen' }, atk: 5, hp: 5 }, ctx);
+        m.abilities.push({ on: { k: 'turnStart', whose: m.owner === ctx.controller ? 'mine' : 'opp' }, effects: [{ e: 'destroy', target: { t: 'self' } }] });
+        break;
+      }
       case 'totemicCall': {
         const options = BASIC_TOTEMS.filter((t) => !me.board.some((m) => m.cardId === t));
         const id = pick(s, options);

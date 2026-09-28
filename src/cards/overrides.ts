@@ -17,6 +17,7 @@ const anyChar: TargetReq = { filter: { type: 'character', side: 'any' } };
 const friendlyMinion: TargetReq = { filter: { type: 'minion', side: 'friendly' } };
 const LACKEYS = ['DAL_613', 'DAL_614', 'DAL_739', 'DAL_741', 'ULD_616', 'DRG_052'];
 const HORSEMEN = ['ICC_829t2', 'ICC_829t3', 'ICC_829t4', 'ICC_829t5'];
+const DREAM_CARDS = ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'];
 
 const chosenMinion = { filter: { type: 'minion' as const, side: 'any' as const } };
 
@@ -58,19 +59,23 @@ export const OVERRIDES: Record<string, Override> = {
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'transformRandomOther', args: { cards: ['EX1_tk28', 'EX1_tk29'] } }] }],
     tokens: ['EX1_tk28', 'EX1_tk29'],
   },
-  // 伊瑟拉：回合結束時隨機獲得兩張夢境卡（簡化：從歡笑的姊妹、翡翠飛龍、夢境中挑選）
+  // 伊瑟拉：回合結束時隨機獲得兩張夢境卡（伊瑟拉之覺醒、歡笑的姊妹、翡翠飛龍、夢境、夢魘）
   EX1_572: {
     abilities: [
       {
         on: { k: 'turnEnd', whose: 'mine' },
         effects: [
-          { e: 'custom', fn: 'addOneOf', args: { cards: ['DREAM_01', 'DREAM_03', 'DREAM_04'] } },
-          { e: 'custom', fn: 'addOneOf', args: { cards: ['DREAM_01', 'DREAM_03', 'DREAM_04'] } },
+          { e: 'custom', fn: 'addOneOf', args: { cards: DREAM_CARDS } },
+          { e: 'custom', fn: 'addOneOf', args: { cards: DREAM_CARDS } },
         ],
       },
     ],
-    tokens: ['DREAM_01', 'DREAM_03', 'DREAM_04'],
+    tokens: DREAM_CARDS,
   },
+  // 伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成 5 點傷害
+  DREAM_02: { abilities: play({ e: 'custom', fn: 'yseraAwakens', args: { amount: 5 } }) },
+  // 夢魘：賦予一個手下 +5/+5，在你的下個回合開始時消滅它
+  DREAM_05: { target: chosenMinion, abilities: play({ e: 'custom', fn: 'nightmare' }) },
   // 血帆襲擊者：獲得等同武器攻擊力的攻擊力
   NEW1_018: {
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'buff', target: { t: 'self' }, atk: { dyn: 'weaponAttack' } }] }],

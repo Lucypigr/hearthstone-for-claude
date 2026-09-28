@@ -707,3 +707,42 @@ describe('舊系列機制', () => {
     expect(me.board.map((m) => m.cardId)).toEqual(['CS2_101t', 'CS2_101t']);
   });
 });
+
+describe('伊瑟拉的夢境卡', () => {
+  it('伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成 5 點傷害', () => {
+    const g = newGame();
+    const ysera = put(g, 'EX1_572', 0);
+    const foe = put(g, 'CS2_182', 1);
+    const heroHp = g.s.players[1].hero.hp;
+    play(g, 'DREAM_02');
+    expect(ysera.hp).toBe(12);
+    expect(foe.hp).toBe(0);
+    expect(g.s.players[1].hero.hp).toBe(heroHp - 5);
+  });
+
+  it('夢魘：+5/+5，在施放者的下個回合開始時消滅', () => {
+    const g = newGame();
+    const mine = put(g, 'CS2_182', 0);
+    const theirs = put(g, 'CS2_182', 1);
+    play(g, 'DREAM_05', mine.uid);
+    play(g, 'DREAM_05', theirs.uid);
+    expect(g.atkOf(mine)).toBe(9);
+    g.apply({ type: 'endTurn' }); // 對手的回合：兩隻都還在
+    expect(g.minion(mine.uid)).toBeTruthy();
+    expect(g.minion(theirs.uid)).toBeTruthy();
+    g.apply({ type: 'endTurn' }); // 我的回合開始：兩隻都被消滅
+    expect(g.minion(mine.uid)).toBeFalsy();
+    expect(g.minion(theirs.uid)).toBeFalsy();
+  });
+
+  it('伊瑟拉每回合結束時獲得兩張夢境卡', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    put(g, 'EX1_572', 0);
+    const before = me.hand.length;
+    g.apply({ type: 'endTurn' });
+    const dreams = me.hand.slice(before).map((h) => h.cardId);
+    expect(dreams.length).toBe(2);
+    for (const id of dreams) expect(id.startsWith('DREAM_0')).toBe(true);
+  });
+});
