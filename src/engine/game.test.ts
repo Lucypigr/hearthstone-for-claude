@@ -531,3 +531,108 @@ describe('克蘇恩', () => {
     expect(eye.hp).toBe(4);
   });
 });
+
+describe('星艦', () => {
+  it('打出組件會組裝星艦，發射後擁有所有組件的數值、關鍵字與亡語', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'GDB_100'); // 亞克防禦水晶 3/4 嘲諷，亡語：獲得 4 點護甲
+    play(g, 'GDB_105'); // 碎晶砲塔 2/4 突襲、風怒
+    expect(me.starship?.map((p) => p.id)).toEqual(['GDB_100', 'GDB_105']);
+    me.mana = 4;
+    expect(g.canLaunch().ok).toBe(false);
+    me.mana = 5;
+    expect(g.apply({ type: 'launch' })).toBe(true);
+    expect(me.mana).toBe(0);
+    expect(me.starship).toBeUndefined();
+    expect(me.launched?.length).toBe(1);
+    const ship = me.board[me.board.length - 1];
+    expect(ship.cardId).toBe('GDB_100t2');
+    expect(g.atkOf(ship)).toBe(5);
+    expect(ship.hp).toBe(8);
+    expect(g.hasKw(ship, 'TAUNT')).toBe(true);
+    expect(g.hasKw(ship, 'RUSH')).toBe(true);
+    expect(g.hasKw(ship, 'WINDFURY')).toBe(true);
+    ship.dead = true;
+    const armor = me.hero.armor;
+    play(g, FILLER);
+    expect(me.hero.armor).toBe(armor + 4);
+  });
+
+  it('「也會在發射時觸發」與發射效果', () => {
+    const g = newGame();
+    const foe = g.s.players[1];
+    const hp = foe.hero.hp;
+    play(g, 'SC_409'); // 飛彈艙：對所有敵人造成 1 點傷害
+    expect(foe.hero.hp).toBe(hp - 1);
+    g.s.players[0].mana = 10;
+    g.apply({ type: 'launch' });
+    expect(foe.hero.hp).toBe(hp - 2);
+  });
+
+  it('發射折扣與艾克索達（免費發射並選擇協定）', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'SC_401'); // 太空工程車：下一次發射消耗減少 (2)
+    expect(g.launchCost(me)).toBe(3);
+    play(g, 'GDB_101'); // 次元核心 2/2 聖盾
+    play(g, 'GDB_120'); // 艾克索達
+    expect(g.s.pendingChoice?.options).toEqual(['GDB_100a', 'GDB_100b', 'GDB_100c']);
+    g.apply({ type: 'choose', index: 0 }); // 緊急修復：獲得星艦生命值兩倍的護甲
+    expect(me.board.some((m) => m.starship)).toBe(true);
+    expect(me.hero.armor).toBe(4);
+    expect(me.launched?.length).toBe(1);
+  });
+
+  it('重力移轉裝置：發射時召喚一艘星艦的複製', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'GDB_466');
+    me.mana = 10;
+    g.apply({ type: 'launch' });
+    expect(me.board.filter((m) => m.starship).length).toBe(2);
+  });
+
+  it('發射過星艦後，雷神號會變形', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const uid = give(g, 'SC_414');
+    play(g, 'GDB_101');
+    g.apply({ type: 'launch' });
+    expect(me.hand.find((h) => h.uid === uid)?.cardId).toBe('SC_414t');
+  });
+
+  it('不祥之兆：2 回合後召喚；建造星艦時立刻召喚', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'GDB_124');
+    expect(me.board.some((m) => m.cardId === 'GDB_124t2')).toBe(false);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(me.board.some((m) => m.cardId === 'GDB_124t2')).toBe(false);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(me.board.filter((m) => m.cardId === 'GDB_124t2').length).toBe(2);
+  });
+
+  it('星際狐狸人只能摧毀星艦或星艦組件', () => {
+    const g = newGame();
+    const piece = put(g, 'GDB_101', 1);
+    const other = put(g, FILLER, 1);
+    const uid = give(g, 'GDB_340');
+    const targets = g.validTargets(g.playTargetReq(uid)!, 0, false);
+    expect(targets).toContain(piece.uid);
+    expect(targets).not.toContain(other.uid);
+  });
+
+  it('薩塔隱蔽力場：每回合的第一張法術消耗減少 (1)', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'GDB_103');
+    const fireball = give(g, 'CS2_029'); // 火球術 4 費
+    const a = me.hand.find((h) => h.uid === fireball)!;
+    expect(g.costOf(me, a)).toBe(3);
+    play(g, 'CS2_029', g.s.players[1].hero.uid);
+    expect(g.costOf(me, a)).toBe(4);
+  });
+});

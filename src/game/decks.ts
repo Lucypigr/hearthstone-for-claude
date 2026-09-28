@@ -65,6 +65,12 @@ function effectValue(e: Effect): number {
     }
     case 'splitDamage':
       return amt(e.amount) * 0.9;
+    case 'launchDiscount':
+      return e.amount * 0.4;
+    case 'launchStarship':
+      return 6;
+    case 'delayed':
+      return e.effects.reduce((x, f) => x + effectValue(f), 0) * 0.7;
     case 'cthunBuff':
       return (e.atk + e.hp) * 0.45 + (e.taunt ? 0.5 : 0);
     case 'heal':
@@ -174,6 +180,8 @@ export function cardQuality(def: CardDef): number {
   }
   // 回音：後期有多餘法力時可以重複使用
   if (def.keywords?.includes('ECHO')) q += 1 + Math.max(0, value - def.cost) * 0.3;
+  // 星艦組件：之後還能組裝成星艦
+  if (def.starshipPiece) q += ((def.attack ?? 0) + (def.health ?? 0)) * 0.3;
   if (def.overload) q -= def.overload * 1.2;
   if (def.costRule) q += 1;
   return q;

@@ -76,6 +76,9 @@ export interface Filter {
   keyword?: Keyword;
   /** 排除玩家選擇的目標（例如「對其他敵人造成 1 點傷害」） */
   excludeChosen?: boolean;
+  /** 星艦或星艦組件 */
+  starship?: boolean;
+  terran?: boolean;
 }
 
 export type TargetExpr =
@@ -115,7 +118,9 @@ export type DynAmount =
   | 'spellsInHand'
   | 'damagedMinions'
   | 'friendlyRace'
-  | 'summonedRace';
+  | 'summonedRace'
+  /** 本場對戰中發射過的星艦數量 */
+  | 'starshipsLaunched';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -130,6 +135,10 @@ export interface Pool {
   keyword?: Keyword;
   hasDeathrattle?: boolean;
   hasBattlecry?: boolean;
+  starshipPiece?: boolean;
+  /** 來自另一個職業（不是你的職業，也不是中立） */
+  otherClass?: boolean;
+  terran?: boolean;
   isSecret?: boolean;
   spellSchool?: string;
 }
@@ -156,6 +165,9 @@ export type Condition =
   | { c: 'deckEmpty' }
   /** 你的克蘇恩至少有 n 點攻擊力 */
   | { c: 'cthunAttack'; n: number }
+  /** 你正在建造星艦（已組裝組件、尚未發射） */
+  | { c: 'buildingStarship' }
+  | { c: 'launchedStarship' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -212,6 +224,12 @@ export type Effect =
   | { e: 'nextCardDiscount'; amount: number }
   /** 賦予你的克蘇恩 +atk/+hp（無論它在哪裡） */
   | { e: 'cthunBuff'; atk: number; hp: number; taunt?: boolean }
+  /** 你的下一次星艦發射消耗減少 */
+  | { e: 'launchDiscount'; amount: number }
+  /** 發射你正在建造的星艦（不消耗法力） */
+  | { e: 'launchStarship' }
+  /** 在 turns 個你的回合後（回合開始時）執行 */
+  | { e: 'delayed'; turns: number; effects: Effect[] }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
@@ -222,7 +240,7 @@ export type Trig =
   | { k: 'deathrattle' }
   | { k: 'turnEnd'; whose: 'mine' | 'opp' | 'each' }
   | { k: 'turnStart'; whose: 'mine' | 'opp' | 'each' }
-  | { k: 'spellCast'; side: Side }
+  | { k: 'spellCast'; side: Side; school?: string }
   | { k: 'cardPlayed'; side: Side; cardType?: CardType; race?: Race; keyword?: Keyword }
   | { k: 'summon'; side: Side; race?: Race }
   | { k: 'minionDied'; side: Side; race?: Race }
@@ -232,6 +250,8 @@ export type Trig =
   | { k: 'heroPower'; side: Side }
   | { k: 'draw'; side: Side }
   | { k: 'frenzy' }
+  /** 星艦發射時（星艦組件的能力） */
+  | { k: 'launch' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -257,8 +277,12 @@ export interface Ability {
 }
 
 export interface Aura {
-  /** friendlyHand：你手牌中的手下（例如「你手牌中的手下具有回音」） */
-  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand';
+  /**
+   * friendlyHand：你手牌中的手下（例如「你手牌中的手下具有回音」）
+   * firstSpellDiscount：你每回合的第一張法術消耗減少 cost
+   */
+  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount';
+  cost?: number;
   race?: Race;
   atk?: number;
   hp?: number;
@@ -333,6 +357,8 @@ export interface CardDef {
   target?: TargetReq;
   chooseOne?: ChooseOneOption[];
   secret?: boolean;
+  /** 條件成立時的消耗（例如「若你正在建造星艦，消耗為 (1)」） */
+  costIf?: { cond: Condition; cost: number };
   /** 動態費用 */
   costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number; race?: Race };
   /** 英雄卡：獲得的護甲與新的英雄能力 */
@@ -340,4 +366,12 @@ export interface CardDef {
   heroPower?: HeroPowerDef;
   /** 由 overrides / custom 加入的卡 */
   custom?: boolean;
+  /** 星艦組件：打出或召喚時組裝進你的星艦 */
+  starshipPiece?: boolean;
+  /** 星艦本體（發射後的手下） */
+  starship?: boolean;
+  /** 星海爭霸：人類（Terran） */
+  terran?: boolean;
+  /** 發射過星艦後，手牌與牌堆中的這張卡會變形成另一張卡 */
+  launchTransform?: string;
 }

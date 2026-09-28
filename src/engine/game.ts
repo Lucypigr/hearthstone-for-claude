@@ -5,6 +5,7 @@
 //   等 UI 呼叫 choose() 後再繼續。
 // ============================================================================
 import { cardClasses, getCard, HEROES, poolCards } from '../cards/registry';
+import { LAUNCH_COST, starshipDef, starshipIdFor } from '../cards/starship';
 import { ZOMBEAST_ID, ZOMBEAST_PARTS, zombeastDef } from '../cards/zombeast';
 import { BASIC_TOTEMS, HERO_POWERS } from './heroes';
 import { nextRandom, pick, randomInt, shuffle } from './rng';
@@ -23,6 +24,7 @@ import {
   type Minion,
   type PlayerId,
   type PlayerState,
+  type StarshipPiece,
   type Weapon,
 } from './state';
 import type {
@@ -274,6 +276,9 @@ export class Game {
       case 'trade':
         this.drive(this.wrap(this.trade(action.handUid)));
         return true;
+      case 'launch':
+        this.drive(this.wrap(this.doLaunch()));
+        return true;
       case 'endTurn':
         this.drive(this.wrap(this.endTurn()));
         return true;
@@ -325,6 +330,8 @@ export class Game {
         if (p.mana < 1 || !p.deck.length) return { ok: false, reason: '法力不足' };
         return { ok: true };
       }
+      case 'launch':
+        return this.canLaunch();
     }
     return { ok: false };
   }
@@ -403,11 +410,13 @@ export class Game {
 
   /** 手牌的卡牌定義（殭屍獸會合成兩個部位） */
   handDef(hc: HandCard): CardDef {
+    if (hc.starship) return starshipDef(hc.cardId, hc.starship);
     return hc.parts ? zombeastDef(hc.parts) : getCard(hc.cardId);
   }
 
   /** 場上手下的卡牌定義 */
   minionDef(m: Minion): CardDef {
+    if (m.starship) return starshipDef(m.cardId, m.starship);
     return m.parts ? zombeastDef(m.parts) : getCard(m.cardId);
   }
 
@@ -473,7 +482,14 @@ export class Game {
 
   costOf(p: PlayerState, hc: HandCard): number {
     const def = this.handDef(hc);
-    let cost = def.cost + hc.costMod;
+    let cost = (def.costIf && this.evalCond(def.costIf.cond, this.baseCtx(p.id)) ? def.costIf.cost : def.cost) + hc.costMod;
+    // 每回合的第一張法術（例如薩塔隱蔽力場）
+    if (def.type === 'SPELL' && !p.spellsThisTurn && p.id === this.s.current) {
+      for (const m of p.board) {
+        if (m.silenced) continue;
+        for (const a of m.auras) if (a.scope === 'firstSpellDiscount') cost -= a.cost ?? 0;
+      }
+    }
     if (def.costRule) {
       let n = 0;
       switch (def.costRule.per) {
@@ -772,6 +788,7 @@ export class Game {
     p.overloadOwed = 0;
     p.heroPower.used = false;
     p.cardsPlayedThisTurn = 0;
+    p.spellsThisTurn = 0;
     p.drawnThisTurn = 0;
     s.deathsThisTurn = 0;
     p.heroAttackedThisTurn = false;
@@ -791,6 +808,16 @@ export class Game {
     yield* this.checkSecrets(pid, 'turnStart', {});
     yield* this.processDeaths();
     if (this.over) return;
+    // 延遲的效果（例如不祥之兆「2 回合後召喚…」）
+    if (p.delayed?.length) {
+      const due = p.delayed.filter((d) => --d.turns <= 0);
+      p.delayed = p.delayed.filter((d) => d.turns > 0);
+      for (const d of due) {
+        yield* this.runEffects(d.effects, { ...this.baseCtx(pid), sourceCardId: d.sourceCardId });
+        yield* this.processDeaths();
+        if (this.over) return;
+      }
+    }
     yield* this.draw(p, 1);
   }
 
@@ -876,6 +903,7 @@ export class Game {
       ctx.sourceUid = m.uid;
       this.recalcAuras();
       this.countSummon(p, m.cardId);
+      this.assemble(p, m);
       if (def.races?.includes('ELEMENTAL')) p.elementalThisTurn = true;
       for (const ab of playAbilities) {
         if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
@@ -900,6 +928,7 @@ export class Game {
         }
       } else this.log(p.id, `${this.name(def.id)}被反制了！`);
       p.spellsCastThisGame++;
+      p.spellsThisTurn = (p.spellsThisTurn ?? 0) + 1;
       yield* this.emit({ k: 'spellCast', player: p.id, cardId: def.id, subject: target, subjectKind: 'char' });
       yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'SPELL', cardId: def.id, echo });
     } else if (def.type === 'HERO') {
@@ -1166,7 +1195,8 @@ export class Game {
 
   makeMinion(owner: PlayerId, cardId: string, hand?: HandCard): Minion {
     const parts = hand?.parts && cardId === ZOMBEAST_ID ? hand.parts : undefined;
-    const def = parts ? zombeastDef(parts) : getCard(cardId);
+    const ship = hand?.starship;
+    const def = ship ? starshipDef(cardId, ship) : parts ? zombeastDef(parts) : getCard(cardId);
     const baseHp = def.health ?? 1;
     const keywords = [...(def.keywords ?? [])];
     // 克蘇恩上場時帶著累積的加成
@@ -1202,6 +1232,7 @@ export class Game {
       playOrder: ++this.s.playCounter,
       dead: false,
       parts,
+      starship: ship,
     };
   }
 
@@ -1214,7 +1245,117 @@ export class Game {
     p.board.splice(pos, 0, m);
     this.recalcAuras();
     this.countSummon(p, cardId);
+    this.assemble(p, m);
     yield* this.emit({ k: 'summon', player: owner, subject: m.uid, races: getCard(cardId).races });
+    return m;
+  }
+
+  // ==========================================================================
+  // 星艦
+  // ==========================================================================
+
+  /** 星艦組件上場時組裝進星艦（記錄當下的攻擊力與生命值） */
+  private assemble(p: PlayerState, m: Minion) {
+    if (!getCard(m.cardId).starshipPiece) return;
+    (p.starship ??= []).push({ id: m.cardId, atk: m.baseAtk + m.atkBuff, hp: m.maxHp - m.auraHp });
+    this.log(p.id, `${this.name(m.cardId)}組裝進了星艦（${p.starship.length} 個組件）`);
+  }
+
+  launchCost(p: PlayerState): number {
+    return Math.max(0, LAUNCH_COST - (p.launchDiscount ?? 0));
+  }
+
+  /** 目前玩家正在建造的星艦的定義（沒有則為 null） */
+  starshipPreview(pid: PlayerId): CardDef | null {
+    const p = this.s.players[pid];
+    return p.starship?.length ? starshipDef(starshipIdFor(p.heroClass), p.starship) : null;
+  }
+
+  canLaunch(): { ok: boolean; reason?: string } {
+    const p = this.me;
+    if (!p.starship?.length) return { ok: false, reason: '還沒有組裝星艦組件' };
+    if (p.board.length >= MAX_BOARD) return { ok: false, reason: '場上已滿' };
+    if (p.mana < this.launchCost(p)) return { ok: false, reason: '法力不足' };
+    return { ok: true };
+  }
+
+  private *doLaunch(): Gen {
+    yield* this.launch(this.s.current, false);
+  }
+
+  /** 再施放一次法術（目標隨機；例如星光反應爐） */
+  private *castRandomly(pid: PlayerId, cardId: string): Gen {
+    const def = getCard(cardId);
+    if (def.type !== 'SPELL') return;
+    const p = this.s.players[pid];
+    if (def.secret) {
+      if (p.secrets.length < MAX_SECRETS && !p.secrets.some((x) => x.cardId === cardId)) p.secrets.push({ uid: this.uid(), cardId });
+      return;
+    }
+    let abilities = def.abilities ?? [];
+    let req = def.target;
+    if (def.chooseOne?.length) {
+      const opt = pick(this.s, def.chooseOne)!;
+      abilities = opt.abilities;
+      req = opt.target;
+    }
+    let chosen: number | null = null;
+    if (req) {
+      const valid = this.validTargets(req, pid, true);
+      if (valid.length) chosen = pick(this.s, valid)!;
+      else if (!req.optional) return;
+    }
+    this.log(pid, `再次施放了${this.name(cardId)}`);
+    const ctx: Ctx = { ...this.baseCtx(pid), sourceCardId: cardId, isSpell: true, chosen };
+    for (const ab of abilities) {
+      if (ab.on.k !== 'play' || (ab.cond && !this.evalCond(ab.cond, ctx))) continue;
+      yield* this.runEffects(ab.effects, ctx);
+      if (this.over) return;
+    }
+  }
+
+  /** 發射星艦：以手下的形式登場，觸發所有組件的發射效果 */
+  private *launch(pid: PlayerId, free: boolean): Gen<Minion | null> {
+    const p = this.s.players[pid];
+    const pieces = p.starship;
+    if (!pieces?.length || p.board.length >= MAX_BOARD) return null;
+    if (!free) {
+      p.mana -= this.launchCost(p);
+      p.launchDiscount = 0;
+    }
+    p.starship = undefined;
+    (p.launched ??= []).push(pieces);
+    const m = yield* this.summonStarship(pid, pieces, true);
+    // 發射過星艦後，手牌與牌堆中的卡會變形（例如雷神號）
+    for (const hc of [...p.hand, ...p.deck]) {
+      const into = getCard(hc.cardId).launchTransform;
+      if (into) hc.cardId = into;
+    }
+    return m;
+  }
+
+  /** 讓星艦登場（launched = 觸發組件的發射效果） */
+  private *summonStarship(pid: PlayerId, pieces: StarshipPiece[], launched: boolean): Gen<Minion | null> {
+    const p = this.s.players[pid];
+    if (p.board.length >= MAX_BOARD) return null;
+    const shipId = starshipIdFor(p.heroClass);
+    const m = this.makeMinion(pid, shipId, { uid: 0, cardId: shipId, costMod: 0, atkBuff: 0, hpBuff: 0, starship: pieces });
+    p.board.push(m);
+    this.recalcAuras();
+    this.countSummon(p, shipId);
+    this.log(pid, `${p.name}${launched ? '發射' : '召喚'}了星艦${this.name(shipId)}（${this.atkOf(m)}/${m.hp}）`);
+    this.fx({ kind: 'play', cardId: shipId, player: pid });
+    if (launched) {
+      const ctx: Ctx = { ...this.baseCtx(pid), sourceUid: m.uid, sourceCardId: shipId };
+      for (const piece of pieces) {
+        for (const ab of getCard(piece.id).abilities ?? []) {
+          if (ab.on.k !== 'launch' || (ab.cond && !this.evalCond(ab.cond, ctx))) continue;
+          yield* this.runEffects(ab.effects, ctx);
+          if (this.over) return m;
+        }
+      }
+    }
+    yield* this.emit({ k: 'summon', player: pid, subject: m.uid, races: getCard(shipId).races });
     return m;
   }
 
@@ -1425,6 +1566,7 @@ export class Game {
       case 'turnStart':
         return trig.whose === 'each' || (trig.whose === 'mine') === (ev.player === owner);
       case 'spellCast':
+        return rel(trig.side) && (!trig.school || (!!ev.cardId && getCard(ev.cardId).spellSchool === trig.school));
       case 'heroPower':
       case 'draw':
         return rel(trig.side);
@@ -1595,6 +1737,8 @@ export class Game {
         return p.board.filter((m) => this.alive(m) && m.uid !== ctx.sourceUid && (!race || (getCard(m.cardId).races ?? []).includes(race))).length;
       case 'summonedRace':
         return race ? (p.summonedRaces[race] ?? 0) : 0;
+      case 'starshipsLaunched':
+        return p.launched?.length ?? 0;
     }
     return 0;
   }
@@ -1618,6 +1762,8 @@ export class Game {
     if (f.maxAttack !== undefined && this.atkOf(c) > f.maxAttack) return false;
     if (f.minAttack !== undefined && this.atkOf(c) < f.minAttack) return false;
     if (f.keyword && (hero || !this.hasKw(c, f.keyword))) return false;
+    if (f.starship && (hero || !(c.starship || getCard(c.cardId).starshipPiece))) return false;
+    if (f.terran && (hero || !getCard(c.cardId).terran)) return false;
     return true;
   }
 
@@ -1737,6 +1883,10 @@ export class Game {
         return p.deck.length === 0;
       case 'cthunAttack':
         return this.cthunAttack(p.id) >= c.n;
+      case 'buildingStarship':
+        return !!p.starship?.length;
+      case 'launchedStarship':
+        return !!p.launched?.length;
       case 'not':
         return !this.evalCond(c.cond, ctx, excludeHandUid);
     }
@@ -2014,6 +2164,7 @@ export class Game {
           owner.board = owner.board.filter((x) => x !== m);
           const hc = this.addToHand(owner, m.cardId);
           if (hc && m.parts) hc.parts = m.parts;
+          if (hc && m.starship) hc.starship = m.starship;
           if (hc && e.costChange) hc.costMod += e.costChange;
           if (hc && owner.id === ctx.controller) ctx.it = { kind: 'hand', uid: hc.uid };
           this.recalcAuras();
@@ -2097,6 +2248,15 @@ export class Game {
       case 'cthunBuff':
         this.cthunBuff(ctx.controller, e.atk, e.hp, !!e.taunt);
         break;
+      case 'launchDiscount':
+        me.launchDiscount = (me.launchDiscount ?? 0) + e.amount;
+        break;
+      case 'launchStarship':
+        yield* this.launch(ctx.controller, true);
+        break;
+      case 'delayed':
+        (me.delayed ??= []).push({ turns: e.turns, effects: e.effects, sourceCardId: ctx.sourceCardId });
+        break;
       case 'shuffle':
         for (let i = 0; i < e.count; i++) me.deck.splice(randomInt(s, me.deck.length + 1), 0, this.newHandCard(e.card));
         break;
@@ -2159,6 +2319,7 @@ export class Game {
 
   private copyStats(src: Minion, m: Minion) {
     m.parts = src.parts;
+    m.starship = src.starship;
     m.baseAtk = src.baseAtk;
     m.atkBuff = src.atkBuff;
     m.baseHp = src.baseHp;
@@ -2300,6 +2461,114 @@ export class Game {
         const t = pick(s, others);
         const into = pick(s, args.cards as string[]);
         if (t && into) this.transform(t.uid, into);
+        break;
+      }
+      // ------------------------------------------------------------ 星艦
+      case 'triggerRandomDeathrattle': {
+        // 觸發一個隨機友方手下的亡語
+        const list = me.board.filter((m) => this.alive(m) && !m.silenced && m.abilities.some((a) => a.on.k === 'deathrattle'));
+        const m = pick(s, list);
+        if (!m) break;
+        this.log(me.id, `觸發了${this.name(m.cardId)}的亡語`);
+        const dctx: Ctx = { ...this.baseCtx(m.owner), sourceUid: m.uid, sourceCardId: m.cardId, sourceSnapshot: m };
+        for (const ab of m.abilities) {
+          if (ab.on.k !== 'deathrattle' || (ab.cond && !this.evalCond(ab.cond, dctx))) continue;
+          yield* this.runEffects(ab.effects, dctx);
+        }
+        break;
+      }
+      case 'attackIt': {
+        // 此手下攻擊觸發事件的對象（不消耗攻擊次數）
+        const src = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
+        const t = ctx.it?.kind === 'char' ? this.char(ctx.it.uid) : null;
+        if (!src || !t || !this.alive(src) || !this.alive(t) || src.owner === t.owner) break;
+        yield* this.doAttack(src.uid, t.uid);
+        src.attacks = Math.max(0, src.attacks - 1);
+        break;
+      }
+      case 'recastIt':
+        if (ctx.itCardId) yield* this.castRandomly(ctx.controller, ctx.itCardId);
+        break;
+      case 'summonCostEqualAttack': {
+        const atk = Math.min(10, this.dyn('selfAttack', ctx));
+        const id = pick(s, this.randomPool({ type: 'MINION', cost: atk }, ctx.controller, false))?.id;
+        if (id) yield* this.doSummon(ctx, ctx.controller, id);
+        break;
+      }
+      case 'exodar': {
+        // 艾克索達：發射星艦，然後選擇一個協定
+        const ship = yield* this.launch(ctx.controller, true);
+        if (!ship) break;
+        const options = ['GDB_100a', 'GDB_100b', 'GDB_100c'];
+        const i = yield { player: ctx.controller, kind: 'discover', options, title: '選擇一個協定' };
+        const alive = this.minion(ship.uid);
+        const atk = alive ? this.atkOf(alive) : this.atkOf(ship);
+        const hp = alive ? alive.hp : ship.hp;
+        switch (options[i ?? 0]) {
+          case 'GDB_100a':
+            me.hero.armor += hp * 2;
+            this.fx({ kind: 'armor', uid: me.hero.uid, amount: hp * 2 });
+            break;
+          case 'GDB_100b':
+            yield* this.runEffect({ e: 'splitDamage', filter: { type: 'character', side: 'enemy' }, amount: atk }, { ...ctx, sourceUid: ship.uid });
+            break;
+          case 'GDB_100c':
+            for (const piece of ship.starship ?? []) {
+              const hc = this.addToHand(me, piece.id);
+              if (hc) hc.costMod = 1 - getCard(piece.id).cost;
+            }
+            break;
+        }
+        break;
+      }
+      case 'relaunchAll':
+        // 吉姆‧雷諾：重新發射本場對戰中發射過的每一艘星艦
+        for (const pieces of [...(me.launched ?? [])]) {
+          if (me.board.length >= MAX_BOARD) break;
+          yield* this.summonStarship(me.id, pieces, true);
+          if (this.over) return;
+        }
+        break;
+      case 'warpDrive': {
+        const drawn = yield* this.draw(me, 2);
+        if (me.starship?.length) for (const hc of drawn) hc.costMod -= 2;
+        break;
+      }
+      case 'suffocate': {
+        const m = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!m) break;
+        if (me.starship?.length) {
+          const n = pick(s, this.adjacent(m));
+          if (n) n.dead = true;
+        }
+        m.dead = true;
+        break;
+      }
+      case 'othaar': {
+        const spells = shuffle(s, this.randomPool({ type: 'SPELL', spellSchool: 'ARCANE' }, ctx.controller, false).map((c) => c.id)).slice(0, 3);
+        for (const id of spells) {
+          const hc = this.addToHand(me, id);
+          if (hc) hc.costMod -= 2;
+        }
+        break;
+      }
+      case 'destroyLowestInOppHand': {
+        if (!foe.hand.length) break;
+        const low = Math.min(...foe.hand.map((h) => this.costOf(foe, h)));
+        const hc = pick(s, foe.hand.filter((h) => this.costOf(foe, h) === low));
+        if (!hc) break;
+        foe.hand = foe.hand.filter((h) => h !== hc);
+        this.log(me.id, `摧毀了對手手牌中的${this.name(hc.cardId)}`);
+        break;
+      }
+      case 'siegeTank': {
+        // 作戰中的攻城坦克：對隨機敵方手下造成 10 點傷害，多餘的傷害打到敵方英雄
+        const t = pick(s, foe.board.filter((m) => this.alive(m)));
+        if (!t) break;
+        const excess = Math.max(0, 10 - t.hp);
+        const src = this.dmgSource(ctx);
+        yield* this.damage(src, t.uid, 10);
+        if (excess > 0) yield* this.damage(src, foe.hero.uid, excess);
         break;
       }
       case 'bladeOfCthun': {

@@ -192,6 +192,7 @@ export interface ParsedCard {
   costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number; race?: Race };
   /** 引用到的衍生卡 ID */
   tokens: string[];
+  starshipPiece?: boolean;
 }
 
 interface Ctx {
@@ -649,6 +650,12 @@ function amountOf(s: string): { amount: number; spell: boolean } {
 }
 
 const ACTIONS: ActionRule[] = [
+  // ----- 星艦 -----
+  (s) => {
+    const m = /^(?:[Yy]our|and your) next Starship launch costs \((\d+)\) less/.exec(s);
+    if (!m) return null;
+    return { effects: [{ e: 'launchDiscount', amount: Number(m[1]) }], rest: s.slice(m[0].length) };
+  },
   // ----- 克蘇恩 -----
   (s) => {
     const m = /^(?:[Gg]ive|and give) your C'Thun \+(\d+)\/\+(\d+)( and Taunt)? \(wherever it is\)/.exec(s);
@@ -1156,6 +1163,8 @@ const CONDITIONS: [RegExp, (m: RegExpExecArray) => Condition][] = [
   [/^you have (\d+) or (more|fewer|less) cards in (?:your )?hand/, (m) => ({ c: 'handSize', op: m[2] === 'more' ? '>=' : '<=', n: Number(m[1]) })],
   [/^your deck is empty/, () => ({ c: 'deckEmpty' })],
   [/^your C'Thun has at least (\d+) Attack/, (m) => ({ c: 'cthunAttack', n: Number(m[1]) })],
+  [/^you're building a Starship/, () => ({ c: 'buildingStarship' })],
+  [/^you launched a Starship this game/, () => ({ c: 'launchedStarship' })],
   [/^your hero has (\d+) or (less|more) Health/, (m) => ({ c: 'heroHealth', op: m[2] === 'less' ? '<=' : '>=', n: Number(m[1]) })],
   [/^(?:it|that minion) (?:dies|is destroyed)/, () => ({ c: 'itDied' })],
   [/^(?:it|that minion) survives/, () => ({ c: 'itAlive' })],
@@ -1199,6 +1208,7 @@ const TRIGGERS: TriggerRule[] = [
   { re: /^Deathrattle: /, build: () => ({ on: { k: 'deathrattle' } }) },
   { re: /^Spellburst: /, build: () => ({ on: { k: 'spellCast', side: 'friendly' }, once: true }) },
   { re: /^Inspire: /, build: () => ({ on: { k: 'heroPower', side: 'friendly' } }) },
+  { re: /^When this is launched, /, build: () => ({ on: { k: 'launch' } }) },
   { re: /^Frenzy: /, build: () => ({ on: { k: 'frenzy' }, once: true }) },
   { re: /^At the end of your turn, /, build: () => ({ on: { k: 'turnEnd', whose: 'mine' } }) },
   { re: /^At the end of your opponent's turn, /, build: () => ({ on: { k: 'turnEnd', whose: 'opp' } }) },
@@ -1413,6 +1423,21 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
   });
 
   for (let raw of sentences) {
+    // 星艦組件（可能在句首或句尾）
+    const piece = /^Starship Piece(?: |$)|(?:^| )Starship Piece$/.exec(raw);
+    if (piece) {
+      out.starshipPiece = true;
+      raw = (raw.slice(0, piece.index) + ' ' + raw.slice(piece.index + piece[0].length)).trim();
+      if (!raw) continue;
+    }
+    // 「也會在發射時觸發」：戰吼在星艦發射時再觸發一次
+    if (/^Also triggers on launch\.?$/.test(raw)) {
+      const plays = out.abilities.filter((a) => a.on.k === 'play');
+      if (!plays.length) fail('發射觸發無對應戰吼');
+      for (const a of plays) out.abilities.push({ ...a, on: { k: 'launch' } });
+      current = null;
+      continue;
+    }
     // 句首的關鍵字（如「嘲諷 戰吼：…」）
     for (;;) {
       const kl = new RegExp(`^(${KEYWORD_RE}|Tradeable|Echo)(?:,? |$)`).exec(raw);

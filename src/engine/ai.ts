@@ -35,6 +35,7 @@ export function legalActions(g: Game): Action[] {
       else out.push({ type: 'heroPower', option });
     }
   }
+  if (g.canLaunch().ok) out.push({ type: 'launch' });
   for (const c of [p.hero, ...p.board]) {
     if (!g.canAttack(c.uid)) continue;
     for (const t of g.attackTargets(c.uid)) out.push({ type: 'attack', attacker: c.uid, target: t });
@@ -92,6 +93,9 @@ export function evaluate(g: Game, me: PlayerId): number {
   if (a.weapon) score += a.weapon.atk * Math.min(a.weapon.durability, 3) * 0.6;
   if (b.weapon) score -= b.weapon.atk * Math.min(b.weapon.durability, 3) * 0.6;
   score += a.secrets.length * 2 - b.secrets.length * 2;
+  // 正在建造的星艦（發射後會變成一個大手下）
+  const ship = (p: typeof a) => (p.starship ?? []).reduce((x, c) => x + c.atk + c.hp, 0) * 0.5;
+  score += ship(a) - ship(b) * 0.8;
   // 打出英雄卡後的強化英雄能力
   if (a.heroPower.heroCard) score += 6;
   if (b.heroPower.heroCard) score -= 6;
