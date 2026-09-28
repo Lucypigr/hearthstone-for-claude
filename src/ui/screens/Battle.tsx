@@ -146,20 +146,35 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     return () => window.clearTimeout(t);
   }, [banner]);
 
-  // 攻擊動畫：攻擊者飛向目標撞擊後返回。已經死亡的一方用上一次畫面的殘影來播放。
+  // 攻擊動畫：攻擊者飛向目標撞擊後返回；死亡的手下碎裂。
+  // 已經從畫面消失的角色，用上一次畫面的快照來播放。
   const battleRef = useRef<HTMLDivElement>(null);
-  const snapshot = useRef(new Map<number, { rect: DOMRect; html: string }>());
-  const lastAttackFx = useRef<number | null>(null);
+  const snapshot = useRef(new Map<number, Snap>());
+  const lastAnimFx = useRef<number | null>(null);
   useLayoutEffect(() => {
     const root = battleRef.current;
     if (!root || !s) return;
-    const attacks = s.fx.filter((f) => f.kind === 'attack' && f.id > (lastAttackFx.current ?? Infinity));
+    const fresh = s.fx.filter((f) => f.id > (lastAnimFx.current ?? Infinity));
     const newest = s.fx.length ? s.fx[s.fx.length - 1].id : 0;
-    lastAttackFx.current = Math.max(lastAttackFx.current ?? newest, newest);
-    attacks.forEach((f, i) => {
-      if (f.uid !== undefined && f.target !== undefined) playAttack(root, snapshot.current, f.uid, f.target, i * 600);
-    });
-    const next = new Map<number, { rect: DOMRect; html: string }>();
+    lastAnimFx.current = Math.max(lastAnimFx.current ?? newest, newest);
+    const dying = new Set(fresh.filter((f) => f.kind === 'death' && f.uid !== undefined).map((f) => f.uid!));
+    // 死在攻擊中的手下：撞擊結束後才碎裂（殘影留到那時）
+    const shatterAt = new Map<number, { at: number; ghost?: HTMLElement }>();
+    fresh
+      .filter((f) => f.kind === 'attack' && f.uid !== undefined && f.target !== undefined)
+      .forEach((f, i) => {
+        const r = playAttack(root, snapshot.current, f.uid!, f.target!, i * 600, dying);
+        for (const [uid, ghost] of r.ghosts) shatterAt.set(uid, { at: r.end, ghost });
+        for (const uid of [f.uid!, f.target!]) if (dying.has(uid) && !shatterAt.has(uid)) shatterAt.set(uid, { at: r.end });
+      });
+    let k = 0;
+    for (const uid of dying) {
+      const snap = snapshot.current.get(uid);
+      const plan = shatterAt.get(uid);
+      if (snap) shatter(root, snap, plan?.at ?? 150 + 90 * k++, plan?.ghost);
+      else plan?.ghost?.remove();
+    }
+    const next = new Map<number, Snap>();
     root.querySelectorAll<HTMLElement>('[data-uid]').forEach((el) => next.set(Number(el.dataset.uid), { rect: el.getBoundingClientRect(), html: el.outerHTML }));
     snapshot.current = next;
   });
@@ -739,17 +754,28 @@ function Slot({ onClick }: { onClick: () => void }) {
   );
 }
 
+/** 角色在上一次畫面中的位置與外觀 */
+type Snap = { rect: DOMRect; html: string };
+
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** 從快照複製出角色的畫面元素 */
+function cloneSnap(snap: Snap): HTMLElement | null {
+  const holder = document.createElement('div');
+  holder.innerHTML = snap.html;
+  const el = holder.firstElementChild as HTMLElement | null;
+  el?.removeAttribute('data-uid');
+  return el;
+}
+
 /** 找到角色的畫面元素；已經消失的話，用最後的畫面做一個殘影 */
-function charElement(root: HTMLElement, snap: Map<number, { rect: DOMRect; html: string }>, uid: number): { el: HTMLElement; ghost: boolean } | null {
+function charElement(root: HTMLElement, snap: Map<number, Snap>, uid: number): { el: HTMLElement; ghost: boolean } | null {
   const live = root.querySelector<HTMLElement>(`[data-uid="${uid}"]`);
   if (live) return { el: live, ghost: false };
   const old = snap.get(uid);
   if (!old) return null;
-  const holder = document.createElement('div');
-  holder.innerHTML = old.html;
-  const el = holder.firstElementChild as HTMLElement | null;
+  const el = cloneSnap(old);
   if (!el) return null;
-  el.removeAttribute('data-uid');
   Object.assign(el.style, {
     position: 'fixed',
     left: `${old.rect.left}px`,
@@ -764,15 +790,26 @@ function charElement(root: HTMLElement, snap: Map<number, { rect: DOMRect; html:
   return { el, ghost: true };
 }
 
-/** 攻擊動畫：攻擊者先往後蓄力，再衝向目標撞擊，最後返回；目標在撞擊時閃爍搖晃 */
-function playAttack(root: HTMLElement, snap: Map<number, { rect: DOMRect; html: string }>, attackerUid: number, targetUid: number, delay: number) {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+/**
+ * 攻擊動畫：攻擊者先往後蓄力，再衝向目標撞擊，最後返回；目標在撞擊時閃爍搖晃。
+ * 回傳動畫結束的時間，以及要留給碎裂動畫接手的殘影（dying 中的角色）。
+ */
+function playAttack(
+  root: HTMLElement,
+  snap: Map<number, Snap>,
+  attackerUid: number,
+  targetUid: number,
+  delay: number,
+  dying: Set<number>,
+): { end: number; ghosts: Map<number, HTMLElement> } {
+  const ghosts = new Map<number, HTMLElement>();
+  if (reducedMotion()) return { end: delay, ghosts };
   const att = charElement(root, snap, attackerUid);
   const tgt = charElement(root, snap, targetUid);
   if (!att || !tgt || typeof att.el.animate !== 'function') {
     if (att?.ghost) att.el.remove();
     if (tgt?.ghost) tgt.el.remove();
-    return;
+    return { end: delay, ghosts };
   }
   const a = att.el.getBoundingClientRect();
   const b = tgt.el.getBoundingClientRect();
@@ -802,16 +839,134 @@ function playAttack(root: HTMLElement, snap: Map<number, { rect: DOMRect; html: 
     ],
     { duration: 360, delay: delay + DURATION * IMPACT },
   );
-  const fadeGhost = (x: { el: HTMLElement; ghost: boolean }, after: Animation) => {
+  // 殘影：死亡的交給碎裂動畫；其他的撞擊後淡出
+  const handleGhost = (x: { el: HTMLElement; ghost: boolean }, uid: number, after: Animation) => {
     if (!x.ghost) return;
+    if (dying.has(uid)) {
+      ghosts.set(uid, x.el);
+      return;
+    }
     after.onfinish = () => x.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(0.9)' }], { duration: 260 }).finished.then(() => x.el.remove(), () => x.el.remove());
     after.oncancel = () => x.el.remove();
   };
   lunge.onfinish = () => {
     att.el.style.zIndex = prevZ;
   };
-  fadeGhost(tgt, hit);
-  if (att.ghost) fadeGhost(att, lunge);
+  handleGhost(tgt, targetUid, hit);
+  handleGhost(att, attackerUid, lunge);
+  return { end: delay + DURATION, ghosts };
+}
+
+/** 手下死亡：卡片先出現裂痕，接著碎成好幾塊往外飛散並淡出 */
+function shatter(root: HTMLElement, snap: Snap, delay: number, ghost?: HTMLElement) {
+  if (reducedMotion() || typeof root.animate !== 'function') {
+    ghost?.remove();
+    return;
+  }
+  const { rect } = snap;
+  const box = document.createElement('div');
+  Object.assign(box.style, {
+    position: 'fixed',
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    pointerEvents: 'none',
+    zIndex: '55',
+    // 有殘影時，等殘影播完撞擊才換成碎片；否則立刻顯示完整的卡片（碎片在 delay 前保持原狀）
+    visibility: ghost ? 'hidden' : 'visible',
+  });
+  root.appendChild(box);
+
+  // 裂痕中心與邊緣上的點（含四個角），把卡片切成以中心為頂點的三角形碎片
+  const cx = 40 + Math.random() * 20;
+  const cy = 35 + Math.random() * 25;
+  const params = [0, 1, 2, 3];
+  for (let i = 0; i < 8; i++) params.push(Math.random() * 4);
+  params.sort((a, b) => a - b);
+  const edge = (t: number): [number, number] => {
+    const side = Math.floor(t) % 4;
+    const u = (t - Math.floor(t)) * 100;
+    return side === 0 ? [u, 0] : side === 1 ? [100, u] : side === 2 ? [100 - u, 100] : [0, 100 - u];
+  };
+  const pts = params.map(edge);
+
+  // 裂痕線
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  Object.assign(svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '2', overflow: 'visible' });
+  for (const [x, y] of pts) {
+    const line = document.createElementNS(svgNS, 'line');
+    line.setAttribute('x1', String(cx));
+    line.setAttribute('y1', String(cy));
+    line.setAttribute('x2', String(x));
+    line.setAttribute('y2', String(y));
+    line.setAttribute('stroke', '#fff6d8');
+    line.setAttribute('stroke-width', '1.6');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+  }
+
+  const DURATION = 820;
+  const CRACK = 0.22;
+  const anims: Animation[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const piece = cloneSnap(snap);
+    if (!piece) continue;
+    Object.assign(piece.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
+      margin: '0',
+      clipPath: `polygon(${cx}% ${cy}%, ${a[0]}% ${a[1]}%, ${b[0]}% ${b[1]}%)`,
+    });
+    box.appendChild(piece);
+    // 往碎片重心的方向飛出，再加一點重力
+    const gx = (cx + a[0] + b[0]) / 3 - cx;
+    const gy = (cy + a[1] + b[1]) / 3 - cy;
+    const len = Math.hypot(gx, gy) || 1;
+    const dist = rect.width * (0.45 + Math.random() * 0.5);
+    const vx = (gx / len) * dist;
+    const vy = (gy / len) * dist + rect.height * 0.35;
+    const rot = (Math.random() - 0.5) * 90;
+    const anim = piece.animate(
+      [
+        { transform: 'none', opacity: 1, filter: 'none' },
+        { transform: `translate(${(gx / len) * 2}px, ${(gy / len) * 2}px)`, opacity: 1, filter: 'brightness(1.5)', offset: CRACK },
+        { transform: `translate(${vx}px, ${vy}px) rotate(${rot}deg) scale(0.8)`, opacity: 0, filter: 'brightness(0.8)' },
+      ],
+      { duration: DURATION, delay, easing: 'cubic-bezier(.25,.6,.35,1)', fill: 'both' },
+    );
+    anims.push(anim);
+  }
+  box.appendChild(svg);
+  const crack = svg.animate(
+    [
+      { opacity: 0 },
+      { opacity: 1, offset: 0.08 },
+      { opacity: 1, offset: CRACK },
+      { opacity: 0, offset: CRACK + 0.08 },
+      { opacity: 0 },
+    ],
+    { duration: DURATION, delay, fill: 'both' },
+  );
+  anims.push(crack);
+  // 殘影播完撞擊後換成碎片；全部碎片的動畫結束後移除
+  const swap = box.animate([{ opacity: 1 }, { opacity: 1 }], { duration: Math.max(1, delay) });
+  swap.onfinish = () => {
+    box.style.visibility = 'visible';
+    ghost?.remove();
+  };
+  Promise.all(anims.map((a) => a.finished)).then(
+    () => box.remove(),
+    () => box.remove(),
+  );
 }
 
 function MinionView({
