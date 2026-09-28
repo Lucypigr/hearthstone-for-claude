@@ -104,6 +104,8 @@ export interface PlayerState {
   board: Minion[];
   secrets: SecretInst[];
   graveyard: string[];
+  /** 本場對戰中你的克蘇恩累積獲得的加成（無論它在哪裡） */
+  cthun?: { atk: number; hp: number; taunt: boolean };
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;

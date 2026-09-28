@@ -198,6 +198,29 @@ export const OVERRIDES: Record<string, Override> = {
   // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
   ICC_828t: {},
 
+  // ------------------------------------------------------------------ 克蘇恩
+  // 克蘇恩：造成等同其攻擊力的傷害，隨機分配到所有敵人身上
+  OG_280: {
+    abilities: play({ e: 'splitDamage', filter: { type: 'character', side: 'enemy' }, amount: { dyn: 'selfAttack' } }),
+  },
+  // 克蘇恩之刃：消滅一個手下，把它的攻擊力和生命值加到你的克蘇恩
+  OG_282: {
+    target: { filter: { type: 'minion', side: 'any' }, optional: true },
+    abilities: play({ e: 'custom', fn: 'bladeOfCthun' }),
+  },
+  // 厄運召喚者：克蘇恩 +2/+2，若它已死亡則洗入牌堆
+  OG_255: {
+    abilities: play({ e: 'cthunBuff', atk: 2, hp: 2 }, { e: 'custom', fn: 'cthunRevive' }),
+  },
+  // 雙子帝王維克洛爾：克蘇恩至少 10 攻擊力時，召喚維克尼拉斯
+  OG_131: {
+    keywords: ['TAUNT'],
+    abilities: [{ on: { k: 'play' }, cond: { c: 'cthunAttack', n: 10 }, effects: [{ e: 'summon', card: 'OG_319', count: 1, who: 'self' }] }],
+    tokens: ['OG_319'],
+  },
+  // 克蘇恩眼柄：克蘇恩獲得攻擊力或生命值時，它也會獲得（由引擎處理）
+  WON_144: { keywords: ['TAUNT', 'LIFESTEAL'] },
+
   // ------------------------------------------------------------------ 回音
   // 葛林達‧鴉羽：你手牌中的手下具有回音
   GIL_618: { auras: [{ scope: 'friendlyHand', keywords: ['ECHO'] }] },

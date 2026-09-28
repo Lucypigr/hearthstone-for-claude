@@ -154,11 +154,13 @@ export type Condition =
   | { c: 'playedElementalLastTurn' }
   | { c: 'noDuplicates' }
   | { c: 'deckEmpty' }
+  /** 你的克蘇恩至少有 n 點攻擊力 */
+  | { c: 'cthunAttack'; n: number }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
   | { e: 'damage'; target: TargetExpr; amount: Amount; spell?: boolean }
-  | { e: 'splitDamage'; filter: Filter; amount: number; spell?: boolean }
+  | { e: 'splitDamage'; filter: Filter; amount: Amount; spell?: boolean }
   | { e: 'heal'; target: TargetExpr; amount: Amount }
   | { e: 'fullHeal'; target: TargetExpr }
   | {
@@ -208,6 +210,8 @@ export type Effect =
   | { e: 'grant'; keyword: Keyword; race?: Race }
   /** 你本回合打出的下一張牌消耗減少 */
   | { e: 'nextCardDiscount'; amount: number }
+  /** 賦予你的克蘇恩 +atk/+hp（無論它在哪裡） */
+  | { e: 'cthunBuff'; atk: number; hp: number; taunt?: boolean }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }

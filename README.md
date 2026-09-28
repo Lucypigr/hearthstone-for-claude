@@ -40,7 +40,7 @@ npm run cards
 1. 下載 HearthSim 的 `CardDefs.xml`（快取在 `.cache/`）
 2. 取出所有可收藏卡（手下、法術、武器），同名卡只保留一個版本
 3. 把**英文卡牌敘述解析成效果 DSL**（`src/cards/parser.ts`），例如「Battlecry: Deal 3 damage.」→ `{ on: play, effects: [damage 3 → 選擇目標] }`
-4. **只收錄效果能完整執行的卡**，避免遊戲裡出現效果錯誤的卡；目前約 1,690 張
+4. **只收錄效果能完整執行的卡**，避免遊戲裡出現效果錯誤的卡；目前約 1,710 張
 5. 顯示用的卡名與敘述使用官方繁體中文（zhTW）
 
 無法支援的卡與原因會寫到 `.cache/unsupported.txt`，方便之後補上。
