@@ -15,6 +15,7 @@
   --red: #d24a3c;
   --blue: #4a8fe0;
   --mana: #2f7bea;
+  --echo: #9b6ce0;
   font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
@@ -1464,6 +1465,27 @@ textarea {
 
 .hand-slot .card {
   cursor: pointer;
+}
+
+/* 回音：打出後產生的複製只能在本回合使用 */
+.hand-slot.echo-copy .card {
+  opacity: 0.82;
+  filter: drop-shadow(0 0 6px var(--echo)) saturate(0.85);
+}
+
+.echo-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--echo);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* 浮動視窗 */

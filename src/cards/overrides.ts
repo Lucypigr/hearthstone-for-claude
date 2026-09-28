@@ -197,6 +197,14 @@ export const OVERRIDES: Record<string, Override> = {
   },
   // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
   ICC_828t: {},
-  // 狩獵獒犬：回響尚未支援，只保留突襲
-  ICC_828t5: { keywords: ['RUSH'] },
+
+  // ------------------------------------------------------------------ 回音
+  // 葛林達‧鴉羽：你手牌中的手下具有回音
+  GIL_618: { auras: [{ scope: 'friendlyHand', keywords: ['ECHO'] }] },
+  // 不穩定的進化：把一個友方手下變成隨機一個費用多 (1) 的手下
+  LOOT_504: {
+    keywords: ['ECHO'],
+    target: friendlyMinion,
+    abilities: play({ e: 'evolve', target: { t: 'chosen' }, amount: 1 }),
+  },
 };

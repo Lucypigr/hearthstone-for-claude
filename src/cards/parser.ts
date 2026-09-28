@@ -46,6 +46,7 @@ const KEYWORD_WORDS: Record<string, Keyword> = {
   elusive: 'ELUSIVE',
   immune: 'IMMUNE',
   tradeable: 'TRADEABLE',
+  echo: 'ECHO',
 };
 
 const KEYWORD_RE = '(?:Mega-Windfury|Divine Shield|Taunt|Charge|Rush|Windfury|Stealth|Poisonous|Lifesteal|Reborn|Elusive|Immune)';
@@ -138,6 +139,8 @@ export function normalizeText(en: string): string {
     .replace(/\s+/g, ' ')
     .replace(/\bALL\b/g, 'all')
     .replace(/\s*\(\+\d+ Attack\/\+\d+ Health\)/g, '')
+    // 「加入手牌（來自對手的職業）」→ 一般的寫法
+    .replace(/ to your hand \(from your opponent's class\)/g, " from your opponent's class to your hand")
     .trim();
   return t;
 }
@@ -520,8 +523,8 @@ function parseBuff(s: string): BuffParse | null {
     out.hp = Number(m[2]);
     s = s.slice(m[0].length);
     consumed = true;
-  } else if ((m = /^\+(\d+) Attack/.exec(s))) {
-    out.atk = Number(m[1]);
+  } else if ((m = /^([+-])(\d+) Attack/.exec(s))) {
+    out.atk = Number(m[2]) * (m[1] === '-' ? -1 : 1);
     s = s.slice(m[0].length);
     consumed = true;
   } else if ((m = /^\+(\d+) Health/.exec(s))) {
@@ -1220,6 +1223,7 @@ const TRIGGERS: TriggerRule[] = [
     build: (m) => ({ on: { k: 'cardPlayed', side: 'friendly', race: race(m[1]) } }),
   },
   { re: /^(?:Whenever|After) you play a card, /, build: () => ({ on: { k: 'cardPlayed', side: 'friendly' } }) },
+  { re: /^(?:Whenever|After) you play an Echo card, /, build: () => ({ on: { k: 'cardPlayed', side: 'friendly', keyword: 'ECHO' } }) },
   { re: /^(?:Whenever|After) you play a minion, /, build: () => ({ on: { k: 'cardPlayed', side: 'friendly', cardType: 'MINION' } }) },
   { re: /^(?:Whenever|After) your opponent plays a card, /, build: () => ({ on: { k: 'cardPlayed', side: 'enemy' } }) },
   { re: /^(?:Whenever|After) your opponent plays a minion, /, build: () => ({ on: { k: 'cardPlayed', side: 'enemy', cardType: 'MINION' } }) },
@@ -1402,7 +1406,7 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
   for (let raw of sentences) {
     // 句首的關鍵字（如「嘲諷 戰吼：…」）
     for (;;) {
-      const kl = new RegExp(`^(${KEYWORD_RE}|Tradeable)(?:,? |$)`).exec(raw);
+      const kl = new RegExp(`^(${KEYWORD_RE}|Tradeable|Echo)(?:,? |$)`).exec(raw);
       if (!kl) break;
       const kw = KEYWORD_WORDS[kl[1].toLowerCase()];
       // 「Stealth until your next turn」之類的句子不是單純關鍵字

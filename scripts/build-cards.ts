@@ -84,7 +84,6 @@ const UNSUPPORTED_TAGS = [
   'SIDE_QUEST',
   'QUESTLINE',
   'MAGNETIC',
-  'ECHO',
   'CORRUPT',
   'DORMANT',
   'INFUSE',
@@ -322,7 +321,7 @@ async function main() {
         return null;
       }
     }
-    if (type === 'SPELL' && parsed.keywords.length && !parsed.keywords.every((k) => k === 'LIFESTEAL' || k === 'TRADEABLE')) {
+    if (type === 'SPELL' && parsed.keywords.length && !parsed.keywords.every((k) => k === 'LIFESTEAL' || k === 'TRADEABLE' || k === 'ECHO')) {
       if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: '法術含手下關鍵字' });
       return null;
     }
