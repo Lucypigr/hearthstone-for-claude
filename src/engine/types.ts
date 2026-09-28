@@ -125,7 +125,13 @@ export type DynAmount =
   | 'starshipsLaunched'
   /** 死亡騎士目前的屍體數 / 本場對戰中花費的屍體數 */
   | 'corpses'
-  | 'corpsesSpent';
+  | 'corpsesSpent'
+  /** 本場對戰中死亡的手下總數（雙方） */
+  | 'deathsThisGame'
+  /** 目前被冰凍的角色數 */
+  | 'frozenChars'
+  /** 本場對戰中洗進對手牌堆的瘟疫數 */
+  | 'plaguesShuffled';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -148,6 +154,8 @@ export interface Pool {
   terran?: boolean;
   isSecret?: boolean;
   spellSchool?: string;
+  /** 會花費屍體的卡 */
+  spendsCorpses?: boolean;
 }
 
 export type Condition =
@@ -175,6 +183,17 @@ export type Condition =
   /** 你正在建造星艦（已組裝組件、尚未發射） */
   | { c: 'buildingStarship' }
   | { c: 'launchedStarship' }
+  /** 場上有被冰凍的角色 */
+  | { c: 'anyFrozen' }
+  /** 本回合有友方手下死亡 */
+  | { c: 'friendlyDiedThisTurn' }
+  /** 你上個回合結束後有友方不死族死亡 */
+  | { c: 'undeadDiedSinceLastTurn' }
+  /** 你的英雄本回合生命值有變化 / 被治療過 */
+  | { c: 'heroHealthChanged' }
+  | { c: 'heroHealed' }
+  /** 「它」有亡語 */
+  | { c: 'itHasDeathrattle' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -220,7 +239,7 @@ export type Effect =
   | { e: 'discard'; count: number }
   | { e: 'destroyWeapon'; who: 'self' | 'opponent' }
   | { e: 'weaponBuff'; atk?: number; dur?: number }
-  | { e: 'shuffle'; card: string; count: number }
+  | { e: 'shuffle'; card: string; count: number; who?: 'self' | 'opponent' }
   | { e: 'handBuff'; atk: number; hp: number; scope: 'all' | 'random'; race?: Race }
   | { e: 'shuffleCopy'; target: TargetExpr; count: number }
   /** 變成隨機一個費用多 amount 的手下 */
@@ -251,6 +270,20 @@ export type Effect =
   /** 號召：從你的牌堆召喚符合條件的手下 */
   | { e: 'recruit'; count: number; race?: Race; cost?: number; maxCost?: number }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
+  /** 對手的手下在他的下個回合消耗增加 */
+  | { e: 'minionTax'; amount: number }
+  /** 你本回合的下一張法術消耗減少 */
+  | { e: 'nextSpellDiscount'; amount: number }
+  /** 本場對戰剩下的時間都有效的能力（掛在玩家身上，不會被沉默） */
+  | { e: 'eternal'; ability: Ability }
+  /** 英雄獲得生命值上限（並回復等量生命） */
+  | { e: 'heroMaxHealth'; amount: number }
+  /** 英雄能力可以再使用一次 */
+  | { e: 'refreshHeroPower' }
+  /** 本場對戰中你的手下 +atk 攻擊力 */
+  | { e: 'minionAtkBonus'; amount: number }
+  /** 你打出的下一張牌改為消耗屍體 */
+  | { e: 'nextCardCostsCorpses' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
   | { e: 'custom'; fn: string; args?: Record<string, unknown> };
@@ -409,4 +442,21 @@ export interface CardDef {
   runes?: Runes;
   /** 死亡時不會留下屍體（屍體喚起的手下） */
   noCorpse?: boolean;
+  /** 消耗生命值而不是法力 */
+  costsHealth?: boolean;
+  /** 條件成立時消耗生命值而不是法力 */
+  costsHealthIf?: Condition;
+  /** 消耗屍體而不是法力 */
+  costsCorpses?: boolean;
+  /** 抽到時施放（施放後再抽一張牌） */
+  castsWhenDrawn?: boolean;
+  /** 場上時的特殊規則 */
+  flags?: MinionFlag[];
 }
+
+/**
+ * noTurnDraw：你的回合開始時不再抽牌
+ * enemyNoHeal：敵方角色無法被治療
+ * doubleCorpses：你獲得的屍體加倍
+ */
+export type MinionFlag = 'noTurnDraw' | 'enemyNoHeal' | 'doubleCorpses';

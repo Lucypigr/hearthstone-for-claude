@@ -869,3 +869,177 @@ describe('死亡騎士：屍體', () => {
     for (const id of opts) expect(getCard(id).runes?.blood).toBeGreaterThan(0);
   });
 });
+
+describe('死亡騎士：第二批機制', () => {
+  function dk(): Game {
+    const deck = Array(30).fill(FILLER);
+    const g = Game.create({ decks: [deck, deck], classes: ['DEATHKNIGHT', 'WARRIOR'], names: ['A', 'B'], ai: [false, false], seed: 7, first: 0 });
+    g.apply({ type: 'mulligan', player: 0, replace: [] });
+    g.apply({ type: 'mulligan', player: 1, replace: [] });
+    return g;
+  }
+
+  it('消耗生命值的卡：不花法力，改扣英雄生命值', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    const uid = give(g, 'TIME_612'); // 血液導引（3）
+    const hp = me.hero.hp;
+    expect(g.costKind(me, me.hand.find((h) => h.uid === uid)!)).toBe('health');
+    expect(g.apply({ type: 'play', handUid: uid })).toBe(true);
+    expect(me.hero.hp).toBe(hp - 3);
+    expect(me.mana).toBe(10);
+    expect(g.s.pendingChoice?.options.length).toBe(3);
+  });
+
+  it('消耗屍體的卡：屍體不夠不能打出', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    const uid = give(g, 'TLC_436'); // 復甦翼手龍（5 具屍體）
+    expect(g.canPlay(uid).ok).toBe(false);
+    me.corpses = 6;
+    expect(g.apply({ type: 'play', handUid: uid })).toBe(true);
+    expect(me.corpses).toBe(1);
+    expect(me.mana).toBe(10);
+  });
+
+  it('抽到時施放：穀物箱召喚不死的農民，並再抽一張牌', () => {
+    const g = dk();
+    const foe = g.s.players[1];
+    foe.deck.push(g.newHandCard('RLK_039t'));
+    const hand = foe.hand.length;
+    g.apply({ type: 'endTurn' });
+    expect(foe.board.map((m) => m.cardId)).toEqual(['RLK_070t']);
+    expect(foe.hand.length).toBe(hand + 1);
+    expect(foe.hand.some((h) => h.cardId === 'RLK_039t')).toBe(false);
+  });
+
+  it('瘟疫：洗進對手牌堆，縛練守護者依數量減費', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    const kvaldir = put(g, 'TTN_450', 0);
+    const deck = g.s.players[1].deck.length;
+    play(g, 'CS2_029', kvaldir.uid); // 火球術打死自己的科瓦迪爾
+    expect(g.s.players[1].deck.length).toBe(deck + 2);
+    expect(me.plaguesShuffled).toBe(2);
+    const uid = give(g, 'TTN_459');
+    expect(g.costOf(me, me.hand.find((h) => h.uid === uid)!)).toBe(9);
+  });
+
+  it('腳感冰冷：對手的手下只在他的下個回合消耗 +5', () => {
+    const g = dk();
+    play(g, 'JAM_006');
+    g.apply({ type: 'endTurn' });
+    const foe = g.s.players[1];
+    const hc = g.newHandCard('CS2_182');
+    foe.hand.push(hc);
+    expect(g.costOf(foe, hc)).toBe(9);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.costOf(foe, hc)).toBe(4);
+  });
+
+  it('亞歷山卓斯：之後每個你的回合結束時對對手造成 3 點傷害', () => {
+    const g = dk();
+    const foe = g.s.players[1].hero;
+    play(g, 'CORE_RLK_706');
+    g.s.players[0].board = []; // 就算它不在場上也有效
+    const hp = foe.hp;
+    g.apply({ type: 'endTurn' });
+    expect(foe.hp).toBe(hp - 3);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(foe.hp).toBe(hp - 6);
+  });
+
+  it('伊莉莎：亡語後你的手下（包括之後的）+1 攻擊力', () => {
+    const g = dk();
+    const eliza = put(g, 'VAC_426', 0);
+    const other = put(g, 'CS2_182', 0);
+    play(g, 'CS2_029', eliza.uid);
+    expect(g.atkOf(other)).toBe(5);
+    expect(g.atkOf(put(g, 'CS2_231', 0))).toBe(2);
+  });
+
+  it('噁心巨怪：敵方英雄無法被治療', () => {
+    const g = dk();
+    const foe = g.s.players[1].hero;
+    foe.hp = 20;
+    put(g, 'LEG_RLK_115', 0);
+    g.apply({ type: 'endTurn' });
+    play(g, 'CS2_007', foe.uid); // 治療之觸：恢復 8 點
+    expect(foe.hp).toBe(20);
+  });
+
+  it('時光凍結者：回合開始時不再抽牌', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    put(g, 'TIME_617', 0);
+    const hand = me.hand.length;
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(me.hand.length).toBe(hand);
+  });
+
+  it('霜之哀傷：摧毀時召喚被它消滅的手下', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    play(g, 'CORE_RLK_086');
+    const wisp = put(g, 'CS2_231', 1);
+    expect(g.apply({ type: 'attack', attacker: me.hero.uid, target: wisp.uid })).toBe(true);
+    me.weapon!.durability = 1;
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    const wisp2 = put(g, 'CS2_231', 1);
+    expect(g.apply({ type: 'attack', attacker: me.hero.uid, target: wisp2.uid })).toBe(true);
+    expect(me.weapon).toBeNull();
+    expect(me.board.map((m) => m.cardId)).toEqual(['CS2_231', 'CS2_231']);
+  });
+
+  it('冰川突進：本回合下一張法術消耗減少 (2)', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    play(g, 'RLK_512', g.s.players[1].hero.uid);
+    const uid = give(g, 'CS2_029');
+    expect(g.costOf(me, me.hand.find((h) => h.uid === uid)!)).toBe(2);
+    g.apply({ type: 'play', handUid: uid, target: g.s.players[1].hero.uid });
+    const next = give(g, 'CS2_029');
+    expect(g.costOf(me, me.hand.find((h) => h.uid === next)!)).toBe(4);
+  });
+
+  it('疫牙：被感染的敵方手下死亡時，你召喚一個殭屍', () => {
+    const g = dk();
+    const foeMinion = put(g, 'CS2_231', 1);
+    play(g, 'RLK_225');
+    play(g, 'CS2_029', foeMinion.uid);
+    expect(g.s.players[0].board.map((m) => m.cardId)).toContain('RLK_118t3');
+  });
+
+  it('魂眠儀式：你的手下 +1 攻擊力與突襲，回合結束時死亡', () => {
+    const g = dk();
+    const m = put(g, 'CS2_182', 0);
+    play(g, 'DINO_417');
+    expect(g.atkOf(m)).toBe(5);
+    expect(g.hasKw(m, 'RUSH')).toBe(true);
+    g.apply({ type: 'endTurn' });
+    expect(g.minion(m.uid)).toBeFalsy();
+  });
+
+  it('法勒瑞克：獲得的屍體加倍', () => {
+    const g = dk();
+    const me = g.s.players[0];
+    put(g, 'CORE_EDR_003', 0);
+    const wisp = put(g, 'CS2_231', 0);
+    play(g, 'CS2_029', wisp.uid);
+    expect(me.corpses).toBe(2);
+  });
+
+  it('死靈禮儀師：友方不死族在你上回合結束後死亡才發現', () => {
+    const g = dk();
+    expect(g.apply({ type: 'play', handUid: give(g, 'CORE_RLK_116') })).toBe(true);
+    expect(g.s.pendingChoice).toBeNull();
+    const ghoul = put(g, 'HERO_11bpt', 0);
+    play(g, 'CS2_029', ghoul.uid);
+    expect(g.apply({ type: 'play', handUid: give(g, 'CORE_RLK_116') })).toBe(true);
+    expect(g.s.pendingChoice?.options.length).toBeGreaterThan(0);
+  });
+});

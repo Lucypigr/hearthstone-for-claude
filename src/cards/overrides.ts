@@ -3,7 +3,7 @@
 // key 是卡牌 ID（可在 hsreplay 卡牌網址或 .cache/unsupported.txt 找到）。
 // 修改後請執行 `npm run cards` 重新產生資料（覆寫的卡才會被收錄）。
 // ============================================================================
-import type { CardDef, Effect, HeroPowerSpec, TargetReq } from '../engine/types';
+import type { Ability, CardDef, Effect, HeroPowerSpec, TargetReq } from '../engine/types';
 
 export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' | 'text' | 'heroPower'>> & {
   /** 英雄卡的新英雄能力（名稱、敘述、費用會自動從卡牌資料帶入） */
@@ -20,6 +20,16 @@ const HORSEMEN = ['ICC_829t2', 'ICC_829t3', 'ICC_829t4', 'ICC_829t5'];
 const DREAM_CARDS = ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'];
 
 const chosenMinion = { filter: { type: 'minion' as const, side: 'any' as const } };
+const enemyMinion: TargetReq = { filter: { type: 'minion', side: 'enemy' } };
+const dr = (...effects: Effect[]) => [{ on: { k: 'deathrattle' as const }, effects }];
+const fn = (name: string, args?: Record<string, unknown>): Effect => ({ e: 'custom', fn: name, args });
+const hit = (amount: number, spell = true): Effect => ({ e: 'damage', target: { t: 'chosen' }, amount, spell });
+const allFriendly = { t: 'all' as const, filter: { type: 'minion' as const, side: 'friendly' as const } };
+const allEnemy = { t: 'all' as const, filter: { type: 'minion' as const, side: 'enemy' as const } };
+const heroAttacked = (...effects: Effect[]): Ability[] => [{ on: { k: 'attack', subject: 'friendlyHero', after: true }, effects }];
+/** 在你的回合結束時，此手下死亡 */
+const dieAtEndOfTurn: Ability = { on: { k: 'turnEnd', whose: 'mine' }, effects: [{ e: 'destroy', target: { t: 'self' } }] };
+const PLAGUES = ['TTN_450t', 'TTN_450t2', 'TTN_450t3'];
 
 export const OVERRIDES: Record<string, Override> = {
   // 動物夥伴：隨機召喚米莎、雷歐克或霍弗
@@ -246,6 +256,255 @@ export const OVERRIDES: Record<string, Override> = {
   RLK_731: { abilities: play({ e: 'spendCorpses', amount: 2, then: [{ e: 'handBuff', atk: 2, hp: 0, scope: 'all' }] }) },
   // 骨煞領主馬洛加：戰吼：喚起所有屍體成為 1/1 衝刺魔像；放不下的，每具給其中一個 +2/+2
   RLK_085: { abilities: play({ e: 'spendCorpsesUpTo', max: 99, custom: 'marrowgar' }), tokens: ['RLK_085t'] },
+
+  // ------------------------------------------------------------------ 死亡騎士（第二批）
+  // 狼吞虎嚥：召喚五個 5/4 飛龍；消耗 8 具屍體讓它們獲得突襲
+  CATA_465: { abilities: play(fn('chowDown')), tokens: ['CATA_465t'] },
+  // 病態蟲群：二選一——召喚兩隻 1/1 螞蟻；或消耗 2 具屍體對一個手下造成 4 點傷害
+  EDR_813: {
+    chooseOne: [
+      { id: 'EDR_813a', name: '腐敗蟻群', text: '召喚兩個1/1螞蟻', abilities: play({ e: 'summon', card: 'EDR_813at', count: 2, who: 'self' }) },
+      {
+        id: 'EDR_813b',
+        name: '蟲咬',
+        text: '消耗2個<b>屍體</b>對一個手下造成$4點傷害',
+        abilities: play({ e: 'spendCorpses', amount: 2, then: [hit(4)] }),
+        target: chosenMinion,
+      },
+    ],
+    tokens: ['EDR_813at'],
+  },
+  // 吞噬：對兩個隨機敵方手下造成 3 點傷害，每死一個抽一張牌
+  CORE_CATA_007: { abilities: play(fn('consumption')) },
+  // 竊魂者：消滅其他所有手下，每消滅一個敵方手下獲得 1 具屍體
+  CORE_RLK_741: { abilities: play(fn('soulstealer')) },
+  // 窒息術：消滅攻擊力最高的敵方手下
+  CORE_RLK_087: { abilities: play(fn('destroyHighestAttack')) },
+  // 天譴軍團：用隨機不死族填滿你的場面
+  CORE_RLK_122: { abilities: play(fn('fillBoardRandom', { race: 'UNDEAD' })) },
+  // 亞歷山卓斯‧莫格萊尼：本場對戰剩下的時間，你的回合結束時對對手造成 3 點傷害
+  CORE_RLK_706: {
+    abilities: play({ e: 'eternal', ability: { on: { k: 'turnEnd', whose: 'mine' }, effects: [{ e: 'damage', target: { t: 'hero', side: 'enemy' }, amount: 3 }] } }),
+  },
+  // 血族之裔：英雄 +5 生命值；消耗 3 具屍體再 +5 並抽一張牌
+  CORE_RLK_051: {
+    abilities: play({ e: 'heroMaxHealth', amount: 5 }, { e: 'spendCorpses', amount: 3, then: [{ e: 'heroMaxHealth', amount: 5 }, { e: 'draw', count: 1, who: 'self' }] }),
+  },
+  // 破魂者：英雄攻擊並消滅一個手下後，獲得 2 具屍體
+  CORE_RLK_012: { abilities: heroAttacked(fn('afterHeroKill', { corpses: 2 })) },
+  // 霜之哀傷：亡語：召喚所有被這把武器消滅的手下
+  CORE_RLK_086: { abilities: dr(fn('frostmourne')) },
+  // 死靈禮儀師：若友方不死族在你上回合結束後死亡，發現一張穢邪符文牌
+  CORE_RLK_116: { abilities: play({ e: 'cond', cond: { c: 'undeadDiedSinceLastTurn' }, then: [{ e: 'discover', pool: { rune: 'unholy' } }] }) },
+  // 魂眠儀式：你的手下 +1 攻擊力與突襲，在你的回合結束時死亡
+  DINO_417: { abilities: play({ e: 'buff', target: allFriendly, atk: 1, keywords: ['RUSH'], abilities: [dieAtEndOfTurn] }) },
+  // 作物輪替：召喚四個有突襲、回合結束時死亡的 1/1 不死族
+  WW_368: { abilities: play({ e: 'summon', card: 'WW_368t', count: 4, who: 'self' }), tokens: ['WW_368t'] },
+  // 採礦受害者：召喚兩個有「亡語：召喚一個 1/1 脆弱食屍鬼」的白銀之手新兵
+  DEEP_017: {
+    abilities: play({
+      e: 'repeat',
+      times: 2,
+      effects: [
+        { e: 'summon', card: 'CS2_101t', count: 1, who: 'self' },
+        { e: 'buff', target: { t: 'it' }, abilities: dr({ e: 'summon', card: 'HERO_11bpt', count: 1, who: 'self' }) },
+      ],
+    }),
+  },
+  // 凝霜雕刻者：召喚兩個 2/1 霜凍元素（亡語：對一個隨機敵人造成 2 點傷害）
+  LEG_RLK_752: { abilities: play({ e: 'summon', card: 'RLK_907t', count: 2, who: 'self' }), tokens: ['RLK_907t'] },
+  // 飲血：生命竊取，對一個手下造成 3 點傷害，英雄能力可再使用
+  JAIL_441: { keywords: ['LIFESTEAL'], target: chosenMinion, abilities: play(hit(3), { e: 'refreshHeroPower' }) },
+  // 骸骨亂舞：隨機分配 3 點傷害給敵人；若本回合有友方手下死亡，再 3 點
+  JAIL_445: {
+    abilities: play(
+      { e: 'splitDamage', filter: { side: 'enemy', type: 'character' }, amount: 3, spell: true },
+      { e: 'cond', cond: { c: 'friendlyDiedThisTurn' }, then: [{ e: 'splitDamage', filter: { side: 'enemy', type: 'character' }, amount: 3, spell: true }] },
+    ),
+  },
+  // 緊急手術：召喚四個 3/1 生命竊取的不死族，攻擊所選的敵方手下
+  JAIL_454: { target: enemyMinion, abilities: play(fn('emergencySurgery')), tokens: ['JAIL_454t'] },
+  // 食屍鬼疊羅漢：此手下受到傷害後，召喚兩個 1/1 脆弱食屍鬼
+  JAIL_440: { abilities: [{ on: { k: 'damaged', subject: 'self' }, effects: [{ e: 'summon', card: 'HERO_11bpt', count: 2, who: 'self' }] }] },
+  // 嚎叫約德爾歌手：觸發一個友方手下的亡語兩次
+  JAM_005: { target: { filter: { type: 'minion', side: 'friendly' }, optional: true }, abilities: play(fn('triggerDeathrattle', { times: 2 })) },
+  // 腳感冰冷：敵方手下在下回合消耗增加 (5)
+  JAM_006: { abilities: play({ e: 'minionTax', amount: 5 }) },
+  // 焦油浪潮：對全部敵方手下造成 2 點傷害，敵方手下在下回合消耗增加 (2)
+  TLC_439: { abilities: play({ e: 'damage', target: allEnemy, amount: 2, spell: true }, { e: 'minionTax', amount: 2 }) },
+  // 死亡斷訊：消滅你的不死族，再重新召喚它們
+  JAM_008: { abilities: play(fn('deadAir')) },
+  // 縫補者：消滅對手手牌、牌堆與戰場上各一個隨機手下
+  LEG_RLK_071: { abilities: play(fn('patchwerk')) },
+  // 劇毒死屍：對一個敵人與你的英雄各造成 2 點傷害
+  LEG_RLK_079: {
+    target: { filter: { type: 'character', side: 'enemy' }, optional: true },
+    abilities: play(hit(2, false), { e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: 2 }),
+  },
+  // 死亡使者薩魯法爾：嘲諷；亡語：回到你的手牌，改為消耗生命值
+  LEG_RLK_082: { keywords: ['TAUNT'], abilities: dr(fn('returnCostsHealth')) },
+  // 噁心巨怪：敵方角色無法被治療
+  LEG_RLK_115: { flags: ['enemyNoHeal'] },
+  // 監督者弗力吉達拉：抽兩張法術；若都是冰霜法術，對全部敵人造成 2 點傷害
+  LEG_RLK_224: { abilities: play(fn('frigidara')) },
+  // 霜牙之劍：英雄攻擊後，手中一張法術消耗減少 (1)
+  LEG_RLK_710: { abilities: heroAttacked(fn('discountRandomSpell', { amount: 1 })) },
+  // 屈辱之盔：一個手下 -5/-5，手中一個隨機手下 +5/+5
+  MIS_100: { target: chosenMinion, abilities: play(fn('debuff', { atk: 5, hp: 5 }), { e: 'handBuff', atk: 5, hp: 5, scope: 'random' }) },
+  // 泡棉裂斧：英雄攻擊時，消耗 3 具屍體獲得 +1 耐久度
+  MIS_101: { abilities: [{ on: { k: 'attack', subject: 'friendlyHero' }, effects: [{ e: 'spendCorpses', amount: 3, then: [{ e: 'weaponBuff', dur: 1 }] }] }] },
+  // 黑暗變身：把一個不死族變成 4/5 突襲的不死畸怪
+  RLK_057: {
+    target: { filter: { type: 'minion', side: 'any', race: 'UNDEAD' } },
+    abilities: play({ e: 'transform', target: { t: 'chosen' }, card: 'RLK_057t' }),
+    tokens: ['RLK_057t'],
+  },
+  // 依米亞破霜者：手中每有一張冰霜法術 +1 攻擊力
+  RLK_110: { abilities: play(fn('attackPerSpellSchool', { school: 'FROST' })) },
+  // 絞肉機：絞碎牌堆中一個隨機手下，獲得 4 具屍體
+  RLK_120: { abilities: play(fn('meatGrinder')) },
+  // 疫牙：感染全部敵方手下，它們死亡時你召喚一個 2/2 嘲諷殭屍
+  RLK_225: {
+    abilities: play({ e: 'buff', target: allEnemy, abilities: dr({ e: 'summon', card: 'RLK_118t3', count: 1, who: 'opponent' }) }),
+    tokens: ['RLK_118t3'],
+  },
+  // 沸血術：生命竊取；感染全部敵方手下，你的回合結束時它們受到 2 點傷害
+  RLK_730: {
+    keywords: ['LIFESTEAL'],
+    abilities: play({ e: 'buff', target: allEnemy, abilities: [{ on: { k: 'turnEnd', whose: 'opp' }, effects: [fn('plagueTick', { amount: 2 })] }] }),
+  },
+  // 冰川突進：造成 4 點傷害，你本回合的下一張法術消耗減少 (2)
+  RLK_512: { target: anyChar, abilities: play(hit(4), { e: 'nextSpellDiscount', amount: 2 }) },
+  // 碎骨者：英雄攻擊手下後，對敵方英雄造成 2 點傷害
+  RLK_516: { abilities: heroAttacked(fn('afterHeroHitMinion', { amount: 2 })) },
+  // 惡毒血蟲：手牌中一個手下獲得等同此手下的攻擊力
+  RLK_711: { abilities: play(fn('giveAttackEqualSelf')) },
+  // 恐怖夢魘：手牌或戰場上一個手下獲得等同此手下的攻擊力
+  CATA_161: { abilities: play(fn('giveAttackEqualSelf', { board: true })) },
+  // 亡語女士：亡語：複製你手中所有的冰霜法術
+  RLK_713: { abilities: dr(fn('copySpellSchoolInHand', { school: 'FROST' })) },
+  // 地精嚼食者：嘲諷、生命竊取；在你的回合結束時，攻擊生命值最低的敵人
+  RLK_720: { keywords: ['TAUNT', 'LIFESTEAL'], abilities: [{ on: { k: 'turnEnd', whose: 'mine' }, effects: [fn('attackLowestEnemy')] }] },
+  // 穢邪狂亂：你的手下攻擊所選的敵方手下，死掉的再召喚回來
+  RLK_056: { target: enemyMinion, abilities: play(fn('unholyFrenzy')) },
+  // 血液導引：消耗生命值；發現一張法術
+  TIME_612: { costsHealth: true, abilities: play({ e: 'discover', pool: { type: 'SPELL' } }) },
+  // 生命撕裂者：若你的英雄本回合生命值有變化，對一個敵方手下造成 6 點傷害
+  TIME_614: {
+    target: { filter: { type: 'minion', side: 'enemy' }, optional: true, when: { c: 'heroHealthChanged' } },
+    abilities: play({ e: 'cond', cond: { c: 'heroHealthChanged' }, then: [hit(6, false)] }),
+  },
+  // 被遺忘的千年：用隨機不死族填滿手牌，本回合改為消耗生命值
+  TIME_615: { abilities: play(fn('fillHandHealthCost')) },
+  // 回憶顯化：召喚本場對戰中死亡、消耗最高的友方不死族
+  TIME_616: { abilities: play(fn('summonBestFromGraveyard')) },
+  // 時光凍結者：你的回合開始時不再抽牌
+  TIME_617: { flags: ['noTurnDraw'] },
+  // 古生物死靈術：發現一個不死族；消耗 5 具屍體改為三張都拿
+  TLC_434: { abilities: play(fn('paleomancy')) },
+  // 復甦翼手龍：突襲、生命竊取；消耗屍體而不是法力
+  TLC_436: { keywords: ['RUSH', 'LIFESTEAL'], costsCorpses: true },
+  // 瑪拉達爾主教：你本回合打出的下一張牌改為消耗屍體
+  GDB_470: { abilities: play({ e: 'nextCardCostsCorpses' }) },
+  // 喧鬧的填充玩偶：突襲；你施放冰霜法術後獲得復生
+  TOY_821: {
+    keywords: ['RUSH'],
+    abilities: [{ on: { k: 'spellCast', side: 'friendly', school: 'FROST' }, effects: [{ e: 'buff', target: { t: 'self' }, keywords: ['REBORN'] }] }],
+  },
+  // 黑棘針縫師：在你的回合結束時，把等同此手下攻擊力的傷害隨機分配給敵人
+  TOY_824: { abilities: [{ on: { k: 'turnEnd', whose: 'mine' }, effects: [{ e: 'splitDamage', filter: { side: 'enemy', type: 'character' }, amount: { dyn: 'selfAttack' } }] }] },
+  // 絕望絲線：賦予全部手下「亡語：對全部手下造成 1 點傷害」
+  TOY_826: {
+    abilities: play({
+      e: 'buff',
+      target: { t: 'all', filter: { type: 'minion', side: 'any' } },
+      abilities: dr({ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'any' } }, amount: 1 }),
+    }),
+  },
+  // 霜凍掠劫者：亡語：冰凍 3 個隨機敵人，已被冰凍的改為受到 5 點傷害
+  VAC_402: { abilities: dr(fn('freezeOrShatter')) },
+  // 伊莉莎‧凝血刃：亡語：本場對戰剩下的時間，你的手下 +1 攻擊力
+  VAC_426: { abilities: dr({ e: 'minionAtkBonus', amount: 1 }) },
+  // 屍淇淋：造成 3 點傷害；消耗 3 具屍體讓它在回合結束時回到你的手牌
+  VAC_427: { target: anyChar, abilities: play(hit(3), { e: 'spendCorpses', amount: 3, then: [fn('returnAtEndOfTurn')] }) },
+  // 滑雪高手：若有角色被冰凍，消耗 (1)
+  VAC_429: { costIf: { cond: { c: 'anyFrozen' }, cost: 1 } },
+  // 脆骨海賊：每當你打出有亡語的手下，使其獲得復生
+  VAC_436: {
+    abilities: [
+      { on: { k: 'cardPlayed', side: 'friendly', cardType: 'MINION' }, cond: { c: 'itHasDeathrattle' }, effects: [{ e: 'buff', target: { t: 'it' }, keywords: ['REBORN'] }] },
+    ],
+  },
+  // 食屍鬼之夜：召喚五個 1/1 食屍鬼，各自攻擊隨機敵人
+  VAC_445: { abilities: play(fn('summonAndAttackRandom', { card: 'VAC_445t', count: 5 })), tokens: ['VAC_445t'] },
+  // 滑溜坡道：冰凍一個角色，每有一個被冰凍的角色抽一張牌
+  VAC_513: { target: anyChar, abilities: play({ e: 'freeze', target: { t: 'chosen' } }, { e: 'draw', count: { dyn: 'frozenChars' }, who: 'self' }) },
+  // 靈魂搜尋：從你的牌堆發現一張卡；消耗 5 具屍體再複製一張
+  WORK_070: { abilities: play(fn('discoverFromDeck', { copyCorpses: 5 })) },
+  // 北境導覽：從你的牌堆發現一張法術；若是冰霜法術，冰凍一個隨機敵方手下
+  TTN_735: { abilities: play(fn('discoverFromDeck', { type: 'SPELL', frostFreeze: true })) },
+  // 礦坑老大雷斯卡：突襲；本場對戰每死亡一個手下消耗減少 (1)；亡語：奪取一個隨機敵方手下
+  WW_373: {
+    keywords: ['RUSH'],
+    costRule: { per: 'deathsThisGame', amount: 1 },
+    abilities: dr({ e: 'steal', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } }),
+  },
+  // 死亡咆哮：把一個手下的亡語擴散到相鄰的手下
+  ETC_424: { target: chosenMinion, abilities: play(fn('spreadDeathrattle')) },
+  // 骸骨速彈手：消耗 5 具屍體，觸發並獲得一個本場死亡的友方手下的亡語
+  ETC_428: { abilities: play(fn('boneshredder')) },
+  // 炫彩育母：突襲；此手下攻擊時，回復等同其攻擊力的法力水晶
+  CATA_469: { keywords: ['RUSH'], abilities: [{ on: { k: 'attack', subject: 'self' }, effects: [fn('refreshManaByAttack')] }] },
+  // 塔蘭姬的最後一搏：賦予你的手下「亡語：召喚一個隨機 4 費手下」
+  CATA_471: { abilities: play({ e: 'buff', target: allFriendly, abilities: dr({ e: 'summonRandom', pool: { type: 'MINION', cost: 4 }, count: 1, who: 'self' }) }) },
+  // 厄索克：戰吼：攻擊其他所有手下；亡語：復活它消滅的手下
+  EDR_819: { abilities: [...play(fn('ursoc')), ...dr(fn('resurrectKilled'))] },
+  // 氣閘破口：召喚 5/5 嘲諷不死族，英雄 +5 生命值；消耗 5 具屍體再來一次
+  GDB_113: { abilities: play(fn('airlockBreach')), tokens: ['GDB_113t'] },
+  // 靈魂喚醒者：嘲諷、復生；亡語：復活另一個友方亡語手下
+  GDB_468: { keywords: ['TAUNT', 'REBORN'], abilities: dr(fn('resurrectDeathrattle')) },
+  // 來自異界的8隻手：雙方的牌堆只留下消耗最高的 8 張
+  GDB_477: { abilities: play(fn('eightHands')) },
+  // 同化疫病：發現一個 3 費亡語手下，召喚它並賦予復生
+  GDB_478: { abilities: play(fn('discoverSummon', { cost: 3, reborn: true })) },
+  // 昂布拉的故事：發現一個 5 費以上的亡語手下，召喚它並觸發其亡語
+  DINO_415: { abilities: play(fn('discoverSummon', { minCost: 5, trigger: true })) },
+  // 法勒瑞克：你獲得的屍體加倍；戰吼：抽一張會消耗屍體的卡
+  CORE_EDR_003: { flags: ['doubleCorpses'], abilities: play({ e: 'draw', count: 1, who: 'self', pool: { spendsCorpses: true } }) },
+  // 死亡金屬騎士：嘲諷；若你的英雄本回合被治療過，改為消耗生命值
+  CORE_ETC_523: { keywords: ['TAUNT'], costsHealthIf: { c: 'heroHealed' } },
+  // 阿薩斯的禮物：發現一張暫時的黑暗變身、凜風衝擊或死亡打擊
+  CORE_GIFT_04: { abilities: play(fn('giftOf', { cards: ['RLK_057', 'RLK_015', 'RLK_024'] })) },
+  // 石英粉碎錘：生命竊取；冰凍被你的英雄傷害的角色
+  DEEP_016: { keywords: ['LIFESTEAL', 'FREEZE_ON_DAMAGE'] },
+  // 尖嘯女妖：生命竊取；你的英雄獲得生命值後，召喚一個屬性等同回復量的靈魂
+  ETC_522: {
+    keywords: ['LIFESTEAL'],
+    abilities: [{ on: { k: 'healed', subject: 'friendly' }, cond: { c: 'not', cond: { c: 'itIsMinion' } }, effects: [fn('summonSoulFromEvent', { card: 'ETC_522t' })] }],
+    tokens: ['ETC_522t'],
+  },
+  // 染疫的穀物：獲得 4 具屍體；把四個穀物箱洗入你的牌堆（抽到時召喚 2/2 不死的農民）
+  LEG_RLK_039: { abilities: play({ e: 'gainCorpses', amount: 4 }, { e: 'shuffle', card: 'RLK_039t', count: 4 }), tokens: ['RLK_039t'] },
+  RLK_039t: { abilities: play({ e: 'summon', card: 'RLK_070t', count: 1, who: 'self' }), tokens: ['RLK_070t'] },
+  // 三種瘟疫（抽到時施放）
+  TTN_450t: { abilities: play({ e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: 2 }, { e: 'heal', target: { t: 'hero', side: 'enemy' }, amount: 2 }) },
+  TTN_450t2: {
+    abilities: play({ e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: 2 }, { e: 'summon', card: 'RLK_070t', count: 1, who: 'opponent' }),
+    tokens: ['RLK_070t'],
+  },
+  TTN_450t3: { abilities: play({ e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: 2 }, { e: 'nextCardDiscount', amount: -1 }) },
+  // 憂慮的科瓦迪爾：亡語：把兩張隨機瘟疫洗入對手的牌堆
+  TTN_450: { abilities: dr(fn('shufflePlagues', { count: 2 })), tokens: PLAGUES },
+  // 隨船沉沒：造成 3 點傷害，把兩張隨機瘟疫洗入對手的牌堆
+  TTN_454: { target: anyChar, abilities: play(hit(3), fn('shufflePlagues', { count: 2 })), tokens: PLAGUES },
+  // 叛墓者：消滅對手牌堆中的一張瘟疫，對全部敵方手下造成 3 點傷害
+  TTN_455: { abilities: play(fn('destroyPlague')), tokens: PLAGUES },
+  // 統御者之杖：英雄攻擊後，把一張隨機瘟疫洗入對手的牌堆
+  TTN_736: { abilities: heroAttacked(fn('shufflePlagues', { count: 1 })), tokens: PLAGUES },
+  // 縛練守護者：突襲、復生；本場每洗一張瘟疫到對手牌堆，消耗減少 (1)
+  TTN_459: { keywords: ['RUSH', 'REBORN'], costRule: { per: 'plaguesShuffled', amount: 1 }, tokens: PLAGUES },
+  // 弗柯羅斯：突襲、嘲諷；戰吼：花費 10、20 或 30 具屍體獲得等量的屬性值
+  FIR_951: { keywords: ['RUSH', 'TAUNT'], abilities: play(fn('spendCorpsesForStats')) },
 
   // ------------------------------------------------------------------ 比武（雙方各揭露牌堆一張手下，你的消耗較高就獲勝）
   // 治療波：恢復 8 點生命值；比武獲勝則改為恢復 16 點

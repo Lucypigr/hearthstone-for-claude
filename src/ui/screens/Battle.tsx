@@ -603,6 +603,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                   onClick={() => onHandClick(h.uid)}
                 />
                 {echo && <span className="echo-badge">回音</span>}
+                {g.costKind(me, h) !== 'mana' && (
+                  <span className={`cost-kind ${g.costKind(me, h)}`} title={g.costKind(me, h) === 'health' ? '消耗生命值而不是法力' : '消耗屍體而不是法力'}>
+                    {g.costKind(me, h) === 'health' ? '❤' : '💀'}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -851,6 +856,13 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
     const need = (['blood', 'frost', 'unholy'] as const).filter((k) => def.runes?.[k]).map((k) => `${RUNE_NAMES[k]}×${def.runes![k]}`).join('、');
     lines.push(`符文：套牌需要 ${need}（一副套牌最多 3 個符文）`);
   }
+  if (def.castsWhenDrawn) lines.push('抽中時施放：抽到這張牌時會立即施放，然後再抽一張牌');
+  if (def.costsHealth) lines.push('消耗生命值而不是法力（生命值不夠就不能打出）');
+  if (def.costsHealthIf) lines.push('條件成立時改為消耗生命值而不是法力');
+  if (def.costsCorpses) lines.push('消耗屍體而不是法力');
+  if (def.flags?.includes('noTurnDraw')) lines.push('在場上時，你的回合開始時不會抽牌');
+  if (def.flags?.includes('enemyNoHeal')) lines.push('在場上時，敵方角色無法被治療');
+  if (def.flags?.includes('doubleCorpses')) lines.push('在場上時，你獲得的屍體加倍');
   if (/屍體/.test(def.text)) lines.push('屍體：友方手下死亡時，死亡騎士獲得 1 個屍體，可以被卡牌消耗');
   if (def.starship) lines.push('星艦：由組件組成，擁有所有組件的攻擊力、生命值與效果');
   if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);

@@ -199,6 +199,9 @@ export interface ParsedCard {
   tokens: string[];
   starshipPiece?: boolean;
   noCorpse?: boolean;
+  castsWhenDrawn?: boolean;
+  costsHealth?: boolean;
+  costsCorpses?: boolean;
 }
 
 interface Ctx {
@@ -1367,6 +1370,8 @@ const COST_RULES: [RegExp, CostPer][] = [
   [/^Health your hero is missing$/, 'heroMissingHealth'],
   [/^Armor you have$/, 'armor'],
   [/^Corpse you've spent this game$/, 'corpsesSpent'],
+  [/^minion that died this game$/, 'deathsThisGame'],
+  [/^Plague shuffled into the enemy deck this game$/, 'plaguesShuffled'],
   [/^Attack of your weapon$/, 'weaponAttack'],
   [/^spell in your hand$/, 'spellsInHand'],
   [/^damaged minion$/, 'damagedMinions'],
@@ -1384,6 +1389,14 @@ function parseStatic(sentence: string, ctx: Ctx): boolean {
   }
   if ((m = /^Overload: \((\d+)\)$/.exec(sentence))) {
     out.overload = Number(m[1]);
+    return true;
+  }
+  if (/^Costs Health instead of Mana$/.test(sentence)) {
+    out.costsHealth = true;
+    return true;
+  }
+  if (/^Costs Corpses instead of Mana$/.test(sentence)) {
+    out.costsCorpses = true;
     return true;
   }
   if (/^Can't attack$/.test(sentence)) {
@@ -1481,6 +1494,13 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
     if (piece) {
       out.starshipPiece = true;
       raw = (raw.slice(0, piece.index) + ' ' + raw.slice(piece.index + piece[0].length)).trim();
+      if (!raw) continue;
+    }
+    // 抽到時施放
+    const cwd = /^Casts When Drawn(?: |$)/.exec(raw);
+    if (cwd) {
+      out.castsWhenDrawn = true;
+      raw = raw.slice(cwd[0].length).trim();
       if (!raw) continue;
     }
     // 喚起的手下：「不會留下屍體」（可能接在關鍵字後面）

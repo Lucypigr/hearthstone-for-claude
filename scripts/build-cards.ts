@@ -100,7 +100,6 @@ const UNSUPPORTED_TAGS = [
   'HERALD',
   'OBJECTIVE',
   'START_OF_GAME_KEYWORD',
-  'CASTS_WHEN_DRAWN',
   'IMBUE',
   'DISGUISED',
   'SHATTER',
@@ -255,6 +254,7 @@ async function main() {
       if (classes.length) def.classes = classes;
     }
     if (r.tags.STARSHIP_PIECE) def.starshipPiece = true;
+    if (r.tags.CASTS_WHEN_DRAWN) def.castsWhenDrawn = true;
     if (r.tags.STARSHIP) def.starship = true;
     if (r.tags.TERRAN) def.terran = true;
     // 死亡騎士的符文需求
@@ -361,6 +361,9 @@ async function main() {
     if (parsed.costRule) def.costRule = parsed.costRule;
     if (parsed.starshipPiece) def.starshipPiece = true;
     if (parsed.noCorpse) def.noCorpse = true;
+    if (parsed.castsWhenDrawn) def.castsWhenDrawn = true;
+    if (parsed.costsHealth) def.costsHealth = true;
+    if (parsed.costsCorpses) def.costsCorpses = true;
     return def;
   }
 
