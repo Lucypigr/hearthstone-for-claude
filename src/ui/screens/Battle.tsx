@@ -441,8 +441,14 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           {me.hand.map((h, i) => {
             const def = g.handDef(h);
             const playable = myTurn && g.canPlay(h.uid).ok;
+            const echo = g.hasEcho(ME, h);
             return (
-              <div key={h.uid} className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''}`} style={{ '--i': i } as CSSProperties}>
+              <div
+                key={h.uid}
+                className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''} ${h.echo ? 'echo-copy' : ''}`}
+                style={{ '--i': i } as CSSProperties}
+                title={h.echo ? '回音的複製：只能在本回合使用' : undefined}
+              >
                 <CardView
                   cardId={h.cardId}
                   def={h.parts ? def : undefined}
@@ -455,6 +461,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                   selected={selectedHand === h.uid}
                   onClick={() => onHandClick(h.uid)}
                 />
+                {echo && <span className="echo-badge">回音</span>}
               </div>
             );
           })}
@@ -648,6 +655,7 @@ const KEYWORD_HELP: [string, string][] = [
   ['CANT_ATTACK', '無法攻擊'],
   ['FREEZE_ON_DAMAGE', '冰凍被它傷害的角色（下回合無法攻擊）'],
   ['TRADEABLE', '可交易：花 1 法力把它洗回牌堆並抽一張牌'],
+  ['ECHO', '回音：打出後會把一張複製加入手牌，本回合可以重複使用（複製在回合結束時消失，消耗不會低於 1）'],
 ];
 
 function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null; g: Game }) {

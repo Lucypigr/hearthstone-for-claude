@@ -54,7 +54,9 @@ export type Keyword =
   | 'FREEZE_ON_DAMAGE'
   | 'CLEAVE'
   | 'IMMUNE'
-  | 'TRADEABLE';
+  | 'TRADEABLE'
+  /** 回音：本回合可以重複使用 */
+  | 'ECHO';
 
 /** 相對於效果擁有者（controller）的陣營 */
 export type Side = 'friendly' | 'enemy' | 'any';
@@ -217,7 +219,7 @@ export type Trig =
   | { k: 'turnEnd'; whose: 'mine' | 'opp' | 'each' }
   | { k: 'turnStart'; whose: 'mine' | 'opp' | 'each' }
   | { k: 'spellCast'; side: Side }
-  | { k: 'cardPlayed'; side: Side; cardType?: CardType; race?: Race }
+  | { k: 'cardPlayed'; side: Side; cardType?: CardType; race?: Race; keyword?: Keyword }
   | { k: 'summon'; side: Side; race?: Race }
   | { k: 'minionDied'; side: Side; race?: Race }
   | { k: 'damaged'; subject: 'self' | 'friendlyHero' | 'friendlyMinion' | 'anyMinion' }
@@ -251,7 +253,8 @@ export interface Ability {
 }
 
 export interface Aura {
-  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions';
+  /** friendlyHand：你手牌中的手下（例如「你手牌中的手下具有回音」） */
+  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand';
   race?: Race;
   atk?: number;
   hp?: number;

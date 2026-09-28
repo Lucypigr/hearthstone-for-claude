@@ -89,6 +89,8 @@ interface Ev {
   after?: boolean;
   isHero?: boolean;
   cardId?: string;
+  /** 打出的卡具有回音 */
+  echo?: boolean;
 }
 
 interface DmgSource {
@@ -386,7 +388,8 @@ export class Game {
       return Math.max(0, c.tempAtk + weapon + (this.s.current === c.owner ? aura : 0));
     }
     const enrage = c.enrageAtk && c.hp < c.maxHp ? c.enrageAtk : 0;
-    return Math.max(0, c.baseAtk + c.atkBuff + c.tempAtk + c.auraAtk + enrage);
+    const linger = c.lingerAtk?.reduce((x, l) => x + l.amount, 0) ?? 0;
+    return Math.max(0, c.baseAtk + c.atkBuff + c.tempAtk + c.auraAtk + enrage + linger);
   }
 
   spellDamage(p: PlayerId): number {
@@ -401,6 +404,16 @@ export class Game {
   /** 場上手下的卡牌定義 */
   minionDef(m: Minion): CardDef {
     return m.parts ? zombeastDef(m.parts) : getCard(m.cardId);
+  }
+
+  /** 手牌是否具有回音（卡牌本身，或場上有「你手牌中的手下具有回音」） */
+  hasEcho(pid: PlayerId, hc: HandCard): boolean {
+    const def = this.handDef(hc);
+    if (def.keywords?.includes('ECHO')) return true;
+    if (def.type !== 'MINION') return false;
+    return this.s.players[pid].board.some(
+      (m) => !m.silenced && m.auras.some((a) => a.scope === 'friendlyHand' && a.keywords?.includes('ECHO')),
+    );
   }
 
   costOf(p: PlayerState, hc: HandCard): number {
@@ -421,7 +434,8 @@ export class Game {
       cost -= def.costRule.amount * n;
     }
     if (p.nextCardDiscount && p.id === this.s.current) cost -= p.nextCardDiscount;
-    return Math.max(0, cost);
+    // 回音卡的消耗不會低於 1
+    return Math.max(this.hasEcho(p.id, hc) ? Math.min(1, def.cost) : 0, cost);
   }
 
   cardIsSpell(handUid: number): boolean {
@@ -716,6 +730,7 @@ export class Game {
       m.attacks = 0;
       m.nextTurnKeywords = [];
     }
+    for (const pl of s.players) for (const m of pl.board) if (m.lingerAtk) m.lingerAtk = m.lingerAtk.filter((l) => l.until !== pid);
     this.log(pid, `—— 第 ${Math.ceil(s.turn / 2)} 回合：${p.name} ——`);
     yield* this.emit({ k: 'turnStart', player: pid });
     yield* this.checkSecrets(pid, 'turnStart', {});
@@ -728,6 +743,8 @@ export class Game {
     const s = this.s;
     const pid = s.current;
     const p = s.players[pid];
+    // 回音的複製只能在本回合使用
+    p.hand = p.hand.filter((h) => !h.echo);
     yield* this.emit({ k: 'turnEnd', player: pid });
     yield* this.checkSecrets(opp(pid), 'enemyTurnEnd', {});
     yield* this.processDeaths();
@@ -764,8 +781,11 @@ export class Game {
     const cost = this.costOf(p, hc);
     const outcast = idx === 0 || idx === p.hand.length - 1;
     const combo = p.cardsPlayedThisTurn > 0;
+    const echo = this.hasEcho(p.id, hc);
     p.mana -= cost;
     p.hand.splice(idx, 1);
+    // 回音：把一張複製加入手牌，回合結束時消失
+    if (echo && p.hand.length < MAX_HAND) p.hand.push({ ...structuredClone(hc), uid: this.uid(), echo: true });
     p.cardsPlayedThisTurn++;
     p.nextCardDiscount = 0;
     if (def.overload) p.overloadOwed += def.overload;
@@ -808,7 +828,7 @@ export class Game {
         if (this.over) return;
       }
       yield* this.emit({ k: 'summon', player: p.id, subject: m.uid, races: def.races });
-      yield* this.emit({ k: 'cardPlayed', player: p.id, subject: m.uid, cardType: 'MINION', races: def.races, cardId: def.id });
+      yield* this.emit({ k: 'cardPlayed', player: p.id, subject: m.uid, cardType: 'MINION', races: def.races, cardId: def.id, echo });
       if (this.minion(m.uid)) yield* this.checkSecrets(opp(p.id), 'enemyPlaysMinion', { it: { kind: 'char', uid: m.uid } });
     } else if (def.type === 'SPELL') {
       this.spellCountered = false;
@@ -826,7 +846,7 @@ export class Game {
       } else this.log(p.id, `${this.name(def.id)}被反制了！`);
       p.spellsCastThisGame++;
       yield* this.emit({ k: 'spellCast', player: p.id, cardId: def.id, subject: target, subjectKind: 'char' });
-      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'SPELL', cardId: def.id });
+      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'SPELL', cardId: def.id, echo });
     } else if (def.type === 'HERO') {
       // 英雄卡：換上新英雄、獲得護甲、換成新的英雄能力（本回合就能使用）
       p.hero.cardId = def.id;
@@ -839,7 +859,7 @@ export class Game {
         yield* this.runEffects(ab.effects, ctx);
         if (this.over) return;
       }
-      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'HERO', cardId: def.id });
+      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'HERO', cardId: def.id, echo });
     } else {
       yield* this.equip(p.id, def.id);
       ctx.sourceUid = p.weapon?.uid ?? null;
@@ -848,7 +868,7 @@ export class Game {
         yield* this.runEffects(ab.effects, ctx);
         if (this.over) return;
       }
-      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'WEAPON', cardId: def.id });
+      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'WEAPON', cardId: def.id, echo });
     }
     if (this.powerDef(p).refresh === 'cardPlayed') p.heroPower.used = false;
   }
@@ -1350,7 +1370,13 @@ export class Game {
       case 'draw':
         return rel(trig.side);
       case 'cardPlayed':
-        return rel(trig.side) && (!trig.cardType || trig.cardType === ev.cardType) && raceOk(trig.race) && ev.subject !== holderUid;
+        return (
+          rel(trig.side) &&
+          (!trig.cardType || trig.cardType === ev.cardType) &&
+          raceOk(trig.race) &&
+          (trig.keyword !== 'ECHO' || !!ev.echo) &&
+          ev.subject !== holderUid
+        );
       case 'summon':
       case 'minionDied':
         return rel(trig.side) && raceOk(trig.race) && ev.subject !== holderUid;
@@ -1744,6 +1770,7 @@ export class Game {
             continue;
           }
           if (e.temp) c.tempAtk += atk;
+          else if (e.untilNextTurn && atk) (c.lingerAtk ??= []).push({ amount: atk, until: ctx.controller });
           else c.atkBuff += atk;
           c.maxHp += hp;
           c.hp += hp;
@@ -2096,6 +2123,7 @@ export class Game {
     m.frozen = false;
     m.atkBuff = 0;
     m.tempAtk = 0;
+    m.lingerAtk = undefined;
     const def = this.minionDef(m);
     m.baseAtk = def.attack ?? 0;
     m.baseHp = def.health ?? 1;

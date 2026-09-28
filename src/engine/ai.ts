@@ -86,7 +86,9 @@ export function evaluate(g: Game, me: PlayerId): number {
   score += heroValue(a.hero.hp, a.hero.armor) - heroValue(b.hero.hp, b.hero.armor) * 1.1;
   score += a.board.reduce((x, m) => x + minionValue(g, m), 0);
   score -= b.board.reduce((x, m) => x + minionValue(g, m), 0) * 1.25;
-  score += Math.min(a.hand.length, 8) * 1.6 - Math.min(b.hand.length, 8) * 0.8;
+  // 回音的複製回合結束就會消失，不算手牌優勢
+  const handSize = (p: typeof a) => p.hand.filter((h) => !h.echo).length;
+  score += Math.min(handSize(a), 8) * 1.6 - Math.min(handSize(b), 8) * 0.8;
   if (a.weapon) score += a.weapon.atk * Math.min(a.weapon.durability, 3) * 0.6;
   if (b.weapon) score -= b.weapon.atk * Math.min(b.weapon.durability, 3) * 0.6;
   score += a.secrets.length * 2 - b.secrets.length * 2;

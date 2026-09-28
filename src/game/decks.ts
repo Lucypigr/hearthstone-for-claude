@@ -170,6 +170,8 @@ export function cardQuality(def: CardDef): number {
   } else {
     q = value - (def.cost * 1.6 + 0.6);
   }
+  // 回音：後期有多餘法力時可以重複使用
+  if (def.keywords?.includes('ECHO')) q += 1 + Math.max(0, value - def.cost) * 0.3;
   if (def.overload) q -= def.overload * 1.2;
   if (def.costRule) q += 1;
   return q;

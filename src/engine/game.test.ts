@@ -395,3 +395,68 @@ describe('英雄卡', () => {
     for (const k of getCard(b).keywords ?? []) expect(g.hasKw(m, k)).toBe(true);
   });
 });
+
+describe('回音', () => {
+  it('打出後把複製加入手牌，本回合可重複使用，回合結束時消失', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const enemy = put(g, 'CS2_182', 1); // 4/5
+    const uid = give(g, 'GIL_506'); // 偷襲：對一個手下造成 2 點傷害
+    const before = me.hand.length;
+    expect(g.apply({ type: 'play', handUid: uid, target: enemy.uid })).toBe(true);
+    expect(me.hand.length).toBe(before);
+    const copy = me.hand[me.hand.length - 1];
+    expect(copy.cardId).toBe('GIL_506');
+    expect(copy.echo).toBe(true);
+    expect(enemy.hp).toBe(3);
+    // 複製本身也有回音：再打一次又會產生新的複製
+    expect(g.apply({ type: 'play', handUid: copy.uid, target: enemy.uid })).toBe(true);
+    expect(g.minion(enemy.uid)?.hp).toBe(1);
+    expect(me.hand.filter((h) => h.echo).length).toBe(1);
+    g.apply({ type: 'endTurn' });
+    expect(me.hand.some((h) => h.echo)).toBe(false);
+    expect(me.hand.some((h) => h.cardId === 'GIL_506')).toBe(false);
+  });
+
+  it('回音卡的消耗不會低於 1', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const uid = give(g, 'GIL_680'); // 胡桃精 3 費
+    const hc = me.hand.find((h) => h.uid === uid)!;
+    hc.costMod = -5;
+    expect(g.costOf(me, hc)).toBe(1);
+  });
+
+  it('迷霧幽靈：打出回音卡時獲得 +1/+1', () => {
+    const g = newGame();
+    const mw = put(g, 'GIL_510', 0);
+    const atk = g.atkOf(mw);
+    play(g, 'GIL_678'); // 冥光釣手（回音）
+    expect(g.atkOf(mw)).toBe(atk + 1);
+    play(g, FILLER);
+    expect(g.atkOf(mw)).toBe(atk + 1);
+  });
+
+  it('葛林達‧鴉羽：手牌中的手下具有回音', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    put(g, 'GIL_618', 0);
+    const uid = give(g, FILLER);
+    const spell = give(g, 'CS2_029');
+    expect(g.hasEcho(0, me.hand.find((h) => h.uid === uid)!)).toBe(true);
+    expect(g.hasEcho(0, me.hand.find((h) => h.uid === spell)!)).toBe(false);
+    expect(g.apply({ type: 'play', handUid: uid })).toBe(true);
+    expect(me.hand.some((h) => h.echo && h.cardId === FILLER)).toBe(true);
+  });
+
+  it('虛弱詛咒：敵方手下 -2 攻擊力直到你的下個回合', () => {
+    const g = newGame();
+    const enemy = put(g, 'CS2_182', 1);
+    play(g, 'GIL_665');
+    expect(g.atkOf(enemy)).toBe(2);
+    g.apply({ type: 'endTurn' });
+    expect(g.atkOf(enemy)).toBe(2);
+    g.apply({ type: 'endTurn' });
+    expect(g.atkOf(enemy)).toBe(4);
+  });
+});

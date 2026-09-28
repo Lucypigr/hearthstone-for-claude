@@ -13,6 +13,8 @@ export interface HandCard {
   hpBuff: number;
   /** 殭屍獸：由兩張野獸縫合而成 */
   parts?: [string, string];
+  /** 回音產生的複製：回合結束時從手牌消失 */
+  echo?: boolean;
 }
 
 export interface Minion {
@@ -32,6 +34,8 @@ export interface Minion {
   /** 持續到擁有者下個回合開始的關鍵字 */
   nextTurnKeywords: Keyword[];
   auraKeywords: Keyword[];
+  /** 持續到某位玩家下個回合開始的攻擊力變化（例如「直到你的下個回合」） */
+  lingerAtk?: { amount: number; until: PlayerId }[];
   abilities: Ability[];
   auras: Aura[];
   spellDamage: number;
