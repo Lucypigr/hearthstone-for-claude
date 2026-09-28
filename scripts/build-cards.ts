@@ -42,6 +42,26 @@ const RACE_MAP: Record<number, Race> = {
   43: 'QUILBOAR',
   92: 'NAGA',
 };
+const RACE_WORDS: Record<string, number> = {
+  beast: 20,
+  beasts: 20,
+  demon: 15,
+  demons: 15,
+  dragon: 24,
+  dragons: 24,
+  elemental: 18,
+  elementals: 18,
+  mech: 17,
+  mechs: 17,
+  murloc: 14,
+  murlocs: 14,
+  pirate: 23,
+  pirates: 23,
+  totem: 21,
+  totems: 21,
+  undead: 11,
+  naga: 92,
+};
 const SCHOOL_MAP: Record<number, string> = { 1: 'ARCANE', 2: 'FIRE', 3: 'FROST', 4: 'NATURE', 5: 'HOLY', 6: 'SHADOW', 7: 'FEL' };
 const KEYWORD_TAGS: [string, Keyword][] = [
   ['TAUNT', 'TAUNT'],
@@ -136,7 +156,7 @@ async function main() {
     const prefix = sourceId.split('_')[0];
     return {
       findToken(q: TokenQuery): string | null {
-        const cands = (byName.get(q.name.toLowerCase()) ?? []).filter((r) => {
+        const cands: RawCard[] = (byName.get(q.name.toLowerCase()) ?? []).filter((r) => {
           const t = typeOf(r);
           if (!t) return false;
           if (q.type && t !== q.type) return false;
@@ -146,9 +166,21 @@ async function main() {
           if (!r.strs.CARDNAME?.zhTW) return false;
           return true;
         });
+        const raceWord = RACE_WORDS[q.name.toLowerCase()];
+        if (!cands.length && raceWord !== undefined && q.atk !== undefined) {
+          // 「召喚一個 4/2 的元素」：用種族 + 數值 + 來源卡 ID 前綴找衍生卡
+          for (const r of raws) {
+            if (!r.id.startsWith(sourceId) || typeOf(r) !== 'MINION' || r.tags.COLLECTIBLE) continue;
+            if (r.tags.CARDRACE !== raceWord || (r.tags.ATK ?? 0) !== q.atk || (r.tags.HEALTH ?? 0) !== q.hp) continue;
+            if (!r.strs.CARDNAME?.zhTW) continue;
+            cands.push(r);
+          }
+        }
         if (!cands.length) return null;
+        // 避開冒險模式 / 謎題 / 酒館戰棋等特殊版本的同名卡
+        const odd = /Puzzle|_hb|^TB_|_TB|^BG|BGS_|Story|PVPDR|COPY|Brawl|Boss|Bacon|^THD_|Mission|_H\d|^[A-Z]+A_\d/i;
         const score = (r: RawCard) =>
-          (r.id.startsWith(sourceId) ? 100 : 0) + (r.id.split('_')[0] === prefix ? 10 : 0) + (r.tags.COLLECTIBLE ? 0 : 1);
+          (r.id.startsWith(sourceId) ? 100 : 0) + (r.id.split('_')[0] === prefix ? 10 : 0) + (r.tags.COLLECTIBLE ? 2 : 0) - (odd.test(r.id) ? 50 : 0);
         cands.sort((a, b) => score(b) - score(a) || a.dbf - b.dbf);
         for (const c of cands) {
           if (buildToken(c.id)) return c.id;

@@ -137,6 +137,44 @@ function bestAction(g: Game, me: PlayerId, depth: number): { action: Action | nu
   return best;
 }
 
+/**
+ * 困難：在整個回合的動作序列上做 beam search，找出回合結束時盤面最好的出牌順序，
+ * 再執行其中的第一步（每一步都重新規劃，因為隨機效果會改變結果）。
+ */
+function planTurn(g: Game, me: PlayerId, width: number, depth: number): Action | null {
+  const base = evaluate(g, me);
+  type Node = { game: Game; first: Action | null; score: number };
+  let beam: Node[] = [{ game: g, first: null, score: base }];
+  let best: Node = beam[0];
+  let salt = 1;
+  for (let d = 0; d < depth; d++) {
+    const next: Node[] = [];
+    for (const node of beam) {
+      if (node.game.s.phase !== 'play' || node.game.s.current !== me) continue;
+      for (const action of legalActions(node.game)) {
+        const sim = simulate(node.game.s, me, action, salt++);
+        if (!sim) continue;
+        next.push({ game: sim, first: node.first ?? action, score: evaluate(sim, me) });
+      }
+    }
+    if (!next.length) break;
+    next.sort((a, b) => b.score - a.score);
+    // 去除分數幾乎相同的重複分支，保留多樣性
+    const seen = new Set<string>();
+    beam = [];
+    for (const n of next) {
+      const key = n.score.toFixed(2);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      beam.push(n);
+      if (beam.length >= width) break;
+    }
+    if (beam[0].score > best.score) best = beam[0];
+    if (best.score >= 100000) break; // 找到致命
+  }
+  return best.first && best.score > base + 0.05 ? best.first : null;
+}
+
 /** 決定電腦的下一個動作 */
 export function chooseAction(g: Game, difficulty: Difficulty): Action {
   const s = g.s;
@@ -148,7 +186,8 @@ export function chooseAction(g: Game, difficulty: Difficulty): Action {
     const a = pick({ rng: s.rng + s.fxSeq * 31 }, actions);
     if (a) return a;
   }
-  const { action } = bestAction(g, me, difficulty === 'hard' ? 2 : 1);
+  if (difficulty === 'hard') return planTurn(g, me, 5, 8) ?? { type: 'endTurn' };
+  const { action } = bestAction(g, me, 1);
   return action ?? { type: 'endTurn' };
 }
 

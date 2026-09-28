@@ -86,8 +86,8 @@ export function CardView(p: CardViewProps) {
       <div className={`card-cost ${costClass}`}>{cost}</div>
       {def.type !== 'SPELL' && (
         <>
-          <div className={`card-atk ${def.type === 'WEAPON' ? 'weapon' : ''} ${attack !== undefined && def.attack !== undefined && attack > def.attack ? 'buffed' : ''}`}>{attack}</div>
-          <div className={`card-hp ${def.type === 'WEAPON' ? 'weapon' : ''} ${health !== undefined && def.health !== undefined && health > def.health ? 'buffed' : ''}`}>{health}</div>
+          <div className={`card-atk ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${attack !== undefined && def.attack !== undefined && attack > def.attack ? 'buffed' : ''}`}>{attack}</div>
+          <div className={`card-hp ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${health !== undefined && def.health !== undefined && health > def.health ? 'buffed' : ''}`}>{health}</div>
         </>
       )}
       {p.count !== undefined && <div className={`card-count ${p.count === 0 ? 'none' : ''}`}>×{p.count}</div>}

@@ -9,6 +9,6 @@ export function makeAiDeck(cls: HeroClass, difficulty: Difficulty, seed: number)
     case 'normal':
       return buildDeck(cls, { seed, noise: 4, rarities: ['FREE', 'COMMON', 'RARE', 'EPIC'], maxLegendary: 1 });
     case 'hard':
-      return buildDeck(cls, { seed, noise: 1.5, maxLegendary: 5 });
+      return buildDeck(cls, { seed, noise: 0.8, maxLegendary: 4 });
   }
 }

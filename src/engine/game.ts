@@ -165,6 +165,7 @@ export class Game {
       fx: [],
       fxSeq: 0,
       pendingChoice: null,
+      deathsThisTurn: 0,
     };
     const game = new Game(s);
     for (const id of [0, 1] as PlayerId[]) {
@@ -207,6 +208,9 @@ export class Game {
         elementalLastTurn: false,
         elementalThisTurn: false,
         mulliganDone: false,
+        heroPowersUsed: 0,
+        drawnThisTurn: 0,
+        summonedRaces: {},
         ai: o.ai[id],
       };
       shuffle(s, s.players[id].deck);
@@ -354,7 +358,7 @@ export class Game {
   }
 
   hasKw(m: Minion, k: Keyword): boolean {
-    return m.keywords.includes(k) || m.tempKeywords.includes(k) || m.auraKeywords.includes(k);
+    return m.keywords.includes(k) || m.tempKeywords.includes(k) || m.nextTurnKeywords.includes(k) || m.auraKeywords.includes(k);
   }
 
   atkOf(c: Char): number {
@@ -388,7 +392,7 @@ export class Game {
           n = this.s.players[0].board.length + this.s.players[1].board.length;
           break;
         default:
-          n = this.dyn(def.costRule.per, this.baseCtx(p.id));
+          n = this.dyn(def.costRule.per, this.baseCtx(p.id), def.costRule.race);
       }
       cost -= def.costRule.amount * n;
     }
@@ -638,6 +642,8 @@ export class Game {
     p.overloadOwed = 0;
     p.heroPower.used = false;
     p.cardsPlayedThisTurn = 0;
+    p.drawnThisTurn = 0;
+    s.deathsThisTurn = 0;
     p.heroAttackedThisTurn = false;
     p.elementalLastTurn = p.elementalThisTurn;
     p.elementalThisTurn = false;
@@ -646,6 +652,7 @@ export class Game {
     for (const m of p.board) {
       m.sleeping = false;
       m.attacks = 0;
+      m.nextTurnKeywords = [];
     }
     this.log(pid, `—— 第 ${Math.ceil(s.turn / 2)} 回合：${p.name} ——`);
     yield* this.emit({ k: 'turnStart', player: pid });
@@ -730,6 +737,7 @@ export class Game {
       p.board.splice(pos, 0, m);
       ctx.sourceUid = m.uid;
       this.recalcAuras();
+      this.countSummon(p, m.cardId);
       if (def.races?.includes('ELEMENTAL')) p.elementalThisTurn = true;
       for (const ab of playAbilities) {
         if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
@@ -783,6 +791,7 @@ export class Game {
     const def = HERO_POWERS[p.heroClass];
     p.mana -= p.heroPower.cost;
     p.heroPower.used = true;
+    p.heroPowersUsed++;
     this.log(p.id, `${p.name}使用了英雄能力【${HEROES[p.heroClass].power.name}】`);
     this.fx({ kind: 'play', cardId: p.heroPower.id, player: p.id, target });
     const ctx = this.baseCtx(p.id);
@@ -817,7 +826,7 @@ export class Game {
     if (isHero(defender)) {
       yield* this.checkSecrets(dp, 'heroAttacked', { it });
       if (!isHero(attacker)) yield* this.checkSecrets(dp, 'minionAttacksHero', { it });
-    } else yield* this.checkSecrets(dp, 'minionAttacked', { it });
+    } else yield* this.checkSecrets(dp, 'minionAttacked', { it: { kind: 'char', uid: targetUid } });
     yield* this.checkSecrets(dp, 'enemyAttacks', { it });
     if (!isHero(attacker)) yield* this.checkSecrets(dp, 'enemyMinionAttacks', { it });
     const defUid = this.currentAttack.defender;
@@ -836,6 +845,7 @@ export class Game {
     if (!isHero(a)) {
       a.keywords = a.keywords.filter((k) => k !== 'STEALTH');
       a.tempKeywords = a.tempKeywords.filter((k) => k !== 'STEALTH');
+      a.nextTurnKeywords = a.nextTurnKeywords.filter((k) => k !== 'STEALTH');
     }
     const aAtk = this.atkOf(a);
     const dAtk = isHero(d) ? 0 : this.atkOf(d);
@@ -900,6 +910,7 @@ export class Game {
       if (this.hasKw(t, 'DIVINE_SHIELD')) {
         t.keywords = t.keywords.filter((k) => k !== 'DIVINE_SHIELD');
         t.tempKeywords = t.tempKeywords.filter((k) => k !== 'DIVINE_SHIELD');
+        t.nextTurnKeywords = t.nextTurnKeywords.filter((k) => k !== 'DIVINE_SHIELD');
         t.auraKeywords = t.auraKeywords.filter((k) => k !== 'DIVINE_SHIELD');
         this.fx({ kind: 'shield', uid: t.uid });
         return 0;
@@ -977,6 +988,7 @@ export class Game {
       }
       p.hand.push(card);
       drawn.push(card);
+      p.drawnThisTurn++;
       yield* this.emit({ k: 'draw', player: p.id, subject: card.uid, subjectKind: 'hand' });
     }
     return drawn;
@@ -1015,6 +1027,7 @@ export class Game {
       hp: baseHp + hpBuff,
       keywords: [...(def.keywords ?? [])],
       tempKeywords: [],
+      nextTurnKeywords: [],
       auraKeywords: [],
       abilities: [...(def.abilities ?? [])],
       auras: def.auras ?? [],
@@ -1039,8 +1052,13 @@ export class Game {
     const pos = position === undefined ? p.board.length : Math.max(0, Math.min(position, p.board.length));
     p.board.splice(pos, 0, m);
     this.recalcAuras();
+    this.countSummon(p, cardId);
     yield* this.emit({ k: 'summon', player: owner, subject: m.uid, races: getCard(cardId).races });
     return m;
+  }
+
+  private countSummon(p: PlayerState, cardId: string) {
+    for (const r of getCard(cardId).races ?? []) p.summonedRaces[r] = (p.summonedRaces[r] ?? 0) + 1;
   }
 
   private *equip(owner: PlayerId, cardId: string): Gen {
@@ -1147,6 +1165,7 @@ export class Game {
         const p = this.s.players[m.owner];
         p.board = p.board.filter((x) => x !== m);
         p.graveyard.push(m.cardId);
+        this.s.deathsThisTurn++;
         this.fx({ kind: 'death', uid: m.uid, cardId: m.cardId, player: m.owner });
       }
       for (const w of deadWeapons) this.s.players[w.owner].weapon = null;
@@ -1349,10 +1368,10 @@ export class Game {
 
   private amount(a: Amount, ctx: Ctx): number {
     if (typeof a === 'number') return a;
-    return (a.base ?? 0) + this.dyn(a.dyn, ctx) * (a.mult ?? 1);
+    return (a.base ?? 0) + this.dyn(a.dyn, ctx, a.race) * (a.mult ?? 1);
   }
 
-  private dyn(d: DynAmount, ctx: Ctx): number {
+  private dyn(d: DynAmount, ctx: Ctx, race?: Race): number {
     const p = this.s.players[ctx.controller];
     const e = this.s.players[opp(ctx.controller)];
     switch (d) {
@@ -1385,6 +1404,28 @@ export class Game {
       }
       case 'heroAttack':
         return this.atkOf(p.hero);
+      case 'secrets':
+        return p.secrets.length;
+      case 'heroMissingHealth':
+        return p.hero.maxHp - p.hero.hp;
+      case 'oppHandSize':
+        return e.hand.length;
+      case 'deathsThisTurn':
+        return this.s.deathsThisTurn;
+      case 'friendlyDeathsThisGame':
+        return p.graveyard.length;
+      case 'heroPowersUsed':
+        return p.heroPowersUsed;
+      case 'drawnThisTurn':
+        return p.drawnThisTurn;
+      case 'spellsInHand':
+        return p.hand.filter((h) => getCard(h.cardId).type === 'SPELL').length;
+      case 'damagedMinions':
+        return [...p.board, ...e.board].filter((m) => this.alive(m) && m.hp < m.maxHp).length;
+      case 'friendlyRace':
+        return p.board.filter((m) => this.alive(m) && m.uid !== ctx.sourceUid && (!race || (getCard(m.cardId).races ?? []).includes(race))).length;
+      case 'summonedRace':
+        return race ? (p.summonedRaces[race] ?? 0) : 0;
     }
     return 0;
   }
@@ -1625,10 +1666,8 @@ export class Game {
           if (e.keywords) {
             for (const k of e.keywords) {
               if (e.temp) c.tempKeywords.push(k);
+              else if (e.untilNextTurn) c.nextTurnKeywords.push(k);
               else if (!c.keywords.includes(k)) c.keywords.push(k);
-              if (k === 'CHARGE' || k === 'RUSH') {
-                /* 立即可攻擊由 canAttack 判斷 */
-              }
             }
           }
           if (e.abilities) c.abilities.push(...e.abilities);
@@ -1638,7 +1677,14 @@ export class Game {
       case 'setStats':
         for (const uid of this.resolve(e.target, ctx)) {
           const m = this.minion(uid);
-          if (!m) continue;
+          if (!m) {
+            const h = this.char(uid);
+            if (h && isHero(h) && e.hp !== undefined) {
+              h.hp = e.hp;
+              h.maxHp = Math.max(h.maxHp, e.hp);
+            }
+            continue;
+          }
           if (e.atk !== undefined) {
             m.baseAtk = e.atk;
             m.atkBuff = 0;
@@ -1698,16 +1744,19 @@ export class Game {
         }
         break;
       }
-      case 'summonCopy':
-        for (const uid of this.resolve(e.target, ctx)) {
-          const src = this.minion(uid) ?? (e.target.t === 'self' ? ctx.sourceSnapshot : null);
-          if (!src) continue;
+      case 'summonCopy': {
+        const sources: Minion[] = this.resolve(e.target, ctx)
+          .map((uid) => this.minion(uid))
+          .filter((m): m is Minion => !!m);
+        if (!sources.length && e.target.t === 'self' && ctx.sourceSnapshot) sources.push(ctx.sourceSnapshot);
+        for (const src of sources) {
           for (let i = 0; i < e.count; i++) {
             const m = yield* this.doSummon(ctx, ctx.controller, src.cardId);
             if (m) this.copyStats(src, m);
           }
         }
         break;
+      }
       case 'destroy':
         for (const uid of this.resolve(e.target, ctx)) {
           const m = this.minion(uid);
@@ -1793,6 +1842,7 @@ export class Game {
           owner.board = owner.board.filter((x) => x !== m);
           const hc = this.addToHand(owner, m.cardId);
           if (hc && e.costChange) hc.costMod += e.costChange;
+          if (hc && owner.id === ctx.controller) ctx.it = { kind: 'hand', uid: hc.uid };
           this.recalcAuras();
         }
         break;
@@ -1874,8 +1924,19 @@ export class Game {
       case 'shuffle':
         for (let i = 0; i < e.count; i++) me.deck.splice(randomInt(s, me.deck.length + 1), 0, this.newHandCard(e.card));
         break;
+      case 'shuffleCopy':
+        for (const uid of this.resolve(e.target, ctx)) {
+          const m = this.minion(uid);
+          if (!m) continue;
+          for (let i = 0; i < e.count; i++) me.deck.splice(randomInt(s, me.deck.length + 1), 0, this.newHandCard(m.cardId));
+        }
+        break;
       case 'handBuff': {
-        const minions = me.hand.filter((h) => getCard(h.cardId).type === 'MINION');
+        const minions = me.hand.filter((h) => {
+          const def = getCard(h.cardId);
+          if (def.type !== 'MINION') return false;
+          return !e.race || !!def.races?.includes(e.race) || !!def.races?.includes('ALL');
+        });
         const targets = e.scope === 'all' ? minions : ([pick(s, minions)].filter(Boolean) as HandCard[]);
         for (const h of targets) {
           h.atkBuff += e.atk;
@@ -1925,6 +1986,7 @@ export class Game {
     m.silenced = true;
     m.keywords = [];
     m.tempKeywords = [];
+    m.nextTurnKeywords = [];
     m.abilities = [];
     m.auras = [];
     m.spellDamage = 0;

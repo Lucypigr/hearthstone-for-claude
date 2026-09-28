@@ -27,6 +27,8 @@ export interface Minion {
   hp: number;
   keywords: Keyword[];
   tempKeywords: Keyword[];
+  /** 持續到擁有者下個回合開始的關鍵字 */
+  nextTurnKeywords: Keyword[];
   auraKeywords: Keyword[];
   abilities: Ability[];
   auras: Aura[];
@@ -96,6 +98,10 @@ export interface PlayerState {
   elementalLastTurn: boolean;
   elementalThisTurn: boolean;
   mulliganDone: boolean;
+  heroPowersUsed: number;
+  drawnThisTurn: number;
+  /** 本場對戰召喚過的各種族手下數量 */
+  summonedRaces: Record<string, number>;
   /** 是否為電腦 */
   ai: boolean;
 }
@@ -139,6 +145,7 @@ export interface GameState {
   fx: Fx[];
   fxSeq: number;
   pendingChoice: ChoiceRequest | null;
+  deathsThisTurn: number;
 }
 
 export type Action =

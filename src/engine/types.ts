@@ -102,9 +102,20 @@ export type DynAmount =
   | 'spellsCastThisGame'
   | 'weaponAttack'
   | 'selfAttack'
-  | 'heroAttack';
+  | 'heroAttack'
+  | 'secrets'
+  | 'heroMissingHealth'
+  | 'oppHandSize'
+  | 'deathsThisTurn'
+  | 'friendlyDeathsThisGame'
+  | 'heroPowersUsed'
+  | 'drawnThisTurn'
+  | 'spellsInHand'
+  | 'damagedMinions'
+  | 'friendlyRace'
+  | 'summonedRace';
 
-export type Amount = number | { dyn: DynAmount; mult?: number; base?: number };
+export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
 export interface Pool {
   type?: CardType;
@@ -156,6 +167,8 @@ export type Effect =
       keywords?: Keyword[];
       /** 僅限本回合 */
       temp?: boolean;
+      /** 持續到你的下個回合開始（例如「潛行直到你的下個回合」） */
+      untilNextTurn?: boolean;
       /** 額外賦予的能力（例如「賦予一個手下『死聲：…』」） */
       abilities?: Ability[];
     }
@@ -185,7 +198,8 @@ export type Effect =
   | { e: 'destroyWeapon'; who: 'self' | 'opponent' }
   | { e: 'weaponBuff'; atk?: number; dur?: number }
   | { e: 'shuffle'; card: string; count: number }
-  | { e: 'handBuff'; atk: number; hp: number; scope: 'all' | 'random' }
+  | { e: 'handBuff'; atk: number; hp: number; scope: 'all' | 'random'; race?: Race }
+  | { e: 'shuffleCopy'; target: TargetExpr; count: number }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
@@ -288,7 +302,7 @@ export interface CardDef {
   chooseOne?: ChooseOneOption[];
   secret?: boolean;
   /** 動態費用 */
-  costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number };
+  costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number; race?: Race };
   /** 由 overrides / custom 加入的卡 */
   custom?: boolean;
 }

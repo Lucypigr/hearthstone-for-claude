@@ -186,7 +186,7 @@ export interface ParsedCard {
   overload?: number;
   enrage?: { atk: number };
   secret?: boolean;
-  costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number };
+  costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number; race?: Race };
   /** 引用到的衍生卡 ID */
   tokens: string[];
 }
@@ -475,6 +475,7 @@ interface BuffParse {
   hp?: Amount;
   keywords?: Keyword[];
   temp?: boolean;
+  untilNextTurn?: boolean;
   rest: string;
 }
 
@@ -556,6 +557,9 @@ function parseBuff(s: string): BuffParse | null {
   if ((m = /^ this turn/.exec(s))) {
     out.temp = true;
     s = s.slice(m[0].length);
+  } else if ((m = /^ until your next turn/.exec(s))) {
+    out.untilNextTurn = true;
+    s = s.slice(m[0].length);
   }
   out.rest = s;
   return out;
@@ -567,6 +571,7 @@ function buffEffect(target: TargetExpr, b: BuffParse): Effect {
   if (b.hp !== undefined) eff.hp = b.hp;
   if (b.keywords) eff.keywords = b.keywords;
   if (b.temp) eff.temp = true;
+  if (b.untilNextTurn) eff.untilNextTurn = true;
   return eff;
 }
 
@@ -814,12 +819,12 @@ const ACTIONS: ActionRule[] = [
   },
   // ----- 手牌增益 -----
   (s) => {
-    const m = /^[Gg]ive (all minions in your hand|a random minion in your hand|minions in your hand) \+(\d+)\/\+(\d+)/.exec(s);
+    const m = new RegExp(`^[Gg]ive (all|a random) (minions?|${RACE_RE}) in your hand \\+(\\d+)\\/\\+(\\d+)`).exec(s) ??
+      /^[Gg]ive ()(minions) in your hand \+(\d+)\/\+(\d+)/.exec(s);
     if (!m) return null;
-    return {
-      effects: [{ e: 'handBuff', atk: Number(m[2]), hp: Number(m[3]), scope: m[1].startsWith('a random') ? 'random' : 'all' }],
-      rest: s.slice(m[0].length),
-    };
+    const eff: Effect = { e: 'handBuff', atk: Number(m[3]), hp: Number(m[4]), scope: m[1] === 'a random' ? 'random' : 'all' };
+    if (!/^minions?$/.test(m[2])) eff.race = race(m[2]);
+    return { effects: [eff], rest: s.slice(m[0].length) };
   },
   // ----- 增益 -----
   (s, ctx) => {
@@ -900,6 +905,9 @@ const ACTIONS: ActionRule[] = [
     if ((mm = /^(a|two|three|\d+) cop(?:y|ies) of (this minion|this|it|itself|that minion)/.exec(rest))) {
       const target: TargetExpr = /this|itself/.test(mm[2]) ? { t: 'self' } : itRef(ctx);
       effects = [{ e: 'summonCopy', target, count: num(mm[1]) }];
+      rest = rest.slice(mm[0].length);
+    } else if ((mm = /^a random basic Totem/.exec(rest))) {
+      effects = [{ e: 'custom', fn: 'totemicCall' }];
       rest = rest.slice(mm[0].length);
     } else if ((mm = new RegExp(`^(${COUNT_RE}) random (.+?)(?= for your opponent|$|[,.]| and )`).exec(rest))) {
       const pool = parsePool(`a ${mm[2]}`);
@@ -1007,6 +1015,13 @@ const ACTIONS: ActionRule[] = [
     return { effects: [{ e: 'addCard', card: tok.card, count: tok.count, who: 'self' }], rest: r };
   },
   // ----- 洗入牌堆 -----
+  (s, ctx) => {
+    const m = /^[Ss]huffle (a|two|three|\d+) cop(?:y|ies) of (.+?) into your deck/.exec(s);
+    if (!m) return null;
+    const tp = parseTarget(m[2], ctx);
+    if (!tp || tp.rest) fail('shuffle copy target');
+    return { effects: useTarget(ctx, tp).map((target) => ({ e: 'shuffleCopy', target, count: num(m[1]) }) as Effect), rest: s.slice(m[0].length) };
+  },
   (s, ctx) => {
     const m = /^[Ss]huffle (.+?) into your deck/.exec(s);
     if (!m) return null;
@@ -1183,6 +1198,7 @@ const TRIGGERS: TriggerRule[] = [
   { re: /^(?:Whenever|After) your opponent casts a spell, /, build: () => ({ on: { k: 'spellCast', side: 'enemy' } }) },
   { re: /^(?:Whenever|After) a player casts a spell, /, build: () => ({ on: { k: 'spellCast', side: 'any' } }) },
   { re: /^Whenever this (?:minion|character) takes damage, /, build: () => ({ on: { k: 'damaged', subject: 'self' } }) },
+  { re: /^(?:After|Whenever) this minion survives damage, /, build: () => ({ on: { k: 'damaged', subject: 'self' }, cond: { c: 'itAlive' } }) },
   { re: /^Whenever your hero takes damage(?: on your turn)?, /, build: () => ({ on: { k: 'damaged', subject: 'friendlyHero' } }) },
   { re: /^Whenever a friendly minion takes damage, /, build: () => ({ on: { k: 'damaged', subject: 'friendlyMinion' } }) },
   { re: /^Whenever a minion takes damage, /, build: () => ({ on: { k: 'damaged', subject: 'anyMinion' } }) },
@@ -1258,6 +1274,31 @@ const SECRET_SPECIAL: [RegExp, (m: RegExpExecArray, ctx: Ctx) => Effect[]][] = [
 // 靜態能力（光環 / 被動）
 // ---------------------------------------------------------------------------
 
+type CostPer = NonNullable<ParsedCard['costRule']>['per'];
+
+const COST_RULES: [RegExp, CostPer][] = [
+  [/^(?:other )?card in your hand$/, 'otherCardsInHand'],
+  [/^(?:other )?minion on the battlefield$/, 'minionsOnBoard'],
+  [/^(?:enemy minion|minion your opponent controls)$/, 'enemyMinions'],
+  [/^(?:friendly minion|minion you control)$/, 'friendlyMinions'],
+  [/^minion that died this turn$/, 'deathsThisTurn'],
+  [/^friendly minion that died this game$/, 'friendlyDeathsThisGame'],
+  [/^spell you've cast this game$/, 'spellsCastThisGame'],
+  [/^card you've played this turn$/, 'cardsPlayedThisTurn'],
+  [/^card you've drawn this turn$/, 'drawnThisTurn'],
+  [/^time you used your Hero Power this game$/, 'heroPowersUsed'],
+  [/^card in your opponent's hand$/, 'oppHandSize'],
+  [/^Secret you control$/, 'secrets'],
+  [/^Health your hero is missing$/, 'heroMissingHealth'],
+  [/^Armor you have$/, 'armor'],
+  [/^Attack of your weapon$/, 'weaponAttack'],
+  [/^spell in your hand$/, 'spellsInHand'],
+  [/^damaged minion$/, 'damagedMinions'],
+  [/^damaged friendly character$/, 'damagedFriendlyChars'],
+  [new RegExp(`^friendly (${RACE_RE})$`), 'friendlyRace'],
+  [new RegExp(`^(${RACE_RE}) you've summoned this game$`), 'summonedRace'],
+];
+
 function parseStatic(sentence: string, ctx: Ctx): boolean {
   const out = ctx.out;
   let m: RegExpExecArray | null;
@@ -1293,17 +1334,13 @@ function parseStatic(sentence: string, ctx: Ctx): boolean {
     out.enrage = { atk: Number(m[1]) };
     return true;
   }
-  if ((m = /^Costs \((\d+)\) less for each (other card in your hand|card in your hand|minion on the battlefield|other minion on the battlefield|enemy minion|friendly minion|minion you control)$/.exec(sentence))) {
-    const map: Record<string, NonNullable<ParsedCard['costRule']>['per']> = {
-      'other card in your hand': 'otherCardsInHand',
-      'card in your hand': 'otherCardsInHand',
-      'minion on the battlefield': 'minionsOnBoard',
-      'other minion on the battlefield': 'minionsOnBoard',
-      'enemy minion': 'enemyMinions',
-      'friendly minion': 'friendlyMinions',
-      'minion you control': 'friendlyMinions',
-    };
-    out.costRule = { per: map[m[2]], amount: Number(m[1]) };
+  if ((m = /^Costs \((\d+)\) less (?:for each|per) (.+)$/.exec(sentence))) {
+    const rule = COST_RULES.find(([re]) => re.test(m![2]));
+    if (!rule) fail(`費用規則：${m[2]}`);
+    const [re, per] = rule;
+    const rm = re.exec(m[2])!;
+    out.costRule = { per, amount: Number(m[1]) };
+    if (rm[1]) out.costRule.race = race(rm[1]);
     return true;
   }
   // 光環
@@ -1384,6 +1421,13 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
 
     if (/^Choose One/.test(raw)) fail('Choose One 由子卡處理');
 
+    const st = /^Stealth (?:for 1 turn|until your next turn)$/.exec(raw);
+    if (st && input.cardType === 'MINION') {
+      out.abilities.push({ on: { k: 'play' }, effects: [{ e: 'buff', target: { t: 'self' }, keywords: ['STEALTH'], untilNextTurn: true }] });
+      current = null;
+      continue;
+    }
+
     // 奧秘
     const sm = /^Secret: (.+)$/.exec(raw);
     if (sm) {
@@ -1447,7 +1491,7 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
       current = null;
       continue;
     }
-    if (input.cardType === 'SPELL' && /^(?:Spell Damage|Overload)/.test(raw) && parseStatic(raw, newCtx(false, false))) {
+    if (input.cardType === 'SPELL' && /^(?:Spell Damage|Overload|Costs \()/.test(raw) && parseStatic(raw, newCtx(false, false))) {
       continue;
     }
 

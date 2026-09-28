@@ -653,7 +653,7 @@ textarea {
   background: radial-gradient(circle at 35% 30%, #ff9a8a, #d0302a 60%, #6b0f0b);
 }
 
-.card-hp.weapon {
+.card-hp.is-weapon {
   border-radius: 20%;
   background: radial-gradient(circle at 35% 30%, #ddd, #8a8a92 60%, #3a3a40);
 }
@@ -2313,4 +2313,59 @@ textarea {
     margin: 0 2px;
     border-radius: 18px;
   }
+}
+
+/* ----------------------------------------------------------------- 對戰補充 */
+.glossary {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  width: 220px;
+  background: #120d08ee;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  font-size: 0.8em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.power-card {
+  width: 220px;
+  padding: 14px;
+  background: linear-gradient(#3a2b1d, #1f160e);
+  border: 2px solid var(--border-2);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+
+.power-card p {
+  margin: 6px 0 0;
+}
+
+.trade-btn {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--cw) * 1.05);
+  transform: translateX(-50%);
+  z-index: 35;
+}
+
+.turn-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 44;
+  font-size: clamp(1.8rem, 6vw, 3.4rem);
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 3px 0 #000, 0 0 30px #f2c35b;
+  padding: 10px 40px;
+  background: radial-gradient(ellipse, #000a 0%, transparent 70%);
+  pointer-events: none;
+  animation: banner 1.3s ease forwards;
 }

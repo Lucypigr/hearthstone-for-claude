@@ -51,13 +51,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [mode, setMode] = useState<Mode>({ k: 'idle' });
-  const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number } | null>(null);
+  const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number } | { power: PlayerId } | null>(null);
   const [floats, setFloats] = useState<Float[]>([]);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
   const [anim, setAnim] = useState<{ attacker: number; target: number; id: number } | null>(null);
   const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
   const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw' } | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [turnBanner, setTurnBanner] = useState(0);
+  const lastTurn = useRef(0);
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState('');
   const lastFx = useRef(0);
@@ -122,6 +124,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setFloats((old) => [...old, ...newFloats]);
       window.setTimeout(() => setFloats((old) => old.filter((x) => !newFloats.includes(x))), 1300);
     }
+  });
+
+  // 輪到玩家時顯示「你的回合」
+  useEffect(() => {
+    if (!s || s.phase !== 'play' || s.current !== ME || s.turn === lastTurn.current) return;
+    lastTurn.current = s.turn;
+    setTurnBanner(s.turn);
+    const t = window.setTimeout(() => setTurnBanner(0), 1300);
+    return () => window.clearTimeout(t);
   });
 
   useEffect(() => {
@@ -247,7 +258,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setMode({ k: 'idle' });
       return;
     }
-    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp });
+    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid });
   };
 
   const onHeroPower = () => {
@@ -261,6 +272,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   };
 
   const selectedHand = mode.k === 'card' ? mode.handUid : null;
+  const canTrade = selectedHand !== null && g.check({ type: 'trade', handUid: selectedHand }).ok;
   const selectedDef = selectedHand !== null ? getCard(me.hand.find((h) => h.uid === selectedHand)?.cardId ?? 'GAME_005') : null;
   const placing = mode.k === 'card' && mode.stage === 'place';
 
@@ -303,7 +315,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       g={g}
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
-      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp } : null)}
+      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid } : null)}
     >
       {floatsFor(m.uid)}
     </MinionView>
@@ -359,7 +371,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
             {floatsFor(foe.hero.uid)}
           </HeroView>
-          <HeroPowerView p={foe} usable={false} />
+          <HeroPowerView p={foe} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
         </div>
       </div>
 
@@ -399,7 +411,13 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)}>
             {floatsFor(me.hero.uid)}
           </HeroView>
-          <HeroPowerView p={me} usable={myTurn && g.canHeroPower()} active={mode.k === 'heroPower'} onClick={onHeroPower} />
+          <HeroPowerView
+            p={me}
+            usable={myTurn && g.canHeroPower()}
+            active={mode.k === 'heroPower'}
+            onClick={onHeroPower}
+            onHover={(on) => setInspect(on ? { power: ME } : null)}
+          />
         </div>
         <div className="hand my-hand" style={{ '--n': me.hand.length } as CSSProperties}>
           {me.hand.map((h, i) => {
@@ -425,12 +443,32 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       </div>
 
       {/* ---------------- 浮動資訊 ---------------- */}
-      {inspect && hasCard(inspect.cardId) && (
+      {inspect && 'power' in inspect && (
+        <div className="inspect" onClick={() => setInspect(null)}>
+          <div className="power-card">
+            <b>{HEROES[s.players[inspect.power].heroClass].power.name}</b>
+            <span className="muted small">英雄能力・消耗 {s.players[inspect.power].heroPower.cost}</span>
+            <p dangerouslySetInnerHTML={{ __html: formatCardText(HEROES[s.players[inspect.power].heroClass].power.text) }} />
+          </div>
+        </div>
+      )}
+      {inspect && 'cardId' in inspect && hasCard(inspect.cardId) && (
         <div className="inspect" onClick={() => setInspect(null)}>
           <CardView cardId={inspect.cardId} width={220} attack={inspect.atk} health={inspect.hp} />
+          <Glossary cardId={inspect.cardId} minion={inspect.uid !== undefined ? g.minion(inspect.uid) : null} g={g} />
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {canTrade && selectedHand !== null && (
+        <button className="btn trade-btn" onClick={() => act({ type: 'trade', handUid: selectedHand })}>
+          🔁 交易（1 法力：洗回牌堆並抽一張）
+        </button>
+      )}
+      {turnBanner && (
+        <div className="turn-banner" key={turnBanner}>
+          你的回合
+        </div>
+      )}
       {banner && (
         <div className="play-banner" key={banner.id}>
           <div className="banner-text">{banner.text}</div>
@@ -552,6 +590,45 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 // 子元件
 // ============================================================================
 
+const KEYWORD_HELP: [string, string][] = [
+  ['TAUNT', '嘲諷：敵人必須先攻擊有嘲諷的角色'],
+  ['DIVINE_SHIELD', '聖盾：抵擋下一次受到的傷害'],
+  ['CHARGE', '衝鋒：上場當回合就能攻擊'],
+  ['RUSH', '突襲：上場當回合就能攻擊手下'],
+  ['WINDFURY', '風怒：每回合可以攻擊兩次'],
+  ['MEGA_WINDFURY', '超級風怒：每回合可以攻擊四次'],
+  ['STEALTH', '潛行：在攻擊前無法被敵人指定為目標'],
+  ['POISONOUS', '劇毒：對手下造成傷害時直接消滅它'],
+  ['LIFESTEAL', '生命竊取：造成傷害時為你的英雄恢復等量生命'],
+  ['REBORN', '復生：第一次死亡時以 1 點生命值復活'],
+  ['ELUSIVE', '法術免疫：無法成為法術或英雄能力的目標'],
+  ['CANT_ATTACK', '無法攻擊'],
+  ['FREEZE_ON_DAMAGE', '冰凍被它傷害的角色（下回合無法攻擊）'],
+  ['TRADEABLE', '可交易：花 1 法力把它洗回牌堆並抽一張牌'],
+];
+
+function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null; g: Game }) {
+  const def = getCard(cardId);
+  const kws = new Set<string>(def.keywords ?? []);
+  if (minion) for (const k of KEYWORD_HELP) if (g.hasKw(minion, k[0] as Parameters<Game['hasKw']>[1])) kws.add(k[0]);
+  const lines = KEYWORD_HELP.filter(([k]) => kws.has(k)).map(([, t]) => t);
+  const kinds = new Set((def.abilities ?? []).map((a) => a.on.k));
+  if (kinds.has('deathrattle')) lines.push('亡語：死亡時觸發效果');
+  if (kinds.has('secret')) lines.push('奧秘：在對手回合滿足條件時才會揭露並觸發');
+  if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);
+  if (def.spellDamage) lines.push(`法術傷害 +${def.spellDamage}：你的法術多造成 ${def.spellDamage} 點傷害`);
+  if (minion?.frozen) lines.push('已被冰凍：錯過下一次攻擊');
+  if (minion?.silenced) lines.push('已被沉默：失去所有卡牌敘述的效果');
+  if (!lines.length) return null;
+  return (
+    <ul className="glossary">
+      {lines.map((l) => (
+        <li key={l}>{l}</li>
+      ))}
+    </ul>
+  );
+}
+
 function fxFloat(f: Fx): Float | null {
   if (f.uid === undefined) return null;
   switch (f.kind) {
@@ -665,7 +742,19 @@ function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: G
   );
 }
 
-function HeroPowerView({ p, usable, active, onClick }: { p: PlayerState; usable: boolean; active?: boolean; onClick?: () => void }) {
+function HeroPowerView({
+  p,
+  usable,
+  active,
+  onClick,
+  onHover,
+}: {
+  p: PlayerState;
+  usable: boolean;
+  active?: boolean;
+  onClick?: () => void;
+  onHover?: (on: boolean) => void;
+}) {
   const info = HEROES[p.heroClass].power;
   return (
     <button
@@ -674,7 +763,8 @@ function HeroPowerView({ p, usable, active, onClick }: { p: PlayerState; usable:
         e.stopPropagation();
         onClick?.();
       }}
-      title={`${info.name}：${formatCardText(info.text).replace(/<[^>]+>/g, ' ')}`}
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
     >
       <Art cardId={p.heroPower.id} className="hp-art" label={info.name.slice(0, 2)} color={CLASS_COLORS[p.heroClass]} />
       <span className="hp-cost">{p.heroPower.cost}</span>
