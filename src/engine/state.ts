@@ -1,5 +1,5 @@
 // 對戰狀態（純資料，可 structuredClone，供 AI 模擬使用）
-import type { Ability, Aura, CardClass, Keyword } from './types';
+import type { Ability, Aura, CardClass, Keyword, Race } from './types';
 
 export type PlayerId = 0 | 1;
 
@@ -81,7 +81,12 @@ export interface PlayerState {
   heroClass: Exclude<CardClass, 'NEUTRAL'>;
   hero: Hero;
   weapon: Weapon | null;
-  heroPower: { id: string; used: boolean; cost: number };
+  /** heroCard：打出英雄卡後，英雄能力改用該卡附帶的能力 */
+  heroPower: { id: string; used: boolean; cost: number; heroCard?: string };
+  /** 本場對戰中賦予手下的關鍵字（例如「你的元素具有生命竊取」） */
+  grants: { keyword: Keyword; race?: Race }[];
+  /** 本回合下一張牌的折扣 */
+  nextCardDiscount: number;
   mana: number;
   maxMana: number;
   overloadOwed: number;
@@ -151,7 +156,7 @@ export interface GameState {
 export type Action =
   | { type: 'play'; handUid: number; target?: number; position?: number; option?: number }
   | { type: 'attack'; attacker: number; target: number }
-  | { type: 'heroPower'; target?: number }
+  | { type: 'heroPower'; target?: number; option?: number }
   | { type: 'trade'; handUid: number }
   | { type: 'endTurn' }
   | { type: 'mulligan'; player: PlayerId; replace: number[] }

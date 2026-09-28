@@ -34,6 +34,7 @@ import type {
   DynAmount,
   Effect,
   Filter,
+  HeroPowerSpec,
   Keyword,
   Pool,
   Race,
@@ -208,6 +209,8 @@ export class Game {
         elementalLastTurn: false,
         elementalThisTurn: false,
         mulliganDone: false,
+        grants: [],
+        nextCardDiscount: 0,
         heroPowersUsed: 0,
         drawnThisTurn: 0,
         summonedRaces: {},
@@ -258,7 +261,7 @@ export class Game {
         this.drive(this.wrap(this.doAttack(action.attacker, action.target)));
         return true;
       case 'heroPower':
-        this.drive(this.wrap(this.useHeroPower(action.target)));
+        this.drive(this.wrap(this.useHeroPower(action.target, action.option)));
         return true;
       case 'trade':
         this.drive(this.wrap(this.trade(action.handUid)));
@@ -297,10 +300,12 @@ export class Game {
         return { ok: true };
       }
       case 'heroPower': {
-        if (!this.canHeroPower()) return { ok: false, reason: '無法使用英雄能力' };
-        const def = HERO_POWERS[p.heroClass];
-        if (def.target) {
-          const valid = this.validTargets(def.target, s.current, true);
+        if (!this.canHeroPower(action.option)) return { ok: false, reason: '無法使用英雄能力' };
+        const def = this.powerDef(p);
+        if (def.chooseOne && (action.option === undefined || !def.chooseOne[action.option])) return { ok: false, reason: '請選擇一個選項' };
+        const req = this.powerTarget(p, action.option);
+        if (req) {
+          const valid = this.validTargets(req, s.current, true);
           if (action.target === undefined || !valid.includes(action.target)) return { ok: false, reason: '請選擇目標' };
         }
         return { ok: true };
@@ -358,7 +363,15 @@ export class Game {
   }
 
   hasKw(m: Minion, k: Keyword): boolean {
-    return m.keywords.includes(k) || m.tempKeywords.includes(k) || m.nextTurnKeywords.includes(k) || m.auraKeywords.includes(k);
+    if (m.keywords.includes(k) || m.tempKeywords.includes(k) || m.nextTurnKeywords.includes(k) || m.auraKeywords.includes(k)) return true;
+    const grants = this.s.players[m.owner].grants;
+    if (!grants.length) return false;
+    return grants.some((g) => {
+      if (g.keyword !== k) return false;
+      if (!g.race) return true;
+      const races = getCard(m.cardId).races ?? [];
+      return races.includes(g.race) || races.includes('ALL');
+    });
   }
 
   atkOf(c: Char): number {
@@ -396,6 +409,7 @@ export class Game {
       }
       cost -= def.costRule.amount * n;
     }
+    if (p.nextCardDiscount && p.id === this.s.current) cost -= p.nextCardDiscount;
     return Math.max(0, cost);
   }
 
@@ -471,21 +485,57 @@ export class Game {
       .map((c) => c.uid);
   }
 
-  heroPowerTargets(): number[] {
-    const def = HERO_POWERS[this.me.heroClass];
-    return def.target ? this.validTargets(def.target, this.s.current, true) : [];
+  /** 玩家目前的英雄能力（打出英雄卡後會被換掉） */
+  powerDef(p: PlayerState): HeroPowerSpec {
+    if (p.heroPower.heroCard) {
+      const hp = getCard(p.heroPower.heroCard).heroPower;
+      if (hp) return hp;
+    }
+    return HERO_POWERS[p.heroClass];
   }
 
-  heroPowerNeedsTarget(): boolean {
-    return !!HERO_POWERS[this.me.heroClass].target;
+  /** 顯示用的英雄能力名稱與敘述 */
+  powerInfo(p: PlayerState): { name: string; text: string; cost: number } {
+    if (p.heroPower.heroCard) {
+      const hp = getCard(p.heroPower.heroCard).heroPower;
+      if (hp) return { name: hp.name, text: hp.text, cost: p.heroPower.cost };
+    }
+    const info = HEROES[p.heroClass].power;
+    return { name: info.name, text: info.text, cost: p.heroPower.cost };
   }
 
-  canHeroPower(): boolean {
+  private powerTarget(p: PlayerState, option?: number): TargetReq | undefined {
+    const def = this.powerDef(p);
+    if (def.chooseOne) return option === undefined ? undefined : def.chooseOne[option]?.target;
+    return def.target;
+  }
+
+  heroPowerOptions(): { id: string; name?: string; text?: string }[] | null {
+    return this.powerDef(this.me).chooseOne ?? null;
+  }
+
+  heroPowerTargets(option?: number): number[] {
+    const req = this.powerTarget(this.me, option);
+    return req ? this.validTargets(req, this.s.current, true) : [];
+  }
+
+  heroPowerNeedsTarget(option?: number): boolean {
+    return !!this.powerTarget(this.me, option);
+  }
+
+  canHeroPower(option?: number): boolean {
     const p = this.me;
     if (p.heroPower.used || p.mana < p.heroPower.cost) return false;
-    const def = HERO_POWERS[p.heroClass];
+    const def = this.powerDef(p);
     if (def.needsBoardSpace && p.board.length >= MAX_BOARD) return false;
-    if (p.heroClass === 'SHAMAN' && BASIC_TOTEMS.every((t) => p.board.some((m) => m.cardId === t))) return false;
+    if (!p.heroPower.heroCard && p.heroClass === 'SHAMAN' && BASIC_TOTEMS.every((t) => p.board.some((m) => m.cardId === t))) return false;
+    if (def.chooseOne) {
+      const opts = option === undefined ? def.chooseOne.map((_o, i) => i) : [option];
+      return opts.some((i) => {
+        const req = def.chooseOne![i]?.target;
+        return !!def.chooseOne![i] && (!req || this.validTargets(req, this.s.current, true).length > 0);
+      });
+    }
     if (def.target && !this.validTargets(def.target, this.s.current, true).length) return false;
     return true;
   }
@@ -645,6 +695,7 @@ export class Game {
     p.drawnThisTurn = 0;
     s.deathsThisTurn = 0;
     p.heroAttackedThisTurn = false;
+    for (const pl of s.players) pl.nextCardDiscount = 0;
     p.elementalLastTurn = p.elementalThisTurn;
     p.elementalThisTurn = false;
     p.hero.attacks = 0;
@@ -705,6 +756,7 @@ export class Game {
     p.mana -= cost;
     p.hand.splice(idx, 1);
     p.cardsPlayedThisTurn++;
+    p.nextCardDiscount = 0;
     if (def.overload) p.overloadOwed += def.overload;
 
     let abilities: Ability[] = def.abilities ?? [];
@@ -764,6 +816,19 @@ export class Game {
       p.spellsCastThisGame++;
       yield* this.emit({ k: 'spellCast', player: p.id, cardId: def.id, subject: target, subjectKind: 'char' });
       yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'SPELL', cardId: def.id });
+    } else if (def.type === 'HERO') {
+      // 英雄卡：換上新英雄、獲得護甲、換成新的英雄能力（本回合就能使用）
+      p.hero.cardId = def.id;
+      p.hero.armor += def.armor ?? 0;
+      if (def.armor) this.fx({ kind: 'armor', uid: p.hero.uid, amount: def.armor });
+      if (def.heroPower) p.heroPower = { id: def.heroPower.id, used: false, cost: def.heroPower.cost, heroCard: def.id };
+      ctx.sourceUid = p.hero.uid;
+      for (const ab of playAbilities) {
+        if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
+        yield* this.runEffects(ab.effects, ctx);
+        if (this.over) return;
+      }
+      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'HERO', cardId: def.id });
     } else {
       yield* this.equip(p.id, def.id);
       ctx.sourceUid = p.weapon?.uid ?? null;
@@ -774,6 +839,7 @@ export class Game {
       }
       yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'WEAPON', cardId: def.id });
     }
+    if (this.powerDef(p).refresh === 'cardPlayed') p.heroPower.used = false;
   }
 
   private *trade(handUid: number): Gen {
@@ -786,20 +852,22 @@ export class Game {
     yield* this.draw(p, 1);
   }
 
-  private *useHeroPower(target: number | undefined): Gen {
+  private *useHeroPower(target: number | undefined, option: number | undefined): Gen {
     const p = this.me;
-    const def = HERO_POWERS[p.heroClass];
+    const def = this.powerDef(p);
+    const effects = def.chooseOne ? def.chooseOne[option ?? 0].effects : def.effects;
     p.mana -= p.heroPower.cost;
     p.heroPower.used = true;
     p.heroPowersUsed++;
-    this.log(p.id, `${p.name}使用了英雄能力【${HEROES[p.heroClass].power.name}】`);
+    this.log(p.id, `${p.name}使用了英雄能力【${this.powerInfo(p).name}】`);
     this.fx({ kind: 'play', cardId: p.heroPower.id, player: p.id, target });
     const ctx = this.baseCtx(p.id);
     ctx.sourceUid = p.hero.uid;
     ctx.sourceCardId = p.heroPower.id;
     ctx.chosen = target ?? null;
     ctx.isHeroPower = true;
-    yield* this.runEffects(def.effects, ctx);
+    ctx.lifesteal = !!def.lifesteal;
+    yield* this.runEffects(effects, ctx);
     yield* this.emit({ k: 'heroPower', player: p.id });
   }
 
@@ -851,7 +919,8 @@ export class Game {
     const dAtk = isHero(d) ? 0 : this.atkOf(d);
     const aSrc = this.charSource(a);
     const dSrc = this.charSource(d);
-    const neighbors = !isHero(a) && this.hasKw(a, 'CLEAVE') && !isHero(d) ? this.adjacent(d) : [];
+    const cleave = isHero(a) ? !!s.players[pid].weapon?.keywords.includes('CLEAVE') : this.hasKw(a, 'CLEAVE');
+    const neighbors = cleave && !isHero(d) ? this.adjacent(d) : [];
     yield* this.damage(aSrc, d.uid, aAtk);
     if (dAtk > 0) yield* this.damage(dSrc, a.uid, dAtk);
     for (const n of neighbors) yield* this.damage(aSrc, n.uid, aAtk);
@@ -1946,6 +2015,22 @@ export class Game {
         }
         break;
       }
+      case 'evolve':
+        for (const uid of this.resolve(e.target, ctx)) {
+          const m = this.minion(uid);
+          if (!m) continue;
+          const want = getCard(m.cardId).cost + e.amount;
+          const pool = this.randomPool({ type: 'MINION', cost: want }, ctx.controller, false);
+          const c = pick(s, pool);
+          if (c) this.transform(uid, c.id);
+        }
+        break;
+      case 'grant':
+        me.grants.push({ keyword: e.keyword, race: e.race });
+        break;
+      case 'nextCardDiscount':
+        me.nextCardDiscount += e.amount;
+        break;
       case 'costMod':
         if (ctx.it?.kind === 'hand') {
           const hc = this.handCard(ctx.it.uid);
@@ -2110,7 +2195,26 @@ export class Game {
         if (t && into) this.transform(t.uid, into);
         break;
       }
-      case 'swapHands': {
+      case 'summonDeadRace': {
+        // 召喚本場對戰中死亡的所有友方某種族手下
+        const race = args.race as Race;
+        for (const id of [...me.graveyard]) {
+          if (me.board.length >= MAX_BOARD) break;
+          const races = getCard(id).races ?? [];
+          if (races.includes(race) || races.includes('ALL')) yield* this.doSummon(ctx, ctx.controller, id);
+        }
+        break;
+      }
+      case 'horsemen': {
+        // 天啟四騎士：召喚一個場上沒有的騎士，四個到齊就消滅敵方英雄
+        const all = args.cards as string[];
+        const missing = all.filter((id) => !me.board.some((m) => m.cardId === id));
+        const id = pick(s, missing);
+        if (id) yield* this.doSummon(ctx, ctx.controller, id);
+        if (all.every((c) => me.board.some((m) => m.cardId === c && this.alive(m)))) {
+          this.log(me.id, '天啟四騎士到齊了！');
+          foe.hero.hp = 0;
+        }
         break;
       }
     }

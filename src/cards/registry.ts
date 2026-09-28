@@ -26,7 +26,10 @@ export const DATA_BUILD = raw.build ?? '';
 export const CARDS: Record<string, CardDef> = {};
 for (const c of raw.cards) CARDS[c.id] = c;
 for (const [id, patch] of Object.entries(OVERRIDES)) {
-  if (CARDS[id]) CARDS[id] = { ...CARDS[id], ...patch };
+  if (!CARDS[id]) continue;
+  const { heroPower, tokens: _tokens, ...rest } = patch;
+  const base = CARDS[id];
+  CARDS[id] = { ...base, ...rest, heroPower: heroPower && base.heroPower ? { ...base.heroPower, ...heroPower } : base.heroPower };
 }
 for (const c of CUSTOM_CARDS) CARDS[c.id] = { ...c, custom: true };
 

@@ -28,8 +28,12 @@ export function legalActions(g: Game): Action[] {
     }
   }
   if (g.canHeroPower()) {
-    if (g.heroPowerNeedsTarget()) for (const t of g.heroPowerTargets()) out.push({ type: 'heroPower', target: t });
-    else out.push({ type: 'heroPower' });
+    const options = g.heroPowerOptions() ? g.heroPowerOptions()!.map((_o, i) => i) : [undefined];
+    for (const option of options) {
+      if (!g.canHeroPower(option)) continue;
+      if (g.heroPowerNeedsTarget(option)) for (const t of g.heroPowerTargets(option)) out.push({ type: 'heroPower', target: t, option });
+      else out.push({ type: 'heroPower', option });
+    }
   }
   for (const c of [p.hero, ...p.board]) {
     if (!g.canAttack(c.uid)) continue;
@@ -86,6 +90,9 @@ export function evaluate(g: Game, me: PlayerId): number {
   if (a.weapon) score += a.weapon.atk * Math.min(a.weapon.durability, 3) * 0.6;
   if (b.weapon) score -= b.weapon.atk * Math.min(b.weapon.durability, 3) * 0.6;
   score += a.secrets.length * 2 - b.secrets.length * 2;
+  // 打出英雄卡後的強化英雄能力
+  if (a.heroPower.heroCard) score += 6;
+  if (b.heroPower.heroCard) score -= 6;
   // 對手場上的攻擊力威脅
   const threat = b.board.reduce((x, m) => x + (m.hp > 0 && !m.dead ? g.atkOf(m) : 0), 0);
   if (threat >= a.hero.hp + a.hero.armor) score -= 50;

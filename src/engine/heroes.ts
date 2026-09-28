@@ -1,14 +1,7 @@
 // 各職業的基本英雄能力
-import type { CardClass, Effect, TargetReq } from './types';
+import type { CardClass, HeroPowerSpec } from './types';
 
-export interface HeroPowerDef {
-  effects: Effect[];
-  target?: TargetReq;
-  /** 需要場上空位 */
-  needsBoardSpace?: boolean;
-}
-
-export const HERO_POWERS: Record<Exclude<CardClass, 'NEUTRAL'>, HeroPowerDef> = {
+export const HERO_POWERS: Record<Exclude<CardClass, 'NEUTRAL'>, HeroPowerSpec> = {
   MAGE: {
     effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 1 }],
     target: { filter: { type: 'character', side: 'any' } },

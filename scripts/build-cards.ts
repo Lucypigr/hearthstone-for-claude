@@ -206,7 +206,8 @@ async function main() {
   const failures: { id: string; name: string; set: number; reason: string }[] = [];
 
   function buildDef(r: RawCard, collectible: boolean): CardDef | null {
-    const type = typeOf(r);
+    // 英雄卡只收錄有手動定義（overrides）的
+    const type: CardType | undefined = typeOf(r) ?? (r.tags.CARDTYPE === 3 && collectible && OVERRIDES[r.id] ? 'HERO' : undefined);
     if (!type) return null;
     const cls = CLASS_MAP[r.tags.CLASS ?? 12] ?? (collectible ? undefined : 'NEUTRAL');
     if (!cls) return null;
@@ -233,7 +234,7 @@ async function main() {
     };
     const flavor = clean(r.strs.FLAVORTEXT?.zhTW);
     if (flavor && collectible) def.flavor = flavor;
-    if (type !== 'SPELL') {
+    if (type === 'MINION' || type === 'WEAPON') {
       def.attack = r.tags.ATK ?? 0;
       def.health = r.tags.HEALTH ?? r.tags.DURABILITY ?? 1;
     }
@@ -251,11 +252,24 @@ async function main() {
 
     const ov = OVERRIDES[r.id];
     if (ov) {
-      const { tokens, ...rest } = ov;
+      const { tokens, heroPower, ...rest } = ov;
       for (const t of tokens ?? []) {
         if (!buildToken(t)) throw new Error(`覆寫 ${r.id} 引用的衍生卡 ${t} 無法建立`);
       }
-      return { ...def, ...rest };
+      const out: CardDef = { ...def, ...rest, heroPower: undefined };
+      if (type === 'HERO') {
+        const bp = byId.get(r.refs.HERO_POWER);
+        if (!bp || !heroPower) throw new Error(`英雄卡 ${r.id} 缺少英雄能力`);
+        out.armor = r.tags.ARMOR ?? 0;
+        out.heroPower = {
+          id: bp.id,
+          name: clean(bp.strs.CARDNAME?.zhTW),
+          text: clean(bp.strs.CARDTEXT?.zhTW),
+          cost: bp.tags.COST ?? 0,
+          ...heroPower,
+        };
+      } else delete out.heroPower;
+      return out;
     }
 
     let parsed: ParsedCard;
@@ -326,7 +340,11 @@ async function main() {
 
   // ------------------------------------------------------------------ 可收藏卡
   const collectibles = raws.filter(
-    (r) => r.tags.COLLECTIBLE && typeOf(r) && !EXCLUDED_SETS.has(r.tags.CARD_SET) && CLASS_MAP[r.tags.CLASS ?? 12],
+    (r) =>
+      r.tags.COLLECTIBLE &&
+      (typeOf(r) || (r.tags.CARDTYPE === 3 && OVERRIDES[r.id])) &&
+      !EXCLUDED_SETS.has(r.tags.CARD_SET) &&
+      CLASS_MAP[r.tags.CLASS ?? 12],
   );
   // 同名卡去重（核心 / 傳統 / 原版會重複），優先原始版本
   const groups = new Map<string, RawCard[]>();

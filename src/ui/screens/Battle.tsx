@@ -17,7 +17,8 @@ type Mode =
   | { k: 'idle' }
   | { k: 'card'; handUid: number; stage: 'select' | 'choose' | 'place' | 'target'; option?: number; position?: number }
   | { k: 'attack'; attacker: number }
-  | { k: 'heroPower' };
+  | { k: 'heroPower'; option?: number }
+  | { k: 'powerChoose' };
 
 interface Float {
   id: number;
@@ -117,7 +118,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       if (fl) newFloats.push(fl);
       if (f.kind === 'play' && f.player === AI) {
         if (f.cardId && hasCard(f.cardId)) setBanner({ id: f.id, cardId: f.cardId, text: `${s.players[AI].name}打出了` });
-        else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${HEROES[s.players[AI].heroClass].power.name}` });
+        else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${g.powerInfo(s.players[AI]).name}` });
       }
       if (f.kind === 'secret' && f.cardId) setBanner({ id: f.id, cardId: f.cardId, text: '奧秘揭露！' });
       if (f.kind === 'attack' && f.uid !== undefined && f.target !== undefined) setAnim({ attacker: f.uid, target: f.target, id: f.id });
@@ -175,7 +176,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const validTargets = useMemo(() => {
     if (!s || !myTurn) return new Set<number>();
     if (mode.k === 'attack') return new Set(g.attackTargets(mode.attacker));
-    if (mode.k === 'heroPower') return new Set(g.heroPowerTargets());
+    if (mode.k === 'heroPower') return new Set(g.heroPowerTargets(mode.option));
     if (mode.k === 'card' && mode.stage === 'target') {
       const req = g.playTargetReq(mode.handUid, mode.option);
       if (req) return new Set(g.validTargets(req, ME, g.cardIsSpell(mode.handUid)));
@@ -244,7 +245,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const onTarget = (uid: number) => {
     if (mode.k === 'attack') act({ type: 'attack', attacker: mode.attacker, target: uid });
-    else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid });
+    else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid, option: mode.option });
     else if (mode.k === 'card') act({ type: 'play', handUid: mode.handUid, target: uid, option: mode.option, position: mode.position });
   };
 
@@ -272,8 +273,18 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       flash(me.heroPower.used ? '本回合已使用過英雄能力' : '無法使用英雄能力');
       return;
     }
-    if (g.heroPowerNeedsTarget()) setMode(mode.k === 'heroPower' ? { k: 'idle' } : { k: 'heroPower' });
+    if (mode.k === 'heroPower' || mode.k === 'powerChoose') {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (g.heroPowerOptions()) setMode({ k: 'powerChoose' });
+    else if (g.heroPowerNeedsTarget()) setMode({ k: 'heroPower' });
     else act({ type: 'heroPower' });
+  };
+
+  const onPowerOption = (option: number) => {
+    if (g.heroPowerNeedsTarget(option)) setMode({ k: 'heroPower', option });
+    else act({ type: 'heroPower', option });
   };
 
   const selectedHand = mode.k === 'card' ? mode.handUid : null;
@@ -376,7 +387,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
             {floatsFor(foe.hero.uid)}
           </HeroView>
-          <HeroPowerView p={foe} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
+          <HeroPowerView p={foe} g={g} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
         </div>
       </div>
 
@@ -418,8 +429,9 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           </HeroView>
           <HeroPowerView
             p={me}
+            g={g}
             usable={myTurn && g.canHeroPower()}
-            active={mode.k === 'heroPower'}
+            active={mode.k === 'heroPower' || mode.k === 'powerChoose'}
             onClick={onHeroPower}
             onHover={(on) => setInspect(on ? { power: ME } : null)}
           />
@@ -451,9 +463,9 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       {inspect && 'power' in inspect && (
         <div className="inspect" onClick={() => setInspect(null)}>
           <div className="power-card">
-            <b>{HEROES[s.players[inspect.power].heroClass].power.name}</b>
+            <b>{g.powerInfo(s.players[inspect.power]).name}</b>
             <span className="muted small">英雄能力・消耗 {s.players[inspect.power].heroPower.cost}</span>
-            <p dangerouslySetInnerHTML={{ __html: formatCardText(HEROES[s.players[inspect.power].heroClass].power.text) }} />
+            <p dangerouslySetInnerHTML={{ __html: formatCardText(g.powerInfo(s.players[inspect.power]).text) }} />
           </div>
         </div>
       )}
@@ -525,6 +537,29 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
               }}
             >
               確定
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode.k === 'powerChoose' && g.heroPowerOptions() && (
+        <div className="modal" onClick={() => setMode({ k: 'idle' })}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <h2>{g.powerInfo(me).name}：二選一</h2>
+            <div className="card-row">
+              {g.heroPowerOptions()!.map((o, i) => {
+                const ok = g.canHeroPower(i);
+                return (
+                  <button key={o.id} className={`choose-option ${ok ? '' : 'disabled'}`} disabled={!ok} onClick={() => onPowerOption(i)}>
+                    <Art cardId={o.id} className="choose-art" label={(o.name ?? '').slice(0, 2)} color={CLASS_COLORS[me.heroClass]} />
+                    <b>{o.name}</b>
+                    <span dangerouslySetInnerHTML={{ __html: formatCardText(o.text ?? '') }} />
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn" onClick={() => setMode({ k: 'idle' })}>
+              取消
             </button>
           </div>
         </div>
@@ -749,18 +784,20 @@ function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: G
 
 function HeroPowerView({
   p,
+  g,
   usable,
   active,
   onClick,
   onHover,
 }: {
   p: PlayerState;
+  g: Game;
   usable: boolean;
   active?: boolean;
   onClick?: () => void;
   onHover?: (on: boolean) => void;
 }) {
-  const info = HEROES[p.heroClass].power;
+  const info = g.powerInfo(p);
   return (
     <button
       className={`hero-power ${p.heroPower.used ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}

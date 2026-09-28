@@ -299,3 +299,74 @@ describe('發現', () => {
     expect(hand[hand.length - 1].hpBuff).toBe(2);
   });
 });
+
+describe('英雄卡', () => {
+  it('賈拉克瑟斯：換英雄、獲得護甲、裝備武器，新英雄能力召喚煉獄火', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'EX1_323');
+    expect(me.hero.cardId).toBe('EX1_323');
+    expect(me.hero.armor).toBe(5);
+    expect(me.weapon?.cardId).toBe('EX1_323w');
+    expect(g.powerInfo(me).name).not.toBe('火焰衝擊');
+    expect(g.apply({ type: 'heroPower' })).toBe(true);
+    expect(me.board.some((m) => m.cardId === 'EX1_tk34')).toBe(true);
+  });
+
+  it('暗影死神安杜因：英雄能力在打出卡牌後可以再次使用', () => {
+    const g = newGame();
+    play(g, 'ICC_830');
+    const foe = g.s.players[1].hero;
+    expect(g.apply({ type: 'heroPower', target: foe.uid })).toBe(true);
+    expect(g.canHeroPower()).toBe(false);
+    play(g, 'CS2_231');
+    expect(g.apply({ type: 'heroPower', target: foe.uid })).toBe(true);
+    expect(foe.hp).toBe(26);
+  });
+
+  it('疫病蟲王：二選一的英雄能力', () => {
+    const g = newGame();
+    play(g, 'ICC_832');
+    const me = g.s.players[0];
+    expect(g.heroPowerOptions()?.length).toBe(2);
+    expect(g.apply({ type: 'heroPower' })).toBe(false);
+    const armor = me.hero.armor;
+    expect(g.apply({ type: 'heroPower', option: 0 })).toBe(true);
+    expect(me.hero.armor).toBe(armor + 3);
+  });
+
+  it('霜巫珍娜：元素獲得生命竊取，英雄能力擊殺手下時召喚水元素', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.hero.hp = 20;
+    play(g, 'ICC_833');
+    const ele = me.board.find((m) => m.cardId === 'ICC_833t')!;
+    expect(g.hasKw(ele, 'LIFESTEAL')).toBe(true);
+    const wisp = put(g, 'CS2_231', 1);
+    me.mana = 10;
+    expect(g.apply({ type: 'heroPower', target: wisp.uid })).toBe(true);
+    expect(me.board.filter((m) => m.cardId === 'ICC_833t').length).toBe(2);
+  });
+
+  it('奪血者古爾丹：生命竊取英雄能力', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'ICC_831');
+    me.hero.hp = 20;
+    me.mana = 10;
+    expect(g.apply({ type: 'heroPower', target: g.s.players[1].hero.uid })).toBe(true);
+    expect(me.hero.hp).toBe(23);
+  });
+
+  it('黯刃烏瑟：四騎士到齊時消滅敵方英雄', () => {
+    const g = newGame();
+    play(g, 'ICC_829');
+    for (let i = 0; i < 4; i++) {
+      g.s.players[0].heroPower.used = false;
+      g.s.players[0].mana = 10;
+      expect(g.apply({ type: 'heroPower' })).toBe(true);
+    }
+    expect(g.s.phase).toBe('over');
+    expect(g.s.winner).toBe(0);
+  });
+});
