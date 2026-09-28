@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getCard } from '../cards/registry';
 import { Game } from './game';
 import type { Minion, PlayerId } from './state';
 
@@ -368,5 +369,29 @@ describe('英雄卡', () => {
     }
     expect(g.s.phase).toBe('over');
     expect(g.s.winner).toBe(0);
+  });
+
+  it('死屍獸王雷克薩：連續發現兩隻野獸，縫合成殭屍獸', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'ICC_828');
+    me.mana = 10;
+    expect(g.apply({ type: 'heroPower' })).toBe(true);
+    expect(g.s.pendingChoice?.options.length).toBe(3);
+    const a = g.s.pendingChoice!.options[0];
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice?.title).toContain('第二隻');
+    const b = g.s.pendingChoice!.options[0];
+    g.apply({ type: 'choose', index: 0 });
+    const zb = me.hand[me.hand.length - 1];
+    expect(zb.cardId).toBe('ICC_828t');
+    expect(zb.parts).toEqual([a, b]);
+    const def = g.handDef(zb);
+    expect(def.attack).toBe((getCard(a).attack ?? 0) + (getCard(b).attack ?? 0));
+    expect(g.costOf(me, zb)).toBe(Math.min(10, getCard(a).cost + getCard(b).cost));
+    expect(g.apply({ type: 'play', handUid: zb.uid })).toBe(true);
+    const m = me.board[me.board.length - 1];
+    expect(m.hp).toBe(def.health);
+    for (const k of getCard(b).keywords ?? []) expect(g.hasKw(m, k)).toBe(true);
   });
 });

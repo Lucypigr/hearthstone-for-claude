@@ -5,6 +5,7 @@
 //   等 UI 呼叫 choose() 後再繼續。
 // ============================================================================
 import { cardClasses, getCard, HEROES, poolCards } from '../cards/registry';
+import { ZOMBEAST_ID, ZOMBEAST_PARTS, zombeastDef } from '../cards/zombeast';
 import { BASIC_TOTEMS, HERO_POWERS } from './heroes';
 import { nextRandom, pick, randomInt, shuffle } from './rng';
 import {
@@ -313,7 +314,7 @@ export class Game {
       case 'trade': {
         const hc = p.hand.find((h) => h.uid === action.handUid);
         if (!hc) return { ok: false };
-        if (!getCard(hc.cardId).keywords?.includes('TRADEABLE')) return { ok: false, reason: '不可交易' };
+        if (!this.handDef(hc).keywords?.includes('TRADEABLE')) return { ok: false, reason: '不可交易' };
         if (p.mana < 1 || !p.deck.length) return { ok: false, reason: '法力不足' };
         return { ok: true };
       }
@@ -392,8 +393,18 @@ export class Game {
     return this.s.players[p].board.reduce((sum, m) => sum + (m.silenced ? 0 : m.spellDamage), 0);
   }
 
+  /** 手牌的卡牌定義（殭屍獸會合成兩個部位） */
+  handDef(hc: HandCard): CardDef {
+    return hc.parts ? zombeastDef(hc.parts) : getCard(hc.cardId);
+  }
+
+  /** 場上手下的卡牌定義 */
+  minionDef(m: Minion): CardDef {
+    return m.parts ? zombeastDef(m.parts) : getCard(m.cardId);
+  }
+
   costOf(p: PlayerState, hc: HandCard): number {
-    const def = getCard(hc.cardId);
+    const def = this.handDef(hc);
     let cost = def.cost + hc.costMod;
     if (def.costRule) {
       let n = 0;
@@ -415,7 +426,7 @@ export class Game {
 
   cardIsSpell(handUid: number): boolean {
     const hc = this.handCard(handUid);
-    return !!hc && getCard(hc.card.cardId).type === 'SPELL';
+    return !!hc && this.handDef(hc.card).type === 'SPELL';
   }
 
   canPlay(handUid: number, option?: number): { ok: boolean; reason?: string } {
@@ -423,7 +434,7 @@ export class Game {
     const p = s.players[s.current];
     const hc = p.hand.find((h) => h.uid === handUid);
     if (!hc) return { ok: false, reason: '找不到卡牌' };
-    const def = getCard(hc.cardId);
+    const def = this.handDef(hc);
     if (this.costOf(p, hc) > p.mana) return { ok: false, reason: '法力不足' };
     if (def.type === 'MINION' && p.board.length >= MAX_BOARD) return { ok: false, reason: '場上已滿' };
     if (def.secret) {
@@ -458,7 +469,7 @@ export class Game {
     const p = this.s.players[this.s.current];
     const idx = p.hand.findIndex((h) => h.uid === handUid);
     if (idx < 0) return null;
-    const def = getCard(p.hand[idx].cardId);
+    const def = this.handDef(p.hand[idx]);
     const req = def.chooseOne ? (option === undefined ? undefined : def.chooseOne[option]?.target) : def.target;
     if (!req) return null;
     if (req.when) {
@@ -749,7 +760,7 @@ export class Game {
     const p = s.players[s.current];
     const idx = p.hand.findIndex((h) => h.uid === handUid);
     const hc = p.hand[idx];
-    const def = getCard(hc.cardId);
+    const def = this.handDef(hc);
     const cost = this.costOf(p, hc);
     const outcast = idx === 0 || idx === p.hand.length - 1;
     const combo = p.cardsPlayedThisTurn > 0;
@@ -1079,7 +1090,8 @@ export class Game {
   }
 
   makeMinion(owner: PlayerId, cardId: string, hand?: HandCard): Minion {
-    const def = getCard(cardId);
+    const parts = hand?.parts && cardId === ZOMBEAST_ID ? hand.parts : undefined;
+    const def = parts ? zombeastDef(parts) : getCard(cardId);
     const baseHp = def.health ?? 1;
     const hpBuff = hand?.hpBuff ?? 0;
     return {
@@ -1110,6 +1122,7 @@ export class Game {
       attacks: 0,
       playOrder: ++this.s.playCounter,
       dead: false,
+      parts,
     };
   }
 
@@ -1912,6 +1925,7 @@ export class Game {
           const owner = s.players[m.owner];
           owner.board = owner.board.filter((x) => x !== m);
           const hc = this.addToHand(owner, m.cardId);
+          if (hc && m.parts) hc.parts = m.parts;
           if (hc && e.costChange) hc.costMod += e.costChange;
           if (hc && owner.id === ctx.controller) ctx.it = { kind: 'hand', uid: hc.uid };
           this.recalcAuras();
@@ -2053,6 +2067,7 @@ export class Game {
   }
 
   private copyStats(src: Minion, m: Minion) {
+    m.parts = src.parts;
     m.baseAtk = src.baseAtk;
     m.atkBuff = src.atkBuff;
     m.baseHp = src.baseHp;
@@ -2081,7 +2096,7 @@ export class Game {
     m.frozen = false;
     m.atkBuff = 0;
     m.tempAtk = 0;
-    const def = getCard(m.cardId);
+    const def = this.minionDef(m);
     m.baseAtk = def.attack ?? 0;
     m.baseHp = def.health ?? 1;
     m.maxHp = m.baseHp + m.auraHp;
@@ -2193,6 +2208,22 @@ export class Game {
         const t = pick(s, others);
         const into = pick(s, args.cards as string[]);
         if (t && into) this.transform(t.uid, into);
+        break;
+      }
+      case 'buildABeast': {
+        // 製造殭屍獸：先發現一張獵人野獸，再發現一張殭屍獸專用野獸，縫合後加入手牌
+        const first = shuffle(s, this.randomPool({ type: 'MINION', race: 'BEAST', cls: 'HUNTER', maxCost: 5 }, ctx.controller, false).map((c) => c.id)).slice(0, 3);
+        const second = shuffle(s, [...ZOMBEAST_PARTS]).slice(0, 3);
+        if (!first.length) break;
+        const i1 = yield { player: ctx.controller, kind: 'discover', options: first, title: '製造殭屍獸：選擇第一隻野獸' };
+        const i2 = yield { player: ctx.controller, kind: 'discover', options: second, title: '製造殭屍獸：選擇第二隻野獸' };
+        const a = first[Math.max(0, Math.min(first.length - 1, i1 ?? 0))];
+        const b = second[Math.max(0, Math.min(second.length - 1, i2 ?? 0))];
+        const hc = this.addToHand(me, ZOMBEAST_ID);
+        if (hc) {
+          hc.parts = [a, b];
+          ctx.it = { kind: 'hand', uid: hc.uid };
+        }
         break;
       }
       case 'summonDeadRace': {
