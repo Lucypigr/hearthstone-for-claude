@@ -55,6 +55,8 @@ export type Keyword =
   | 'CLEAVE'
   | 'IMMUNE'
   | 'TRADEABLE'
+  /** 雙生法術：施放後把一張沒有雙生法術的複製加入手牌 */
+  | 'TWINSPELL'
   /** 回音：本回合可以重複使用 */
   | 'ECHO';
 
@@ -230,6 +232,12 @@ export type Effect =
   | { e: 'launchStarship' }
   /** 在 turns 個你的回合後（回合開始時）執行 */
   | { e: 'delayed'; turns: number; effects: Effect[] }
+  /** 比武：雙方各揭露牌堆中一張手下，你的消耗較高則執行 then */
+  | { e: 'joust'; then: Effect[]; else?: Effect[] }
+  /** 召喚一個翠玉魔像（每召喚一個，下一個就 +1/+1） */
+  | { e: 'summonJade' }
+  /** 號召：從你的牌堆召喚符合條件的手下 */
+  | { e: 'recruit'; count: number; race?: Race; cost?: number; maxCost?: number }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
@@ -252,6 +260,8 @@ export type Trig =
   | { k: 'frenzy' }
   /** 星艦發射時（星艦組件的能力） */
   | { k: 'launch' }
+  /** 滅殺：在你的回合，造成的傷害超過消滅一個手下所需 */
+  | { k: 'overkill' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -374,4 +384,6 @@ export interface CardDef {
   terran?: boolean;
   /** 發射過星艦後，手牌與牌堆中的這張卡會變形成另一張卡 */
   launchTransform?: string;
+  /** 雙生法術：施放後加入手牌的複製（沒有雙生法術） */
+  twinspellCopy?: string;
 }

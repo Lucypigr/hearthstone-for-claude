@@ -198,6 +198,56 @@ export const OVERRIDES: Record<string, Override> = {
   // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
   ICC_828t: {},
 
+  // ------------------------------------------------------------------ 比武（雙方各揭露牌堆一張手下，你的消耗較高就獲勝）
+  // 治療波：恢復 8 點生命值；比武獲勝則改為恢復 16 點
+  AT_048: {
+    target: anyChar,
+    abilities: play({ e: 'joust', then: [{ e: 'heal', target: { t: 'chosen' }, amount: 16 }], else: [{ e: 'heal', target: { t: 'chosen' }, amount: 8 }] }),
+  },
+  // 國王的伊萊克：比武獲勝則抽出那張牌
+  AT_058: { abilities: play({ e: 'joust', then: [{ e: 'custom', fn: 'drawRevealed' }] }) },
+  // 銀白長槍：比武獲勝則 +1 耐久度
+  AT_077: { abilities: play({ e: 'joust', then: [{ e: 'weaponBuff', dur: 1 }] }) },
+  // 巨牙矛騎兵：比武獲勝則為你的英雄恢復 7 點生命值
+  AT_104: { abilities: play({ e: 'joust', then: [{ e: 'heal', target: { t: 'hero', side: 'friendly' }, amount: 7 }] }) },
+  // 裝甲戰馬：比武獲勝則獲得衝鋒
+  AT_108: { abilities: play({ e: 'joust', then: [{ e: 'buff', target: { t: 'self' }, keywords: ['CHARGE'] }] }) },
+  // 至尊矛騎兵：比武獲勝則獲得嘲諷與聖盾
+  AT_112: { abilities: play({ e: 'joust', then: [{ e: 'buff', target: { t: 'self' }, keywords: ['TAUNT', 'DIVINE_SHIELD'] }] }) },
+  // 骷髏騎士：亡語：比武獲勝則回到你的手牌
+  AT_128: { abilities: [{ on: { k: 'deathrattle' }, effects: [{ e: 'joust', then: [{ e: 'addCard', card: 'AT_128', count: 1, who: 'self' }] }] }] },
+  // 加基森矛騎兵：比武獲勝則獲得 +1/+1
+  AT_133: { abilities: play({ e: 'joust', then: [{ e: 'buff', target: { t: 'self' }, atk: 1, hp: 1 }] }) },
+
+  // ------------------------------------------------------------------ 翠玉魔像 / 號召 / 滅殺
+  // 翠玉塑像：二選一：召喚一個翠玉魔像；或把 3 張翠玉塑像洗入你的牌堆
+  CFM_602: {
+    chooseOne: [
+      { id: 'CFM_602a', name: '翠玉塑像', text: '召喚一個<b>翠玉魔像</b>', abilities: play({ e: 'summonJade' }) },
+      { id: 'CFM_602b', name: '翠玉塑像', text: '將3張翠玉塑像洗入你的牌堆', abilities: play({ e: 'shuffle', card: 'CFM_602', count: 3 }) },
+    ],
+    tokens: ['CFM_712_t01'],
+  },
+  // 翠玉通訊：看對手手牌中的 3 張牌，把其中一張洗進他的牌堆；召喚一個翠玉魔像
+  WON_078: { abilities: play({ e: 'custom', fn: 'jadeTelegram' }, { e: 'summonJade' }), tokens: ['CFM_712_t01'] },
+  // 橡心大師：戰吼：號召攻擊力 1、2、3 的手下各一個
+  LOOT_521: { abilities: play({ e: 'custom', fn: 'oakheart' }) },
+  // 蘇薩斯：滅殺：你可以再攻擊一次
+  TRL_325: { abilities: [{ on: { k: 'overkill' }, effects: [{ e: 'custom', fn: 'attackAgain' }] }] },
+  // 烏達斯塔：突襲；滅殺：從你的手牌召喚一個野獸
+  TRL_542: { keywords: ['RUSH'], abilities: [{ on: { k: 'overkill' }, effects: [{ e: 'custom', fn: 'summonFromHand', args: { race: 'BEAST' } }] }] },
+  // 競技場觀眾：滅殺：召喚另一個競技場觀眾
+  TRL_521: { abilities: [{ on: { k: 'overkill' }, effects: [{ e: 'summon', card: 'TRL_521', count: 1, who: 'self' }] }] },
+  // 法拉奇戰斧：滅殺：賦予你手牌中的一個手下 +2/+2
+  TRL_304: { abilities: [{ on: { k: 'overkill' }, effects: [{ e: 'handBuff', atk: 2, hp: 2, scope: 'random' }] }] },
+  // 整裝備戰：召喚三個白銀之手新兵，裝備一把 1/4 的武器（聖光的正義）
+  GVG_061: {
+    abilities: play({ e: 'summon', card: 'CS2_101t', count: 3, who: 'self' }, { e: 'equip', card: 'CS2_091' }),
+    tokens: ['CS2_091'],
+  },
+  // 戰線擊破者：滅殺：此手下的攻擊力加倍
+  TRL_528: { abilities: [{ on: { k: 'overkill' }, effects: [{ e: 'doubleStat', target: { t: 'self' }, stat: 'atk' }] }] },
+
   // ------------------------------------------------------------------ 星艦
   // 星艦本體：數值與效果由組件組成（見 src/cards/starship.ts）
   GDB_100t2: {},

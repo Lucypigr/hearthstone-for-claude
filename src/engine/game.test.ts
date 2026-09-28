@@ -636,3 +636,74 @@ describe('星艦', () => {
     expect(g.costOf(me, a)).toBe(4);
   });
 });
+
+describe('舊系列機制', () => {
+  it('雙生法術：施放後得到一張沒有雙生法術的複製', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const foe = g.s.players[1];
+    const hp = foe.hero.hp;
+    play(g, 'DAL_373', foe.hero.uid); // 急速射擊：造成 2 點傷害
+    expect(foe.hero.hp).toBe(hp - 2);
+    const copy = me.hand.find((h) => h.cardId === 'DAL_373ts');
+    expect(copy).toBeTruthy();
+    expect(g.apply({ type: 'play', handUid: copy!.uid, target: foe.hero.uid })).toBe(true);
+    expect(foe.hero.hp).toBe(hp - 4);
+    expect(me.hand.some((h) => h.cardId.startsWith('DAL_373'))).toBe(false);
+  });
+
+  it('翠玉魔像：每召喚一個，下一個就更大', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'CFM_715'); // 翠玉之靈
+    play(g, 'CFM_312'); // 翠玉酋長：並賦予嘲諷
+    const golems = me.board.filter((m) => m.cardId === 'CFM_712_t01');
+    expect(golems.map((m) => [g.atkOf(m), m.hp])).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(g.hasKw(golems[1], 'TAUNT')).toBe(true);
+  });
+
+  it('號召：從牌堆召喚符合條件的手下', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const deck = me.deck.length;
+    play(g, 'LOOT_375'); // 公會招募員：號召一個消耗 (4) 以下的手下
+    expect(me.deck.length).toBe(deck - 1);
+    expect(me.board.filter((m) => m.cardId === FILLER).length).toBe(1);
+  });
+
+  it('比武：你的手下消耗較高才會獲勝', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.deck = [g.newHandCard('EX1_562')]; // 9 費對上 4 費
+    play(g, 'AT_133'); // 加基森矛騎兵：獲勝則 +1/+1
+    const win = me.board[me.board.length - 1];
+    expect(g.atkOf(win)).toBe(2);
+    me.deck = [g.newHandCard('CS2_231')]; // 0 費對上 4 費
+    play(g, 'AT_133');
+    const lose = me.board[me.board.length - 1];
+    expect(g.atkOf(lose)).toBe(1);
+  });
+
+  it('滅殺：法術與手下造成超過所需的傷害時觸發', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const wisp = put(g, 'CS2_231', 1); // 1/1
+    play(g, 'TRL_347', wisp.uid); // 誘餌箭：3 點傷害，滅殺：召喚 5/5 魔暴龍
+    expect(me.board.length).toBe(1);
+    const scalper = put(g, 'TRL_015', 0); // 黃牛票販子 5/3：滅殺：抽 2 張牌
+    const wisp2 = put(g, 'CS2_231', 1);
+    const hand = me.hand.length;
+    expect(g.apply({ type: 'attack', attacker: scalper.uid, target: wisp2.uid })).toBe(true);
+    expect(me.hand.length).toBe(hand + 2);
+  });
+
+  it('白銀之手新兵的動態文字', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'UNG_960'); // 叢林迷蹤：召喚兩個白銀之手新兵
+    expect(me.board.map((m) => m.cardId)).toEqual(['CS2_101t', 'CS2_101t']);
+  });
+});

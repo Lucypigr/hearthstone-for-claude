@@ -673,6 +673,7 @@ const KEYWORD_HELP: [string, string][] = [
   ['CANT_ATTACK', '無法攻擊'],
   ['FREEZE_ON_DAMAGE', '冰凍被它傷害的角色（下回合無法攻擊）'],
   ['TRADEABLE', '可交易：花 1 法力把它洗回牌堆並抽一張牌'],
+  ['TWINSPELL', '雙生法術：施放後會把一張沒有雙生法術的複製放到你的手中'],
   ['ECHO', '回音：打出後會把一張複製加入手牌，本回合可以重複使用（複製在回合結束時消失，消耗不會低於 1）'],
 ];
 
@@ -686,6 +687,7 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   if (kinds.has('secret')) lines.push('奧秘：在對手回合滿足條件時才會揭露並觸發');
   if (def.starshipPiece) lines.push('星艦組件：上場時組裝進你的星艦。花 5 點法力發射星艦，它會擁有所有組件的攻擊力、生命值與效果');
   if (kinds.has('launch')) lines.push('發射時：星艦發射時觸發');
+  if (kinds.has('overkill')) lines.push('滅殺：在你的回合造成的傷害超過消滅手下所需時觸發');
   if (def.starship) lines.push('星艦：由組件組成，擁有所有組件的攻擊力、生命值與效果');
   if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);
   if (def.spellDamage) lines.push(`法術傷害 +${def.spellDamage}：你的法術多造成 ${def.spellDamage} 點傷害`);

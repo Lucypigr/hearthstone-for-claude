@@ -47,6 +47,7 @@ const KEYWORD_WORDS: Record<string, Keyword> = {
   immune: 'IMMUNE',
   tradeable: 'TRADEABLE',
   echo: 'ECHO',
+  twinspell: 'TWINSPELL',
 };
 
 const KEYWORD_RE = '(?:Mega-Windfury|Divine Shield|Taunt|Charge|Rush|Windfury|Stealth|Poisonous|Lifesteal|Reborn|Elusive|Immune)';
@@ -141,6 +142,10 @@ export function normalizeText(en: string): string {
     .replace(/\s*\(\+\d+ Attack\/\+\d+ Health\)/g, '')
     // 「加入手牌（來自對手的職業）」→ 一般的寫法
     .replace(/ to your hand \(from your opponent's class\)/g, " from your opponent's class to your hand")
+    // 動態文字：翠玉魔像的大小、白銀之手新兵（1/1）
+    .replace(/\ba\{1\} \{0\} /g, 'a ')
+    .replace(/\{0\} (Silver Hand Recruits?)/g, '1/1 $1')
+    .replace(/Summon a basic Totem/g, 'Summon a random basic Totem')
     .trim();
   return t;
 }
@@ -650,6 +655,16 @@ function amountOf(s: string): { amount: number; spell: boolean } {
 }
 
 const ACTIONS: ActionRule[] = [
+  // ----- 號召：從牌堆召喚手下 -----
+  (s) => {
+    const m = /^(?:[Rr]ecruit|and recruit) (a|an|two|three|\d+) (?:(\d+)-Cost )?(minions?|Beasts?|Demons?|Dragons?|Murlocs?|Mechs?|Pirates?|Elementals?)(?: that costs? \((\d+)\) or less)?/.exec(s);
+    if (!m) return null;
+    const eff: Effect = { e: 'recruit', count: num(m[1]) };
+    if (m[2]) eff.cost = Number(m[2]);
+    if (m[4]) eff.maxCost = Number(m[4]);
+    if (!/^minion/.test(m[3])) eff.race = race(m[3]);
+    return { effects: [eff], rest: s.slice(m[0].length) };
+  },
   // ----- 星艦 -----
   (s) => {
     const m = /^(?:[Yy]our|and your) next Starship launch costs \((\d+)\) less/.exec(s);
@@ -927,6 +942,10 @@ const ACTIONS: ActionRule[] = [
     } else if ((mm = /^a random basic Totem/.exec(rest))) {
       effects = [{ e: 'custom', fn: 'totemicCall' }];
       rest = rest.slice(mm[0].length);
+    } else if ((mm = /^a Jade Golem/.exec(rest))) {
+      effects = [{ e: 'summonJade' }];
+      ctx.out.tokens.push('CFM_712_t01');
+      rest = rest.slice(mm[0].length);
     } else if ((mm = new RegExp(`^(${COUNT_RE}) random (.+?)(?= for your opponent|$|[,.]| and )`).exec(rest))) {
       const pool = parsePool(`a ${mm[2]}`);
       if (!pool) fail(`summon pool ${mm[2]}`);
@@ -1198,10 +1217,11 @@ function parseConditionPrefix(s: string, ctx: Ctx): { cond: Condition; body: str
 
 interface TriggerRule {
   re: RegExp;
-  build: (m: RegExpExecArray) => { on: Trig; cond?: Condition; once?: boolean; play?: boolean };
+  build: (m: RegExpExecArray) => { on: Trig; cond?: Condition; once?: boolean; play?: boolean; also?: Trig };
 }
 
 const TRIGGERS: TriggerRule[] = [
+  { re: /^Battlecry and Deathrattle: /, build: () => ({ on: { k: 'play' }, also: { k: 'deathrattle' } }) },
   { re: /^Battlecry: /, build: () => ({ on: { k: 'play' }, play: true }) },
   { re: /^Combo: /, build: () => ({ on: { k: 'play' }, cond: { c: 'combo' }, play: true }) },
   { re: /^Outcast: /, build: () => ({ on: { k: 'play' }, cond: { c: 'outcast' }, play: true }) },
@@ -1209,6 +1229,7 @@ const TRIGGERS: TriggerRule[] = [
   { re: /^Spellburst: /, build: () => ({ on: { k: 'spellCast', side: 'friendly' }, once: true }) },
   { re: /^Inspire: /, build: () => ({ on: { k: 'heroPower', side: 'friendly' } }) },
   { re: /^When this is launched, /, build: () => ({ on: { k: 'launch' } }) },
+  { re: /^Overkill: /, build: () => ({ on: { k: 'overkill' } }) },
   { re: /^Frenzy: /, build: () => ({ on: { k: 'frenzy' }, once: true }) },
   { re: /^At the end of your turn, /, build: () => ({ on: { k: 'turnEnd', whose: 'mine' } }) },
   { re: /^At the end of your opponent's turn, /, build: () => ({ on: { k: 'turnEnd', whose: 'opp' } }) },
@@ -1440,7 +1461,7 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
     }
     // 句首的關鍵字（如「嘲諷 戰吼：…」）
     for (;;) {
-      const kl = new RegExp(`^(${KEYWORD_RE}|Tradeable|Echo)(?:,? |$)`).exec(raw);
+      const kl = new RegExp(`^(${KEYWORD_RE}|Tradeable|Echo|Twinspell)(?:,? |$)`).exec(raw);
       if (!kl) break;
       const kw = KEYWORD_WORDS[kl[1].toLowerCase()];
       // 「Stealth until your next turn」之類的句子不是單純關鍵字
@@ -1517,6 +1538,11 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
       }
       ability.effects = parseActions(body, ctx);
       out.abilities.push(ability);
+      // 「戰吼和亡語：…」：同樣的效果在死亡時再觸發一次（共用同一份效果）
+      if (info.also) {
+        if (ctx.chosen) fail('戰吼和亡語不能指定目標');
+        out.abilities.push({ ...ability, on: info.also });
+      }
       if (isPlay) playCtxs.push(ctx);
       current = { ability, ctx };
       matched = true;
