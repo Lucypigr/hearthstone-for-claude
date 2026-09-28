@@ -8,7 +8,7 @@ import { decodeDeck, encodeDeck } from '../../game/deckstring';
 import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
 import { setName } from '../../game/sets';
 import { CLASS_COLORS, plainText, RACE_NAMES } from '../cardText';
-import { Art, CardView } from '../components/Card';
+import { Art, CardView, Tile } from '../components/Card';
 import { setProfile, useProfile } from '../store';
 
 const PAGE = 24;
@@ -465,7 +465,7 @@ function DeckEditor({
           >
             <span className="dc-cost">{def.cost}</span>
             <span className="dc-name">{def.name}</span>
-            <Art cardId={def.id} className="dc-art" />
+            <Tile cardId={def.id} className="dc-art" />
             <span className="dc-n">{def.rarity === 'LEGENDARY' ? '★' : n > 1 ? `×${n}` : ''}</span>
           </li>
         ))}

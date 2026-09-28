@@ -68,3 +68,15 @@ export const RARITY_COLORS: Record<string, string> = {
 export function artUrl(cardId: string): string {
   return `https://art.hearthstonejson.com/v1/256x/${cardId}.jpg`;
 }
+
+/** 官方完整卡面（含外框、寶石、名稱、敘述），繁體中文 */
+export function renderUrl(cardId: string, cssWidth: number): string {
+  const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+  const res = cssWidth * dpr > 256 ? '512x' : '256x';
+  return `https://art.hearthstonejson.com/v1/render/latest/zhTW/${res}/${cardId}.png`;
+}
+
+/** 牌組清單用的橫條圖 */
+export function tileUrl(cardId: string): string {
+  return `https://art.hearthstonejson.com/v1/tiles/${cardId}.png`;
+}
