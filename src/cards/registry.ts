@@ -84,6 +84,7 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.spellSchool && c.spellSchool !== pool.spellSchool) return false;
     if (pool.starshipPiece && !c.starshipPiece) return false;
     if (pool.rune && !c.runes?.[pool.rune]) return false;
+    if (pool.spendsCorpses && !JSON.stringify(c.abilities ?? []).includes('"spendCorpses')) return false;
     if (pool.terran && !c.terran) return false;
     if (pool.otherClass) {
       const classes = cardClasses(c);

@@ -24,6 +24,10 @@ export interface HandCard {
   echo?: boolean;
   /** 被移回手牌的星艦 */
   starship?: StarshipPiece[];
+  /** 到這個回合為止消耗生命值而不是法力 */
+  healthCostUntil?: number;
+  /** 暫時的卡：回合結束時從手牌消失 */
+  temporary?: boolean;
 }
 
 export interface Minion {
@@ -62,6 +66,8 @@ export interface Minion {
   parts?: [string, string];
   /** 星艦：由這些組件組成 */
   starship?: StarshipPiece[];
+  /** 這個手下消滅的手下（厄索克） */
+  killed?: string[];
 }
 
 export interface Hero {
@@ -87,6 +93,8 @@ export interface Weapon {
   durability: number;
   abilities: Ability[];
   keywords: Keyword[];
+  /** 這把武器消滅的手下（霜之哀傷） */
+  killed?: string[];
 }
 
 export interface SecretInst {
@@ -132,6 +140,26 @@ export interface PlayerState {
   spellsThisTurn?: number;
   /** 延遲的效果（例如「2 回合後召喚…」） */
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
+  /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」） */
+  eternal?: { ability: Ability; sourceCardId: string }[];
+  /** 你的手下在這個回合消耗增加（對手的冰涼腳丫等） */
+  minionTax?: { amount: number; turn: number };
+  /** 本回合下一張法術的折扣 */
+  nextSpellDiscount?: { amount: number; turn: number };
+  /** 本回合下一張牌改為消耗屍體 */
+  nextCardCorpsesTurn?: number;
+  /** 本場對戰中你的手下額外的攻擊力 */
+  minionAtkBonus?: number;
+  /** 最近一次友方手下 / 友方不死族死亡的回合 */
+  friendlyDiedTurn?: number;
+  undeadDiedTurn?: number;
+  /** 最近一次英雄生命值變化 / 被治療的回合 */
+  heroHealthChangedTurn?: number;
+  heroHealedTurn?: number;
+  /** 回合結束時加入手牌的卡 */
+  endOfTurnCards?: string[];
+  /** 洗進對手牌堆的瘟疫數 */
+  plaguesShuffled?: number;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
