@@ -84,10 +84,10 @@ export function CardView(p: CardViewProps) {
           }}
         />
         {cost !== def.cost && <div className={`card-cost ov ${cost < def.cost ? 'lower' : 'higher'}`}>{cost}</div>}
-        {def.type !== 'SPELL' && changed(attack, def.attack) && (
+        {(def.type === 'MINION' || def.type === 'WEAPON') && changed(attack, def.attack) && (
           <div className={`card-atk ov ${attack! > def.attack! ? 'buffed' : 'nerfed'}`}>{attack}</div>
         )}
-        {def.type !== 'SPELL' && changed(health, def.health) && (
+        {(def.type === 'MINION' || def.type === 'WEAPON') && changed(health, def.health) && (
           <div className={`card-hp ov ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${health! > def.health! ? 'buffed' : 'nerfed'}`}>{health}</div>
         )}
         {p.count !== undefined && <div className={`card-count ${p.count === 0 ? 'none' : ''}`}>×{p.count}</div>}
@@ -133,7 +133,8 @@ function DrawnCard(p: CardViewProps) {
         {label && <div className="card-race">{label}</div>}
       </div>
       <div className={`card-cost ${costClass}`}>{cost}</div>
-      {def.type !== 'SPELL' && (
+      {def.type === 'HERO' && !!def.armor && <div className="card-hp is-armor">{def.armor}</div>}
+      {(def.type === 'MINION' || def.type === 'WEAPON') && (
         <>
           <div className={`card-atk ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${attack !== undefined && def.attack !== undefined && attack > def.attack ? 'buffed' : ''}`}>{attack}</div>
           <div className={`card-hp ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${health !== undefined && def.health !== undefined && health > def.health ? 'buffed' : ''}`}>{health}</div>

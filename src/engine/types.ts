@@ -20,7 +20,7 @@ export type CardClass =
 
 export type Rarity = 'FREE' | 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
-export type CardType = 'MINION' | 'SPELL' | 'WEAPON';
+export type CardType = 'MINION' | 'SPELL' | 'WEAPON' | 'HERO';
 
 export type Race =
   | 'BEAST'
@@ -200,6 +200,12 @@ export type Effect =
   | { e: 'shuffle'; card: string; count: number }
   | { e: 'handBuff'; atk: number; hp: number; scope: 'all' | 'random'; race?: Race }
   | { e: 'shuffleCopy'; target: TargetExpr; count: number }
+  /** 變成隨機一個費用多 amount 的手下 */
+  | { e: 'evolve'; target: TargetExpr; amount: number }
+  /** 本場對戰中，你的（某種族）手下具有某關鍵字 */
+  | { e: 'grant'; keyword: Keyword; race?: Race }
+  /** 你本回合打出的下一張牌消耗減少 */
+  | { e: 'nextCardDiscount'; amount: number }
   | { e: 'costMod'; amount: number; scope: 'discovered' | 'it' }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
@@ -271,6 +277,25 @@ export interface ChooseOneOption {
   transformInto?: string;
 }
 
+/** 英雄能力（基本職業能力與英雄卡附帶的能力共用） */
+export interface HeroPowerSpec {
+  effects: Effect[];
+  target?: TargetReq;
+  /** 需要場上空位（召喚類） */
+  needsBoardSpace?: boolean;
+  lifesteal?: boolean;
+  /** 打出一張牌後可以再次使用 */
+  refresh?: 'cardPlayed';
+  chooseOne?: { id: string; name?: string; text?: string; effects: Effect[]; target?: TargetReq }[];
+}
+
+export interface HeroPowerDef extends HeroPowerSpec {
+  id: string;
+  name: string;
+  text: string;
+  cost: number;
+}
+
 export interface CardDef {
   id: string;
   dbfId: number;
@@ -303,6 +328,9 @@ export interface CardDef {
   secret?: boolean;
   /** 動態費用 */
   costRule?: { per: DynAmount | 'otherCardsInHand' | 'minionsOnBoard'; amount: number; race?: Race };
+  /** 英雄卡：獲得的護甲與新的英雄能力 */
+  armor?: number;
+  heroPower?: HeroPowerDef;
   /** 由 overrides / custom 加入的卡 */
   custom?: boolean;
 }

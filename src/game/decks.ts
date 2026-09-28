@@ -163,6 +163,10 @@ export function cardQuality(def: CardDef): number {
   } else if (def.type === 'WEAPON') {
     value += (def.attack ?? 0) * (def.health ?? 0) * 0.9;
     q = value - (def.cost * 2 + 0.5);
+  } else if (def.type === 'HERO') {
+    // 英雄卡：戰吼 + 護甲 + 更強的英雄能力
+    value += (def.armor ?? 0) * 0.5 + 6;
+    q = value - (def.cost * 1.6 + 0.6);
   } else {
     q = value - (def.cost * 1.6 + 0.6);
   }

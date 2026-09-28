@@ -658,6 +658,11 @@ textarea {
   background: radial-gradient(circle at 35% 30%, #ddd, #8a8a92 60%, #3a3a40);
 }
 
+.card-hp.is-armor {
+  border-radius: 20% 20% 45% 45%;
+  background: radial-gradient(circle at 35% 30%, #eee, #9a9aa6 60%, #44444c);
+}
+
 .card-atk.buffed,
 .card-hp.buffed {
   color: #7dff8f;

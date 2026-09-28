@@ -7,7 +7,7 @@ function escapeHtml(s: string): string {
 
 /** 把官方卡牌敘述轉成安全的 HTML（只保留粗體 / 斜體 / 換行） */
 export function formatCardText(text: string, spellDamage = 0): string {
-  let t = text.split('@')[0];
+  let t = text.replace(/<i>\(@\)<\/i>|\(@\)/g, '').split('@')[0];
   t = t.replace(/\[x\]/g, '').replace(/\{\d+\}/g, '');
   t = escapeHtml(t);
   t = t
