@@ -1,0 +1,301 @@
+import { describe, expect, it } from 'vitest';
+import { Game } from './game';
+import type { Minion, PlayerId } from './state';
+
+const FILLER = 'CS2_182'; // 冰風雪人
+
+function newGame(opts: { first?: PlayerId; deck?: string[] } = {}): Game {
+  const deck = opts.deck ?? Array(30).fill(FILLER);
+  const g = Game.create({
+    decks: [deck, deck],
+    classes: ['MAGE', 'WARRIOR'],
+    names: ['玩家', '電腦'],
+    ai: [false, false],
+    seed: 42,
+    first: opts.first ?? 0,
+  });
+  g.apply({ type: 'mulligan', player: 0, replace: [] });
+  g.apply({ type: 'mulligan', player: 1, replace: [] });
+  return g;
+}
+
+/** 直接把卡牌放進目前玩家的手牌並給足法力 */
+function give(g: Game, cardId: string, pid: PlayerId = g.s.current) {
+  const hc = g.newHandCard(cardId);
+  g.s.players[pid].hand.push(hc);
+  g.s.players[pid].mana = 10;
+  g.s.players[pid].maxMana = 10;
+  return hc.uid;
+}
+
+/** 直接在場上放一個手下（可立即攻擊） */
+function put(g: Game, cardId: string, pid: PlayerId): Minion {
+  const m = g.makeMinion(pid, cardId);
+  m.sleeping = false;
+  g.s.players[pid].board.push(m);
+  g.recalcAuras();
+  return m;
+}
+
+function play(g: Game, cardId: string, target?: number, position?: number) {
+  const uid = give(g, cardId);
+  const ok = g.apply({ type: 'play', handUid: uid, target, position });
+  expect(ok).toBe(true);
+}
+
+describe('對戰開始', () => {
+  it('先攻 3 張、後攻 4 張 + 幸運幣，第一回合 1 點法力並抽牌', () => {
+    const g = newGame();
+    expect(g.s.phase).toBe('play');
+    expect(g.s.players[0].hand.length).toBe(4);
+    expect(g.s.players[1].hand.length).toBe(5);
+    expect(g.s.players[1].hand.some((h) => h.cardId === 'GAME_005')).toBe(true);
+    expect(g.s.players[0].mana).toBe(1);
+  });
+
+  it('起手換牌會換掉指定的卡且手牌數不變', () => {
+    const deck = [...Array(15).fill('CS2_182'), ...Array(15).fill('CS2_231')];
+    const g = Game.create({ decks: [deck, deck], classes: ['MAGE', 'WARRIOR'], names: ['A', 'B'], ai: [false, false], seed: 3, first: 0 });
+    const hand = g.s.players[0].hand;
+    const replace = hand.map((h) => h.uid);
+    expect(g.apply({ type: 'mulligan', player: 0, replace })).toBe(true);
+    const after = g.s.players[0].hand;
+    expect(after.length).toBe(3);
+    expect(after.some((h) => replace.includes(h.uid))).toBe(false);
+    expect(g.s.players[0].deck.length).toBe(27);
+  });
+
+  it('結束回合後換對手，法力水晶增加', () => {
+    const g = newGame();
+    g.apply({ type: 'endTurn' });
+    expect(g.s.current).toBe(1);
+    expect(g.s.players[1].maxMana).toBe(1);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].maxMana).toBe(2);
+  });
+});
+
+describe('法術', () => {
+  it('火球術造成 6 點傷害，法術傷害 +1 時為 7', () => {
+    const g = newGame();
+    const enemy = g.s.players[1].hero;
+    play(g, 'CS2_029', enemy.uid);
+    expect(enemy.hp).toBe(24);
+    put(g, 'CS2_142', 0);
+    play(g, 'CS2_029', enemy.uid);
+    expect(enemy.hp).toBe(17);
+  });
+
+  it('寒冰箭造成傷害並冰凍，冰凍的手下無法攻擊', () => {
+    const g = newGame();
+    g.apply({ type: 'endTurn' });
+    const yeti = put(g, 'CS2_182', 0);
+    g.apply({ type: 'endTurn' });
+    // 對手回合被冰凍
+    g.s.current = 1;
+    play(g, 'CS2_024', yeti.uid);
+    expect(yeti.hp).toBe(2);
+    expect(yeti.frozen).toBe(true);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.current).toBe(0);
+    expect(g.canAttack(yeti.uid)).toBe(false);
+    g.apply({ type: 'endTurn' });
+    expect(yeti.frozen).toBe(false);
+  });
+
+  it('超載會鎖住下回合的法力', () => {
+    const g = newGame();
+    play(g, 'EX1_238', g.s.players[1].hero.uid);
+    expect(g.s.players[0].overloadOwed).toBe(1);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].mana).toBe(g.s.players[0].maxMana - 1);
+  });
+});
+
+describe('戰鬥', () => {
+  it('手下互相攻擊並造成傷害，嘲諷必須優先攻擊', () => {
+    const g = newGame();
+    const a = put(g, 'CS2_182', 0);
+    const b = put(g, 'CS2_182', 1);
+    const taunt = put(g, 'CS1_042', 1);
+    expect(g.attackTargets(a.uid)).toEqual([taunt.uid]);
+    expect(g.apply({ type: 'attack', attacker: a.uid, target: b.uid })).toBe(false);
+    expect(g.apply({ type: 'attack', attacker: a.uid, target: taunt.uid })).toBe(true);
+    expect(g.s.players[1].board.includes(taunt)).toBe(false);
+    expect(a.hp).toBe(4);
+  });
+
+  it('聖盾抵擋一次傷害', () => {
+    const g = newGame();
+    const a = put(g, 'CS2_182', 0);
+    const squire = put(g, 'EX1_008', 1);
+    g.apply({ type: 'attack', attacker: a.uid, target: squire.uid });
+    expect(squire.hp).toBe(1);
+    expect(g.hasKw(squire, 'DIVINE_SHIELD')).toBe(false);
+  });
+
+  it('剛上場的手下無法攻擊，衝鋒可以', () => {
+    const g = newGame();
+    play(g, 'CS2_182');
+    const yeti = g.s.players[0].board[0];
+    expect(g.canAttack(yeti.uid)).toBe(false);
+    play(g, 'CS2_173');
+    const charger = g.s.players[0].board[1];
+    expect(g.canAttack(charger.uid)).toBe(true);
+  });
+
+  it('劇毒直接消滅手下', () => {
+    const g = newGame();
+    const cobra = put(g, 'EX1_170', 0);
+    const yeti = put(g, 'CS2_182', 1);
+    g.apply({ type: 'attack', attacker: cobra.uid, target: yeti.uid });
+    expect(g.s.players[1].board.length).toBe(0);
+  });
+
+  it('武器讓英雄攻擊並消耗耐久度', () => {
+    const g = newGame();
+    play(g, 'CS2_106');
+    const hero = g.s.players[0].hero;
+    expect(g.atkOf(hero)).toBe(3);
+    g.apply({ type: 'attack', attacker: hero.uid, target: g.s.players[1].hero.uid });
+    expect(g.s.players[1].hero.hp).toBe(27);
+    expect(g.s.players[0].weapon?.durability).toBe(1);
+  });
+});
+
+describe('亡語 / 光環 / 觸發', () => {
+  it('麻瘋地精死亡時對敵方英雄造成 2 點傷害', () => {
+    const g = newGame();
+    const gnome = put(g, 'EX1_029', 0);
+    play(g, 'CS2_029', gnome.uid);
+    expect(g.s.players[1].hero.hp).toBe(28);
+  });
+
+  it('麥田魔像死亡後在原位召喚損壞的魔像', () => {
+    const g = newGame();
+    put(g, 'CS2_231', 0);
+    const golem = put(g, 'EX1_556', 0);
+    put(g, 'CS2_231', 0);
+    play(g, 'CS2_029', golem.uid);
+    const board = g.s.players[0].board;
+    expect(board.length).toBe(3);
+    expect(board[1].cardId).toBe('skele21');
+  });
+
+  it('暴風城勇士光環 +1/+1，勇士死亡後受傷的手下不會因此死亡', () => {
+    const g = newGame();
+    const champ = put(g, 'CS2_222', 0);
+    const wisp = put(g, 'CS2_231', 0);
+    expect(g.atkOf(wisp)).toBe(2);
+    expect(wisp.maxHp).toBe(2);
+    wisp.hp = 1;
+    play(g, 'CS2_234', wisp.uid); // 暗言術：痛 消滅勇士以外的目標測試不適用，改用火球
+    expect(g.s.players[0].board.includes(wisp)).toBe(false);
+    const wisp2 = put(g, 'CS2_231', 0);
+    wisp2.hp = 1;
+    play(g, 'CS2_029', champ.uid);
+    play(g, 'CS2_029', champ.uid);
+    expect(g.s.players[0].board.includes(champ)).toBe(false);
+    expect(g.s.players[0].board.includes(wisp2)).toBe(true);
+    expect(wisp2.hp).toBe(1);
+    expect(g.atkOf(wisp2)).toBe(1);
+  });
+
+  it('沉默會移除增益與亡語', () => {
+    const g = newGame();
+    const gnome = put(g, 'EX1_029', 1);
+    play(g, 'CS2_092', gnome.uid); // 王者祝福 +4/+4
+    expect(g.atkOf(gnome)).toBe(6);
+    play(g, 'CS2_203', gnome.uid); // 鐵喙貓頭鷹
+    expect(g.atkOf(gnome)).toBe(2);
+    expect(gnome.maxHp).toBe(1);
+    play(g, 'CS2_029', gnome.uid);
+    expect(g.s.players[0].hero.hp).toBe(30);
+  });
+
+  it('飛刀手在召喚手下時對隨機敵人造成傷害', () => {
+    const g = newGame();
+    put(g, 'NEW1_019', 0);
+    play(g, 'CS2_231');
+    expect(g.s.players[1].hero.hp).toBe(29);
+  });
+
+  it('小鬼召喚師回合結束時受傷並召喚小鬼', () => {
+    const g = newGame();
+    const imp = put(g, 'EX1_597', 0);
+    g.apply({ type: 'endTurn' });
+    expect(imp.hp).toBe(4);
+    expect(g.s.players[0].board.length).toBe(2);
+  });
+
+  it('苦痛侍僧受傷時抽牌', () => {
+    const g = newGame();
+    const acolyte = put(g, 'EX1_007', 0);
+    const before = g.s.players[0].hand.length;
+    play(g, 'CS2_024', acolyte.uid);
+    expect(g.s.players[0].hand.length).toBe(before + 1);
+  });
+});
+
+describe('奧秘', () => {
+  it('法術反制在對手回合反制法術', () => {
+    const g = newGame();
+    play(g, 'EX1_287');
+    expect(g.s.players[0].secrets.length).toBe(1);
+    g.apply({ type: 'endTurn' });
+    play(g, 'CS2_029', g.s.players[0].hero.uid);
+    expect(g.s.players[0].hero.hp).toBe(30);
+    expect(g.s.players[0].secrets.length).toBe(0);
+  });
+
+  it('寒冰屏障阻止致命傷害', () => {
+    const g = newGame();
+    play(g, 'EX1_295');
+    g.apply({ type: 'endTurn' });
+    g.s.players[0].hero.hp = 3;
+    play(g, 'CS2_029', g.s.players[0].hero.uid);
+    expect(g.s.players[0].hero.hp).toBe(3);
+    expect(g.s.phase).toBe('play');
+  });
+});
+
+describe('英雄能力與疲勞', () => {
+  it('法師英雄能力造成 1 點傷害', () => {
+    const g = newGame();
+    g.s.players[0].mana = 2;
+    expect(g.apply({ type: 'heroPower', target: g.s.players[1].hero.uid })).toBe(true);
+    expect(g.s.players[1].hero.hp).toBe(29);
+    expect(g.canHeroPower()).toBe(false);
+  });
+
+  it('牌庫抽完後受到遞增的疲勞傷害', () => {
+    const g = newGame({ deck: Array(5).fill(FILLER) });
+    for (let i = 0; i < 8; i++) g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hero.hp).toBeLessThan(30);
+  });
+
+  it('英雄死亡時遊戲結束', () => {
+    const g = newGame();
+    g.s.players[1].hero.hp = 5;
+    play(g, 'CS2_029', g.s.players[1].hero.uid);
+    expect(g.s.phase).toBe('over');
+    expect(g.s.winner).toBe(0);
+  });
+});
+
+describe('發現', () => {
+  it('人類玩家的發現會暫停等待選擇，之後的效果作用在發現的卡上', () => {
+    const g = newGame();
+    const before = g.s.players[0].hand.length;
+    // 我認識那個誰！：發現一張嘲諷手下，使其獲得 +1/+2
+    expect(g.apply({ type: 'play', handUid: give(g, 'CFM_940') })).toBe(true);
+    expect(g.s.pendingChoice?.options.length).toBe(3);
+    expect(g.apply({ type: 'endTurn' })).toBe(false);
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice).toBeNull();
+    const hand = g.s.players[0].hand;
+    expect(hand.length).toBe(before + 1);
+    expect(hand[hand.length - 1].hpBuff).toBe(2);
+  });
+});
