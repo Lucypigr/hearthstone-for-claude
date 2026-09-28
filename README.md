@@ -22,6 +22,11 @@ npm run build    # 輸出到 dist/，可以直接放到任何靜態網站
 npm test         # 執行測試
 ```
 
+## 線上試玩（GitHub Pages）
+
+推送程式碼後會自動建置並部署到 `https://lucypigr.github.io/hearthstone-for-claude/`（設定檔在 `.github/workflows/deploy.yml`）。
+第一次使用前要到 GitHub 專案的 **Settings → Pages**，把 **Source** 設為 **GitHub Actions**。
+
 ## 卡牌資料
 
 `src/data/cards.json` 是由 `scripts/build-cards.ts` 產生的：
