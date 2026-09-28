@@ -2369,3 +2369,7 @@ textarea {
   pointer-events: none;
   animation: banner 1.3s ease forwards;
 }
+
+.import-box {
+  width: min(560px, 92vw);
+}

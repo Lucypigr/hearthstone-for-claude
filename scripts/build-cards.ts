@@ -268,9 +268,13 @@ async function main() {
           if (!sub) throw new Unsupported('找不到二選一子卡');
           const subType = typeOf(sub);
           if (subType === 'MINION') {
-            const tok = buildToken(sub.id);
-            if (!tok) throw new Unsupported('二選一變形失敗');
-            options.push({ id: sub.id, name: clean(sub.strs.CARDNAME.zhTW), text: clean(sub.strs.CARDTEXT?.zhTW), abilities: [], transformInto: sub.id });
+            // 優先使用與母卡同名、數值相同的變形後手下（例如「利爪德魯伊」的熊形態）
+            const same = (byName.get(r.strs.CARDNAME.enUS.toLowerCase()) ?? []).find(
+              (x) => x.id !== r.id && !x.tags.COLLECTIBLE && typeOf(x) === 'MINION' && x.tags.ATK === sub.tags.ATK && x.tags.HEALTH === sub.tags.HEALTH,
+            );
+            const into = same && buildToken(same.id) ? same.id : sub.id;
+            if (!buildToken(into)) throw new Unsupported('二選一變形失敗');
+            options.push({ id: sub.id, name: clean(sub.strs.CARDNAME.zhTW), text: clean(sub.strs.CARDTEXT?.zhTW), abilities: [], transformInto: into });
             continue;
           }
           const sp = parseCardText({ textEn: sub.strs.CARDTEXT?.enUS ?? '', cardType: 'SPELL' }, makeEnv(r.id));
@@ -334,6 +338,8 @@ async function main() {
   const pref = (r: RawCard) => (r.id.startsWith('CORE_') ? 1 : 0) + (r.id.startsWith('VAN_') ? 2 : 0);
 
   const cards: CardDef[] = [];
+  /** 牌組代碼用：同名卡的所有 dbfId → 收錄的卡牌 ID */
+  const aliases: Record<number, string> = {};
   let groupsTotal = 0;
   for (const group of groups.values()) {
     groupsTotal++;
@@ -342,6 +348,7 @@ async function main() {
       const def = buildDef(r, true);
       if (def) {
         cards.push(def);
+        for (const other of group) if (other.id !== def.id) aliases[other.dbf] = def.id;
         break;
       }
     }
@@ -354,7 +361,7 @@ async function main() {
     if (!def) throw new Error(`必要衍生卡 ${id} 解析失敗`);
   }
 
-  const heroes: Record<string, { hero: string; name: string; power: { id: string; name: string; text: string; cost: number } }> = {};
+  const heroes: Record<string, { hero: string; heroDbf: number; name: string; power: { id: string; name: string; text: string; cost: number } }> = {};
   for (let i = 1; i <= 11; i++) {
     const heroId = `HERO_${String(i).padStart(2, '0')}`;
     const h = byId.get(heroId)!;
@@ -362,6 +369,7 @@ async function main() {
     const cls = CLASS_MAP[h.tags.CLASS];
     heroes[cls] = {
       hero: heroId,
+      heroDbf: h.dbf,
       name: clean(h.strs.CARDNAME.zhTW),
       power: {
         id: bp.id,
@@ -372,12 +380,18 @@ async function main() {
     };
   }
 
+  // 所有英雄（含造型）的 dbfId → 職業，讓匯入的牌組代碼可以判斷職業
+  const heroSkins: Record<number, string> = {};
+  for (const r of raws) {
+    if (r.tags.CARDTYPE === 3 && r.tags.COLLECTIBLE && CLASS_MAP[r.tags.CLASS] && CLASS_MAP[r.tags.CLASS] !== 'NEUTRAL') heroSkins[r.dbf] = CLASS_MAP[r.tags.CLASS];
+  }
+
   const tokens = [...tokenDefs.values()].filter((d): d is CardDef => !!d && !cards.some((c) => c.id === d.id));
   const all = [...cards, ...tokens.map((t) => ({ ...t, collectible: false }))];
 
   // ------------------------------------------------------------------ 輸出
   mkdirSync('src/data', { recursive: true });
-  writeFileSync(OUT, JSON.stringify({ build: /build="(\d+)"/.exec(xml)?.[1], heroes, cards: all }));
+  writeFileSync(OUT, JSON.stringify({ build: /build="(\d+)"/.exec(xml)?.[1], heroes, heroSkins, aliases, cards: all }));
 
   const bySet = new Map<number, { ok: number; total: number }>();
   for (const group of groups.values()) {

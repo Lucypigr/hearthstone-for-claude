@@ -6,6 +6,7 @@ import { OVERRIDES } from './overrides';
 
 export interface HeroInfo {
   hero: string;
+  heroDbf: number;
   name: string;
   power: { id: string; name: string; text: string; cost: number };
 }
@@ -13,6 +14,8 @@ export interface HeroInfo {
 interface CardData {
   build?: string;
   heroes: Record<string, HeroInfo>;
+  aliases?: Record<string, string>;
+  heroSkins?: Record<string, string>;
   cards: CardDef[];
 }
 
@@ -38,6 +41,21 @@ export function getCard(id: string): CardDef {
   const c = CARDS[id];
   if (!c) throw new Error(`未知卡牌：${id}`);
   return c;
+}
+
+const BY_DBF = new Map<number, string>();
+for (const c of Object.values(CARDS)) BY_DBF.set(c.dbfId, c.id);
+for (const [dbf, id] of Object.entries(raw.aliases ?? {})) if (!BY_DBF.has(Number(dbf))) BY_DBF.set(Number(dbf), id);
+
+/** 用 dbfId 找卡（牌組代碼用；會把核心 / 傳統等重複版本對應到遊戲收錄的版本） */
+export function cardByDbf(dbf: number): CardDef | null {
+  const id = BY_DBF.get(dbf);
+  return id ? CARDS[id] : null;
+}
+
+/** 英雄卡（含造型）的 dbfId → 職業 */
+export function classOfHeroDbf(dbf: number): Exclude<CardClass, 'NEUTRAL'> | null {
+  return (raw.heroSkins?.[String(dbf)] as Exclude<CardClass, 'NEUTRAL'>) ?? null;
 }
 
 export function hasCard(id: string): boolean {

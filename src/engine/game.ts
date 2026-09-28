@@ -1189,7 +1189,9 @@ export class Game {
             const r = yield* this.summon(m.owner, m.cardId, ctx.position);
             if (r) {
               r.keywords = r.keywords.filter((k) => k !== 'REBORN');
-              r.hp = 1;
+              r.baseHp = 1;
+              r.maxHp = 1 + r.auraHp;
+              r.hp = r.maxHp;
             }
           }
         }

@@ -4,7 +4,8 @@ import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardClass, CardDef, Rarity } from '../../engine/types';
 import { buildDeck, cardAllowed, deckCurve, DECK_SIZE, maxCopies, validateDeck, type Deck } from '../../game/decks';
 import { CRAFT_COST, DISENCHANT_VALUE, RARITY_NAMES } from '../../game/economy';
-import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck } from '../../game/profile';
+import { decodeDeck, encodeDeck } from '../../game/deckstring';
+import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
 import { setName } from '../../game/sets';
 import { CLASS_COLORS, plainText, RACE_NAMES } from '../cardText';
 import { Art, CardView } from '../components/Card';
@@ -26,6 +27,8 @@ export function Collection() {
   const [detail, setDetail] = useState<string | null>(null);
   const [editing, setEditing] = useState<Deck | null>(null);
   const [newDeck, setNewDeck] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importText, setImportText] = useState('');
   const [message, setMessage] = useState('');
 
   const sets = useMemo(() => [...new Set(COLLECTIBLE.map((c) => c.set))].sort((a, b) => a - b), []);
@@ -207,6 +210,7 @@ export function Collection() {
             onChange={setEditing}
             onRemove={removeFromDeck}
             onInspect={setDetail}
+            onMessage={setMessage}
             onSave={() => {
               setProfile((pr) => saveDeck(pr, editing));
               setEditing(null);
@@ -227,6 +231,9 @@ export function Collection() {
             <h3>我的套牌（{p.decks.length}）</h3>
             <button className="btn primary full" onClick={() => setNewDeck(true)}>
               ＋ 新增套牌
+            </button>
+            <button className="btn full" onClick={() => setImporting(true)}>
+              📥 匯入牌組代碼
             </button>
             <div className="deck-list">
               {p.decks.map((d) => {
@@ -292,9 +299,76 @@ export function Collection() {
         </div>
       )}
 
+      {importing && (
+        <div className="modal" onClick={() => setImporting(false)}>
+          <div className="modal-box import-box" onClick={(e) => e.stopPropagation()}>
+            <h2>匯入牌組代碼</h2>
+            <p className="muted small">貼上從 hsreplay.net 或爐石戰記複製的牌組代碼。遊戲尚未支援的卡會被略過；還沒擁有的卡可以用奧術之塵合成。</p>
+            <textarea rows={6} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="AAECAR8G..." />
+            <div className="row">
+              <button
+                className="btn primary"
+                onClick={() => {
+                  try {
+                    const d = decodeDeck(importText);
+                    const deck: Deck = { id: newId(), name: d.name ?? `匯入的${CLASS_NAMES[d.heroClass]}套牌`, heroClass: d.heroClass, freeform: false, cards: d.cards.slice(0, DECK_SIZE) };
+                    deck.freeform = deck.cards.some((id) => !cardAllowed(getCard(id), d.heroClass, false));
+                    const missing = countMissing(deck, p.collection);
+                    setEditing(deck);
+                    setImporting(false);
+                    setImportText('');
+                    setCls('ALL');
+                    resetPage();
+                    setMessage(
+                      `匯入了 ${deck.cards.length} 張卡` +
+                        (d.unsupported ? `，${d.unsupported} 張遊戲尚未支援已略過` : '') +
+                        (missing.count ? `；你還缺 ${missing.count} 張卡（合成需要 ✨${missing.dust}）` : ''),
+                    );
+                  } catch (err) {
+                    setMessage(`無法匯入：${(err as Error).message}`);
+                    setImporting(false);
+                  }
+                }}
+              >
+                匯入
+              </button>
+              <button className="btn" onClick={() => setImporting(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {detail && <CardDetail cardId={detail} onClose={() => setDetail(null)} />}
     </div>
   );
+}
+
+/** 套牌中還沒擁有的卡 */
+function countMissing(deck: Deck, collection: Record<string, number>): { ids: string[]; count: number; dust: number } {
+  const need = new Map<string, number>();
+  for (const id of deck.cards) need.set(id, (need.get(id) ?? 0) + 1);
+  const ids: string[] = [];
+  let dust = 0;
+  for (const [id, n] of need) {
+    const lack = n - (collection[id] ?? 0);
+    for (let i = 0; i < lack; i++) {
+      ids.push(id);
+      dust += CRAFT_COST[getCard(id).rarity];
+    }
+  }
+  return { ids, count: ids.length, dust };
+}
+
+function craftAll(p: Profile, ids: string[]): Profile {
+  let cur = p;
+  for (const id of ids) {
+    const r = craftCard(cur, id);
+    if (!r.ok) break;
+    cur = r.profile;
+  }
+  return cur;
 }
 
 function DeckEditor({
@@ -306,6 +380,7 @@ function DeckEditor({
   onSave,
   onCancel,
   onDelete,
+  onMessage,
 }: {
   deck: Deck;
   collection: Record<string, number>;
@@ -315,7 +390,10 @@ function DeckEditor({
   onSave: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  onMessage: (m: string) => void;
 }) {
+  const profile = useProfile();
+  const missing = countMissing(deck, collection);
   const grouped = useMemo(() => {
     const m = new Map<string, number>();
     for (const id of deck.cards) m.set(id, (m.get(id) ?? 0) + 1);
@@ -410,6 +488,33 @@ function DeckEditor({
           刪除
         </button>
       </div>
+      {missing.count > 0 && (
+        <button
+          className="btn full"
+          disabled={profile.dust < missing.dust}
+          onClick={() => {
+            setProfile((pr) => craftAll(pr, missing.ids));
+            onMessage(`合成了 ${missing.count} 張卡`);
+          }}
+          title={profile.dust < missing.dust ? '奧術之塵不足' : ''}
+        >
+          ✨ 合成缺少的 {missing.count} 張卡（✨{missing.dust}）
+        </button>
+      )}
+      <button
+        className="btn full"
+        disabled={!deck.cards.length}
+        onClick={() => {
+          const code = encodeDeck(deck);
+          const text = `### ${deck.name}\n${code}`;
+          navigator.clipboard?.writeText(text).then(
+            () => onMessage('已複製牌組代碼'),
+            () => window.prompt('複製這段牌組代碼：', code),
+          ) ?? window.prompt('複製這段牌組代碼：', code);
+        }}
+      >
+        📤 複製牌組代碼
+      </button>
       <div className="deck-actions">
         <button className="btn primary" onClick={onSave}>
           💾 儲存
