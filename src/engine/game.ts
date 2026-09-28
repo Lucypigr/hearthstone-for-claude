@@ -1298,6 +1298,24 @@ export class Game {
   // 星艦
   // ==========================================================================
 
+  // ==========================================================================
+  // 死亡騎士的屍體
+  // ==========================================================================
+
+  gainCorpses(p: PlayerState, n: number) {
+    if (n <= 0) return;
+    p.corpses = (p.corpses ?? 0) + n;
+  }
+
+  /** 屍體足夠就花費並回傳 true */
+  spendCorpses(p: PlayerState, n: number): boolean {
+    if ((p.corpses ?? 0) < n) return false;
+    p.corpses = (p.corpses ?? 0) - n;
+    p.corpsesSpent = (p.corpsesSpent ?? 0) + n;
+    this.log(p.id, `花費了 ${n} 具屍體`);
+    return true;
+  }
+
   /** 星艦組件上場時組裝進星艦（記錄當下的攻擊力與生命值） */
   private assemble(p: PlayerState, m: Minion) {
     if (!getCard(m.cardId).starshipPiece) return;
@@ -1512,6 +1530,8 @@ export class Game {
         p.board = p.board.filter((x) => x !== m);
         p.graveyard.push(m.cardId);
         this.s.deathsThisTurn++;
+        // 死亡騎士：友方手下死亡時獲得 1 具屍體（屍體喚起的手下不會留下屍體）
+        if (p.heroClass === 'DEATHKNIGHT' && !getCard(m.cardId).noCorpse) this.gainCorpses(p, 1);
         this.fx({ kind: 'death', uid: m.uid, cardId: m.cardId, player: m.owner });
       }
       for (const w of deadWeapons) this.s.players[w.owner].weapon = null;
@@ -1783,6 +1803,10 @@ export class Game {
         return race ? (p.summonedRaces[race] ?? 0) : 0;
       case 'starshipsLaunched':
         return p.launched?.length ?? 0;
+      case 'corpses':
+        return p.corpses ?? 0;
+      case 'corpsesSpent':
+        return p.corpsesSpent ?? 0;
     }
     return 0;
   }
@@ -2336,6 +2360,28 @@ export class Game {
           yield* this.doSummon(ctx, ctx.controller, hc.cardId);
         }
         break;
+      case 'spendCorpses':
+        if (this.spendCorpses(me, e.amount)) yield* this.runEffects(e.then, ctx);
+        else if (e.else) yield* this.runEffects(e.else, ctx);
+        break;
+      case 'gainCorpses':
+        this.gainCorpses(me, e.amount);
+        break;
+      case 'spendCorpsesUpTo': {
+        const n = Math.min(e.max, me.corpses ?? 0);
+        if (n > 0) this.spendCorpses(me, n);
+        if (e.each) for (let i = 0; i < n; i++) yield* this.runEffects(e.each, ctx);
+        if (e.custom) yield* this.custom(e.custom, { n }, ctx);
+        break;
+      }
+      case 'raiseCorpses': {
+        const n = Math.min(e.max, me.corpses ?? 0, MAX_BOARD - me.board.length);
+        if (n <= 0) break;
+        this.spendCorpses(me, n);
+        this.log(me.id, `喚起了 ${n} 具屍體`);
+        for (let i = 0; i < n; i++) yield* this.doSummon(ctx, ctx.controller, e.card);
+        break;
+      }
       case 'launchDiscount':
         me.launchDiscount = (me.launchDiscount ?? 0) + e.amount;
         break;
@@ -2491,6 +2537,74 @@ export class Game {
       case 'addOneOf': {
         const id = pick(s, args.cards as string[]);
         if (id) this.addToHand(me, id);
+        break;
+      }
+      // ------------------------------------------------------------ 死亡騎士
+      case 'corpseExplosion': {
+        // 屍爆術：引爆一具屍體對所有手下造成傷害；若還有手下存活就重複
+        const n = 1 + (ctx.isSpell ? this.spellDamage(ctx.controller) : 0);
+        const src = this.dmgSource(ctx);
+        for (let loop = 0; loop < 30 && this.spendCorpses(me, 1); loop++) {
+          for (const m of this.chars().filter((c) => !isHero(c) && this.alive(c))) yield* this.damage(src, m.uid, n);
+          yield* this.processDeaths();
+          if (this.over || !this.chars().some((c) => !isHero(c) && this.alive(c))) break;
+        }
+        break;
+      }
+      case 'corpseFarm': {
+        // 屍體農場：召喚一個消耗等同花費屍體數的隨機手下
+        const n = args.n as number;
+        const id = n > 0 ? pick(s, this.randomPool({ type: 'MINION', cost: n }, ctx.controller, false))?.id : undefined;
+        if (id) yield* this.doSummon(ctx, ctx.controller, id);
+        break;
+      }
+      case 'marrowgar': {
+        // 骨煞領主馬洛加：每具屍體一個 1/1 魔像，放不下的每具給其中一個 +2/+2
+        const n = args.n as number;
+        const golems: Minion[] = [];
+        let extra = 0;
+        for (let i = 0; i < n; i++) {
+          const m = me.board.length < MAX_BOARD ? yield* this.doSummon(ctx, ctx.controller, 'RLK_085t') : null;
+          if (m) golems.push(m);
+          else extra++;
+        }
+        for (let i = 0; i < extra && golems.length; i++) {
+          const g = pick(s, golems)!;
+          g.atkBuff += 2;
+          g.maxHp += 2;
+          g.hp += 2;
+        }
+        break;
+      }
+      case 'corpseBride': {
+        // 屍體新娘：召喚一個攻擊力與生命值等同花費屍體數的嘲諷新郎
+        const n = args.n as number;
+        if (n <= 0) break;
+        const m = yield* this.doSummon(ctx, ctx.controller, 'RLK_506t');
+        if (m) {
+          m.baseAtk = n;
+          m.baseHp = n;
+          m.maxHp = n + m.auraHp;
+          m.hp = m.maxHp;
+        }
+        break;
+      }
+      case 'yseraAwakens': {
+        // 伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成傷害
+        const n = (args.amount as number) + (ctx.isSpell ? this.spellDamage(ctx.controller) : 0);
+        const src = this.dmgSource(ctx);
+        for (const c of this.chars()) {
+          if (!this.alive(c) || (!isHero(c) && getCard(c.cardId).nameEn.startsWith('Ysera'))) continue;
+          yield* this.damage(src, c.uid, n);
+        }
+        break;
+      }
+      case 'nightmare': {
+        // 夢魘：+5/+5，並在施放者的下個回合開始時消滅它
+        const m = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!m) break;
+        yield* this.runEffect({ e: 'buff', target: { t: 'chosen' }, atk: 5, hp: 5 }, ctx);
+        m.abilities.push({ on: { k: 'turnStart', whose: m.owner === ctx.controller ? 'mine' : 'opp' }, effects: [{ e: 'destroy', target: { t: 'self' } }] });
         break;
       }
       case 'totemicCall': {

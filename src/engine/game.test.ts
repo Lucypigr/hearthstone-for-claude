@@ -707,3 +707,165 @@ describe('舊系列機制', () => {
     expect(me.board.map((m) => m.cardId)).toEqual(['CS2_101t', 'CS2_101t']);
   });
 });
+
+describe('伊瑟拉的夢境卡', () => {
+  it('伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成 5 點傷害', () => {
+    const g = newGame();
+    const ysera = put(g, 'EX1_572', 0);
+    const foe = put(g, 'CS2_182', 1);
+    const heroHp = g.s.players[1].hero.hp;
+    play(g, 'DREAM_02');
+    expect(ysera.hp).toBe(12);
+    expect(foe.hp).toBe(0);
+    expect(g.s.players[1].hero.hp).toBe(heroHp - 5);
+  });
+
+  it('夢魘：+5/+5，在施放者的下個回合開始時消滅', () => {
+    const g = newGame();
+    const mine = put(g, 'CS2_182', 0);
+    const theirs = put(g, 'CS2_182', 1);
+    play(g, 'DREAM_05', mine.uid);
+    play(g, 'DREAM_05', theirs.uid);
+    expect(g.atkOf(mine)).toBe(9);
+    g.apply({ type: 'endTurn' }); // 對手的回合：兩隻都還在
+    expect(g.minion(mine.uid)).toBeTruthy();
+    expect(g.minion(theirs.uid)).toBeTruthy();
+    g.apply({ type: 'endTurn' }); // 我的回合開始：兩隻都被消滅
+    expect(g.minion(mine.uid)).toBeFalsy();
+    expect(g.minion(theirs.uid)).toBeFalsy();
+  });
+
+  it('伊瑟拉每回合結束時獲得兩張夢境卡', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    put(g, 'EX1_572', 0);
+    const before = me.hand.length;
+    g.apply({ type: 'endTurn' });
+    const dreams = me.hand.slice(before).map((h) => h.cardId);
+    expect(dreams.length).toBe(2);
+    for (const id of dreams) expect(id.startsWith('DREAM_0')).toBe(true);
+  });
+});
+
+describe('死亡騎士：屍體', () => {
+  function dkGame(): Game {
+    const deck = Array(30).fill(FILLER);
+    const g = Game.create({ decks: [deck, deck], classes: ['DEATHKNIGHT', 'WARRIOR'], names: ['A', 'B'], ai: [false, false], seed: 42, first: 0 });
+    g.apply({ type: 'mulligan', player: 0, replace: [] });
+    g.apply({ type: 'mulligan', player: 1, replace: [] });
+    return g;
+  }
+
+  it('友方手下死亡時死亡騎士獲得屍體；敵方手下與「不會留下屍體」的手下不算', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    const mine = put(g, 'CS2_231', 0);
+    const theirs = put(g, 'CS2_231', 1);
+    play(g, 'CS2_032'); // 烈焰風暴只打敵方
+    expect(g.minion(theirs.uid)).toBeFalsy();
+    expect(me.corpses ?? 0).toBe(0);
+    play(g, 'CS2_062'); // 地獄烈焰：對所有角色造成 3 點傷害
+    expect(g.minion(mine.uid)).toBeFalsy();
+    expect(me.corpses).toBe(1);
+    put(g, 'RLK_008t', 0); // 復生的食屍鬼：不會留下屍體
+    play(g, 'CS2_062');
+    expect(me.corpses).toBe(1);
+  });
+
+  it('非死亡騎士不會獲得屍體', () => {
+    const g = newGame();
+    put(g, 'CS2_231', 0);
+    play(g, 'CS2_062');
+    expect(g.s.players[0].corpses ?? 0).toBe(0);
+  });
+
+  it('消耗屍體：夠才觸發額外效果，並記錄本賽局消耗數', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    let hand = me.hand.length;
+    play(g, 'RLK_101'); // 解凍：抽一張，消耗 2 個屍體再抽一張
+    expect(me.hand.length).toBe(hand + 1);
+    me.corpses = 3;
+    hand = me.hand.length;
+    play(g, 'RLK_101');
+    expect(me.hand.length).toBe(hand + 2);
+    expect(me.corpses).toBe(1);
+    expect(me.corpsesSpent).toBe(2);
+  });
+
+  it('「改為」：墳墓之力有 5 個屍體時改為 +3 攻擊力', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    const m = put(g, 'CS2_182', 0);
+    play(g, 'RLK_707');
+    expect(g.atkOf(m)).toBe(5);
+    me.corpses = 5;
+    play(g, 'RLK_707');
+    expect(g.atkOf(m)).toBe(8);
+    expect(me.corpses).toBe(0);
+  });
+
+  it('亡靈大軍：把屍體復生為 2/2 食屍鬼，它們死亡時不會留下屍體', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    me.corpses = 3;
+    play(g, 'RLK_060');
+    expect(me.board.map((m) => m.cardId)).toEqual(['RLK_008t', 'RLK_008t', 'RLK_008t']);
+    expect(me.corpses).toBe(0);
+    play(g, 'CS2_062');
+    expect(me.corpses).toBe(0);
+  });
+
+  it('骨髓操縱者：每消耗一個屍體對隨機敵人造成 2 點傷害', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    const foe = g.s.players[1].hero;
+    me.corpses = 7;
+    const hp = foe.hp;
+    play(g, 'RLK_505');
+    expect(foe.hp).toBe(hp - 10);
+    expect(me.corpses).toBe(2);
+  });
+
+  it('屍爆術：每個屍體對全部手下造成 1 點傷害，直到沒有手下存活', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    const yeti = put(g, 'CS2_182', 1); // 4/5
+    me.corpses = 8;
+    play(g, 'RLK_035');
+    expect(g.minion(yeti.uid)).toBeFalsy();
+    expect(me.corpses).toBe(3);
+  });
+
+  it('屍體新娘：召喚攻擊力與生命值等於消耗數量的新郎', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    me.corpses = 6;
+    play(g, 'RLK_504');
+    const groom = me.board.find((m) => m.cardId === 'RLK_506t')!;
+    expect(g.atkOf(groom)).toBe(6);
+    expect(groom.hp).toBe(6);
+    expect(me.corpses).toBe(0);
+  });
+
+  it('屍體數量可以當作傷害；縫合巨人依消耗過的屍體減費', () => {
+    const g = dkGame();
+    const me = g.s.players[0];
+    const yeti = put(g, 'CS2_182', 1);
+    me.corpses = 3;
+    play(g, 'WW_354', yeti.uid);
+    expect(yeti.hp).toBe(2);
+    me.corpsesSpent = 4;
+    const uid = give(g, 'RLK_744');
+    expect(g.costOf(me, me.hand.find((h) => h.uid === uid)!)).toBe(5);
+  });
+
+  it('嗜血之徒：消耗屍體發現一張血魄符文牌', () => {
+    const g = dkGame();
+    g.s.players[0].corpses = 1;
+    expect(g.apply({ type: 'play', handUid: give(g, 'RLK_066') })).toBe(true);
+    const opts = g.s.pendingChoice!.options;
+    expect(opts.length).toBe(3);
+    for (const id of opts) expect(getCard(id).runes?.blood).toBeGreaterThan(0);
+  });
+});

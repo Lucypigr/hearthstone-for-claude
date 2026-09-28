@@ -122,7 +122,10 @@ export type DynAmount =
   | 'friendlyRace'
   | 'summonedRace'
   /** 本場對戰中發射過的星艦數量 */
-  | 'starshipsLaunched';
+  | 'starshipsLaunched'
+  /** 死亡騎士目前的屍體數 / 本場對戰中花費的屍體數 */
+  | 'corpses'
+  | 'corpsesSpent';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -138,6 +141,8 @@ export interface Pool {
   hasDeathrattle?: boolean;
   hasBattlecry?: boolean;
   starshipPiece?: boolean;
+  /** 需要某種死亡騎士符文 */
+  rune?: 'blood' | 'frost' | 'unholy';
   /** 來自另一個職業（不是你的職業，也不是中立） */
   otherClass?: boolean;
   terran?: boolean;
@@ -232,6 +237,13 @@ export type Effect =
   | { e: 'launchStarship' }
   /** 在 turns 個你的回合後（回合開始時）執行 */
   | { e: 'delayed'; turns: number; effects: Effect[] }
+  /** 消耗 amount 具屍體來執行 then（屍體不足則執行 else） */
+  | { e: 'spendCorpses'; amount: number; then: Effect[]; else?: Effect[] }
+  | { e: 'gainCorpses'; amount: number }
+  /** 消耗最多 max 具屍體：每具執行一次 each，或把數量交給自訂效果 custom（args.n） */
+  | { e: 'spendCorpsesUpTo'; max: number; each?: Effect[]; custom?: string }
+  /** 喚起最多 max 具屍體成為手下（每具屍體一個） */
+  | { e: 'raiseCorpses'; max: number; card: string }
   /** 比武：雙方各揭露牌堆中一張手下，你的消耗較高則執行 then */
   | { e: 'joust'; then: Effect[]; else?: Effect[] }
   /** 召喚一個翠玉魔像（每召喚一個，下一個就 +1/+1） */
@@ -337,6 +349,13 @@ export interface HeroPowerDef extends HeroPowerSpec {
   cost: number;
 }
 
+/** 死亡騎士符文：一副套牌中三種符文各取最高需求，加總最多 3 個 */
+export interface Runes {
+  blood?: number;
+  frost?: number;
+  unholy?: number;
+}
+
 export interface CardDef {
   id: string;
   dbfId: number;
@@ -386,4 +405,8 @@ export interface CardDef {
   launchTransform?: string;
   /** 雙生法術：施放後加入手牌的複製（沒有雙生法術） */
   twinspellCopy?: string;
+  /** 死亡騎士的符文需求（血魄 / 冰霜 / 穢邪） */
+  runes?: Runes;
+  /** 死亡時不會留下屍體（屍體喚起的手下） */
+  noCorpse?: boolean;
 }

@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { cardClasses, COLLECTIBLE, getCard, HEROES, PLAYABLE_CLASSES } from '../../cards/registry';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardClass, CardDef, Rarity } from '../../engine/types';
-import { buildDeck, cardAllowed, deckCurve, DECK_SIZE, maxCopies, validateDeck, type Deck } from '../../game/decks';
+import { buildDeck, cardAllowed, deckCurve, deckRunes, DECK_SIZE, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
 import { CRAFT_COST, DISENCHANT_VALUE, RARITY_NAMES } from '../../game/economy';
 import { decodeDeck, encodeDeck } from '../../game/deckstring';
 import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
@@ -64,6 +64,7 @@ export function Collection() {
     if (editing.cards.length >= DECK_SIZE) return setMessage('套牌已經有 30 張了');
     if (n >= maxCopies(c)) return setMessage(`【${c.name}】最多只能放 ${maxCopies(c)} 張`);
     if (n >= owned) return setMessage(`你只有 ${owned} 張【${c.name}】`);
+    if (!runesFit(deckRunes(editing.cards), c)) return setMessage(`符文最多 ${MAX_RUNES} 個，【${c.name}】的符文放不下`);
     setMessage('');
     setEditing({ ...editing, cards: [...editing.cards, c.id] });
   };
@@ -401,6 +402,9 @@ function DeckEditor({
   }, [deck.cards]);
   const problems = validateDeck(deck, collection);
   const curve = deckCurve(deck.cards);
+  const runes = deckRunes(deck.cards);
+  const runeSlots = RUNE_KINDS.flatMap((k) => Array<keyof typeof runes>(runes[k]).fill(k));
+  const showRunes = deck.heroClass === 'DEATHKNIGHT' || runeSlots.length > 0;
   const maxCurve = Math.max(1, ...curve);
 
   const autoFill = () => {
@@ -411,7 +415,7 @@ function DeckEditor({
       const def = getCard(id);
       if (n > 0 && cardAllowed(def, deck.heroClass, deck.freeform)) pool[id] = n;
     }
-    const extra = buildDeck(deck.heroClass, { seed: Date.now() % 100000, noise: 1, owned: pool }).filter((id) => {
+    const extra = buildDeck(deck.heroClass, { seed: Date.now() % 100000, noise: 1, owned: pool, runes: deckRunes(deck.cards) }).filter((id) => {
       const def = getCard(id);
       return deck.cards.filter((x) => x === id).length < maxCopies(def);
     });
@@ -420,6 +424,7 @@ function DeckEditor({
       if (cards.length >= DECK_SIZE) break;
       const def = getCard(id);
       if (cards.filter((x) => x === id).length >= Math.min(maxCopies(def), collection[id] ?? 0)) continue;
+      if (!runesFit(deckRunes(cards), def)) continue;
       cards.push(id);
     }
     onChange({ ...deck, cards });
@@ -448,6 +453,15 @@ function DeckEditor({
           </div>
         ))}
       </div>
+      {showRunes && (
+        <div className="deck-runes" title="死亡騎士的卡牌需要符文，一副套牌最多 3 個符文">
+          <span className="muted small">符文</span>
+          {Array.from({ length: Math.max(MAX_RUNES, runeSlots.length) }, (_, i) => {
+            const k = runeSlots[i];
+            return <span key={i} className={`rune ${k ?? 'empty'} ${i >= MAX_RUNES ? 'over' : ''}`} title={k ? `${RUNE_NAMES[k]}符文` : '空的符文欄'} />;
+          })}
+        </div>
+      )}
       <div className={`deck-count ${deck.cards.length === DECK_SIZE ? 'full' : ''}`}>
         {deck.cards.length} / {DECK_SIZE}
       </div>

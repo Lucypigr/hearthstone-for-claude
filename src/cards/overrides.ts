@@ -17,6 +17,7 @@ const anyChar: TargetReq = { filter: { type: 'character', side: 'any' } };
 const friendlyMinion: TargetReq = { filter: { type: 'minion', side: 'friendly' } };
 const LACKEYS = ['DAL_613', 'DAL_614', 'DAL_739', 'DAL_741', 'ULD_616', 'DRG_052'];
 const HORSEMEN = ['ICC_829t2', 'ICC_829t3', 'ICC_829t4', 'ICC_829t5'];
+const DREAM_CARDS = ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'];
 
 const chosenMinion = { filter: { type: 'minion' as const, side: 'any' as const } };
 
@@ -58,19 +59,23 @@ export const OVERRIDES: Record<string, Override> = {
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'transformRandomOther', args: { cards: ['EX1_tk28', 'EX1_tk29'] } }] }],
     tokens: ['EX1_tk28', 'EX1_tk29'],
   },
-  // 伊瑟拉：回合結束時隨機獲得兩張夢境卡（簡化：從歡笑的姊妹、翡翠飛龍、夢境中挑選）
+  // 伊瑟拉：回合結束時隨機獲得兩張夢境卡（伊瑟拉之覺醒、歡笑的姊妹、翡翠飛龍、夢境、夢魘）
   EX1_572: {
     abilities: [
       {
         on: { k: 'turnEnd', whose: 'mine' },
         effects: [
-          { e: 'custom', fn: 'addOneOf', args: { cards: ['DREAM_01', 'DREAM_03', 'DREAM_04'] } },
-          { e: 'custom', fn: 'addOneOf', args: { cards: ['DREAM_01', 'DREAM_03', 'DREAM_04'] } },
+          { e: 'custom', fn: 'addOneOf', args: { cards: DREAM_CARDS } },
+          { e: 'custom', fn: 'addOneOf', args: { cards: DREAM_CARDS } },
         ],
       },
     ],
-    tokens: ['DREAM_01', 'DREAM_03', 'DREAM_04'],
+    tokens: DREAM_CARDS,
   },
+  // 伊瑟拉之覺醒：對伊瑟拉以外的所有角色造成 5 點傷害
+  DREAM_02: { abilities: play({ e: 'custom', fn: 'yseraAwakens', args: { amount: 5 } }) },
+  // 夢魘：賦予一個手下 +5/+5，在你的下個回合開始時消滅它
+  DREAM_05: { target: chosenMinion, abilities: play({ e: 'custom', fn: 'nightmare' }) },
   // 血帆襲擊者：獲得等同武器攻擊力的攻擊力
   NEW1_018: {
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'buff', target: { t: 'self' }, atk: { dyn: 'weaponAttack' } }] }],
@@ -197,6 +202,50 @@ export const OVERRIDES: Record<string, Override> = {
   },
   // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
   ICC_828t: {},
+
+  // ------------------------------------------------------------------ 死亡騎士：屍體
+  // 屍爆術：引爆一具屍體對所有手下造成 1 點傷害，若還有手下存活就重複
+  RLK_035: { abilities: play({ e: 'custom', fn: 'corpseExplosion' }) },
+  // 滿手屍體：對一個手下造成等同你屍體數的傷害
+  WW_354: { target: chosenMinion, abilities: play({ e: 'damage', target: { t: 'chosen' }, amount: { dyn: 'corpses' }, spell: true }) },
+  // 骨髓操控者：戰吼：消耗最多 5 具屍體，每具對一個隨機敵人造成 2 點傷害
+  RLK_505: {
+    abilities: play({
+      e: 'spendCorpsesUpTo',
+      max: 5,
+      each: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 2 }],
+    }),
+  },
+  // 麥奈希爾之力：戰吼：消耗最多 3 具屍體，冰凍等量的敵方手下
+  RLK_740: {
+    abilities: play({ e: 'spendCorpsesUpTo', max: 3, each: [{ e: 'freeze', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } }] }),
+  },
+  // 屍體農場：消耗最多 8 具屍體，召喚一個消耗等同數量的隨機手下
+  WW_374: { abilities: play({ e: 'spendCorpsesUpTo', max: 8, custom: 'corpseFarm' }) },
+  // 屍體新娘：戰吼：消耗最多 10 具屍體，召喚一個攻擊力與生命值等同數量的嘲諷新郎
+  RLK_504: { abilities: play({ e: 'spendCorpsesUpTo', max: 10, custom: 'corpseBride' }), tokens: ['RLK_506t'] },
+  // 除霜：抽一張牌；消耗 2 具屍體再抽一張
+  RLK_101: { abilities: play({ e: 'draw', count: 1, who: 'self' }, { e: 'spendCorpses', amount: 2, then: [{ e: 'draw', count: 1, who: 'self' }] }) },
+  // 墳墓之力：你的手下 +1 攻擊力；消耗 5 具屍體改為 +3 攻擊力
+  RLK_707: {
+    abilities: play({
+      e: 'spendCorpses',
+      amount: 5,
+      then: [{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } }, atk: 3 }],
+      else: [{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } }, atk: 1 }],
+    }),
+  },
+  // 鮮血汲取：你手牌中的所有手下 +1/+1；消耗 2 具屍體再 +1/+1
+  RLK_712: {
+    abilities: play(
+      { e: 'handBuff', atk: 1, hp: 1, scope: 'all' },
+      { e: 'spendCorpses', amount: 2, then: [{ e: 'handBuff', atk: 1, hp: 1, scope: 'all' }] },
+    ),
+  },
+  // 墮落新兵：戰吼：消耗 2 具屍體，你手牌中的所有手下 +2 攻擊力
+  RLK_731: { abilities: play({ e: 'spendCorpses', amount: 2, then: [{ e: 'handBuff', atk: 2, hp: 0, scope: 'all' }] }) },
+  // 骨煞領主馬洛加：戰吼：喚起所有屍體成為 1/1 衝刺魔像；放不下的，每具給其中一個 +2/+2
+  RLK_085: { abilities: play({ e: 'spendCorpsesUpTo', max: 99, custom: 'marrowgar' }), tokens: ['RLK_085t'] },
 
   // ------------------------------------------------------------------ 比武（雙方各揭露牌堆一張手下，你的消耗較高就獲勝）
   // 治療波：恢復 8 點生命值；比武獲勝則改為恢復 16 點

@@ -198,6 +198,7 @@ export interface ParsedCard {
   /** 引用到的衍生卡 ID */
   tokens: string[];
   starshipPiece?: boolean;
+  noCorpse?: boolean;
 }
 
 interface Ctx {
@@ -423,7 +424,10 @@ export function parsePool(phrase: string): Pool | null {
     pool.cls = CLASS_WORDS[m[1].toLowerCase()];
     s = s.slice(m[0].length);
   }
-  if ((m = new RegExp(`^(${SCHOOL_RE}) `).exec(s))) {
+  if ((m = /^(Blood|Frost|Unholy) Rune /.exec(s))) {
+    pool.rune = m[1].toLowerCase() as 'blood' | 'frost' | 'unholy';
+    s = s.slice(m[0].length);
+  } else if ((m = new RegExp(`^(${SCHOOL_RE}) `).exec(s))) {
     pool.spellSchool = m[1].toUpperCase();
     s = s.slice(m[0].length);
   }
@@ -655,6 +659,19 @@ function amountOf(s: string): { amount: number; spell: boolean } {
 }
 
 const ACTIONS: ActionRule[] = [
+  // ----- 死亡騎士的屍體 -----
+  (s) => {
+    const m = /^(?:[Gg]ain|and gain) (a|an|\d+) Corpses?/.exec(s);
+    if (!m) return null;
+    return { effects: [{ e: 'gainCorpses', amount: num(m[1]) }], rest: s.slice(m[0].length) };
+  },
+  (s, ctx) => {
+    const m = new RegExp(`^(?:[Rr]aise|and raise) (?:up to (\\d+) Corpses|a Corpse) as (?:an? )?(\\d+/\\d+ Risen [A-Z][a-z]+(?: [A-Z][a-z]+)?(?: with ${KEYWORD_RE}(?:(?:, | and )${KEYWORD_RE})*)?)`).exec(s);
+    if (!m) return null;
+    const tok = parseStatToken(`two ${m[2]}`, ctx, 'MINION');
+    if (!tok || tok.rest) fail(`raise token: ${m[2]}`);
+    return { effects: [{ e: 'raiseCorpses', max: m[1] ? Number(m[1]) : 1, card: tok.card }], rest: s.slice(m[0].length) };
+  },
   // ----- 號召：從牌堆召喚手下 -----
   (s) => {
     const m = /^(?:[Rr]ecruit|and recruit) (a|an|two|three|\d+) (?:(\d+)-Cost )?(minions?|Beasts?|Demons?|Dragons?|Murlocs?|Mechs?|Pirates?|Elementals?)(?: that costs? \((\d+)\) or less)?/.exec(s);
@@ -789,7 +806,7 @@ const ACTIONS: ActionRule[] = [
     return { effects: [{ e: 'draw', count: { dyn: map[m[1]] }, who: 'self' }], rest: s.slice(m[0].length) };
   },
   (s) => {
-    const m = /^(?:[Dd]raw|and draw) (a|an|two|three|\d+) ((?:\d+-Cost )?(?:minions?|spells?|weapons?|Beasts?|Demons?|Dragons?|Elementals?|Mechs?|Murlocs?|Pirates?|Nagas?|Undead|Taunt minions?|Deathrattle minions?|Secrets?|Rush minions?))(?![a-z])(?! from)/.exec(s);
+    const m = /^(?:[Dd]raw|and draw) (a|an|two|three|\d+) ((?:\d+-Cost )?(?:(?:Fire|Frost|Arcane|Nature|Holy|Shadow|Fel) spells?|minions?|spells?|weapons?|Beasts?|Demons?|Dragons?|Elementals?|Mechs?|Murlocs?|Pirates?|Nagas?|Undead|Taunt minions?|Deathrattle minions?|Secrets?|Rush minions?))(?![a-z])(?! from)/.exec(s);
     if (!m) return null;
     const pool = parsePool(`a ${m[2]}`);
     if (!pool) fail(`draw pool ${m[2]}`);
@@ -1133,6 +1150,20 @@ function parseActions(body: string, ctx: Ctx): Effect[] {
       if (/^(?:and|then) /.test(s) && !/^and (?:\$?\d|gain|draw|add|get|destroy|freeze|silence|discover|summon)/.test(s)) s = s.replace(/^(?:and|then) /, '');
     }
     first = false;
+    // 死亡騎士：消耗屍體來執行後面的效果（Spend 3 Corpses to ...）
+    const sp = /^(?:[Ss]pend|and spend) (a|an|\d+) Corpses? to (.+)$/.exec(s);
+    if (sp) {
+      let body = sp[2];
+      const instead = / instead$/.test(body);
+      if (instead) body = body.replace(/ instead$/, '');
+      const eff: Effect = { e: 'spendCorpses', amount: num(sp[1]), then: parseActions(body, ctx) };
+      if (instead) {
+        if (effects.length) eff.else = effects.splice(0);
+        else INSTEAD.add(eff);
+      }
+      effects.push(eff);
+      return effects;
+    }
     // 條件句：If ..., ...
     const cond = parseConditionPrefix(s, ctx);
     if (cond) {
@@ -1335,6 +1366,7 @@ const COST_RULES: [RegExp, CostPer][] = [
   [/^Secret you control$/, 'secrets'],
   [/^Health your hero is missing$/, 'heroMissingHealth'],
   [/^Armor you have$/, 'armor'],
+  [/^Corpse you've spent this game$/, 'corpsesSpent'],
   [/^Attack of your weapon$/, 'weaponAttack'],
   [/^spell in your hand$/, 'spellsInHand'],
   [/^damaged minion$/, 'damagedMinions'],
@@ -1451,6 +1483,13 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
       raw = (raw.slice(0, piece.index) + ' ' + raw.slice(piece.index + piece[0].length)).trim();
       if (!raw) continue;
     }
+    // 喚起的手下：「不會留下屍體」（可能接在關鍵字後面）
+    const nc = /(?:^| )Doesn't leave a Corpse\.?$/.exec(raw);
+    if (nc) {
+      out.noCorpse = true;
+      raw = raw.slice(0, nc.index).trim();
+      if (!raw) continue;
+    }
     // 「也會在發射時觸發」：戰吼在星艦發射時再觸發一次
     if (/^Also triggers on launch\.?$/.test(raw)) {
       const plays = out.abilities.filter((a) => a.on.k === 'play');
@@ -1563,7 +1602,7 @@ export function parseCardText(input: ParseInput, env: ParseEnv): ParsedCard {
     if (current) {
       const effs = parseActions(raw, current.ctx);
       const last = effs[effs.length - 1];
-      if (effs.length === 1 && last.e === 'cond' && INSTEAD.has(last)) {
+      if (effs.length === 1 && (last.e === 'cond' || last.e === 'spendCorpses') && INSTEAD.has(last)) {
         // 「造成 3 點傷害。若你手上有龍，改為造成 5 點傷害」
         last.else = current.ability.effects;
         current.ability.effects = [last];

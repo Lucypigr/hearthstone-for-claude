@@ -96,6 +96,9 @@ export function evaluate(g: Game, me: PlayerId): number {
   // 正在建造的星艦（發射後會變成一個大手下）
   const ship = (p: typeof a) => (p.starship ?? []).reduce((x, c) => x + c.atk + c.hp, 0) * 0.5;
   score += ship(a) - ship(b) * 0.8;
+  // 死亡騎士的屍體是可以消耗的資源
+  const corpses = (p: typeof a) => (p.heroClass === 'DEATHKNIGHT' ? Math.min(p.corpses ?? 0, 10) * 0.4 : 0);
+  score += corpses(a) - corpses(b) * 0.3;
   // 打出英雄卡後的強化英雄能力
   if (a.heroPower.heroCard) score += 6;
   if (b.heroPower.heroCard) score -= 6;
