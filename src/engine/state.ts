@@ -150,7 +150,21 @@ export interface LogEntry {
   text: string;
 }
 
-export type FxKind = 'damage' | 'heal' | 'death' | 'play' | 'secret' | 'armor' | 'burn' | 'attack' | 'shield' | 'fatigue';
+export type FxKind =
+  | 'damage'
+  | 'heal'
+  | 'death'
+  | 'play'
+  | 'secret'
+  | 'armor'
+  | 'burn'
+  | 'attack'
+  | 'shield'
+  | 'fatigue'
+  | 'summon'
+  | 'freeze'
+  | 'buff'
+  | 'draw';
 
 export interface Fx {
   id: number;
@@ -160,6 +174,10 @@ export interface Fx {
   cardId?: string;
   player?: PlayerId;
   target?: number;
+  /** 造成效果的角色（手下 / 英雄）；法術則為 undefined，cardId 是法術 */
+  from?: number;
+  /** 召喚：從手牌打出（而不是效果召喚） */
+  played?: boolean;
 }
 
 export interface ChoiceRequest {

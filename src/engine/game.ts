@@ -912,6 +912,7 @@ export class Game {
       this.recalcAuras();
       this.countSummon(p, m.cardId);
       this.assemble(p, m);
+      this.fx({ kind: 'summon', uid: m.uid, cardId: m.cardId, player: p.id, played: true });
       if (def.races?.includes('ELEMENTAL')) p.elementalThisTurn = true;
       for (const ab of playAbilities) {
         if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
@@ -1113,7 +1114,7 @@ export class Game {
       t.hp -= amount;
       if (src.poisonous) t.dead = true;
     }
-    this.fx({ kind: 'damage', uid: t.uid, amount });
+    this.fx({ kind: 'damage', uid: t.uid, amount, from: src.uid ?? undefined, cardId: src.cardId, player: src.owner });
     if (src.freeze) this.freeze(t);
     if (src.lifesteal) yield* this.heal(this.s.players[src.owner].hero.uid, amount);
     yield* this.emit({ k: 'damaged', player: t.owner, subject: t.uid, amount, isHero: isHero(t) });
@@ -1172,6 +1173,7 @@ export class Game {
   }
 
   private freeze(c: Char) {
+    if (!c.frozen) this.fx({ kind: 'freeze', uid: c.uid });
     c.frozen = true;
     c.frozenTurn = this.s.turn;
   }
@@ -1213,6 +1215,7 @@ export class Game {
       p.hand.push(card);
       drawn.push(card);
       p.drawnThisTurn++;
+      this.fx({ kind: 'draw', uid: card.uid, player: p.id });
       yield* this.emit({ k: 'draw', player: p.id, subject: card.uid, subjectKind: 'hand' });
     }
     return drawn;
@@ -1286,6 +1289,7 @@ export class Game {
     this.recalcAuras();
     this.countSummon(p, cardId);
     this.assemble(p, m);
+    this.fx({ kind: 'summon', uid: m.uid, cardId, player: owner });
     yield* this.emit({ k: 'summon', player: owner, subject: m.uid, races: getCard(cardId).races });
     return m;
   }
@@ -2016,6 +2020,7 @@ export class Game {
         for (const uid of this.resolve(e.target, ctx)) {
           const c = this.char(uid);
           if (!c) continue;
+          if (atk > 0 || hp > 0 || e.keywords?.length) this.fx({ kind: 'buff', uid: c.uid, from: ctx.sourceUid ?? undefined, cardId: ctx.sourceCardId, player: ctx.controller });
           if (isHero(c)) {
             c.tempAtk += atk;
             continue;

@@ -1106,49 +1106,84 @@ textarea {
   }
 }
 
-.float {
-  position: absolute;
-  top: 30%;
-  left: 50%;
-  transform: translateX(-50%);
+/* ---------------- 對戰動畫（見 src/ui/fx.ts） ---------------- */
+.fx-float {
+  font-size: 30px;
   font-weight: 900;
-  font-size: calc(var(--mw) * 0.32);
-  text-shadow: 0 0 4px #000, 0 2px 0 #000;
-  z-index: 30;
-  pointer-events: none;
-  animation: float-up 1.2s ease forwards;
   white-space: nowrap;
+  -webkit-text-stroke: 1.5px #1a0d05;
+  text-shadow: 0 2px 6px #000c;
 }
 
-.float.damage {
+.fx-float.damage {
   color: #ff4a3a;
 }
 
-.float.heal {
-  color: #6bff8a;
+.fx-float.heal {
+  color: #6dff8e;
 }
 
-.float.armor {
-  color: #d8d8e0;
+.fx-float.armor {
+  color: #dfe7ee;
 }
 
-.float.shield {
+.fx-float.shield {
   color: #ffe27a;
-  font-size: calc(var(--mw) * 0.2);
+  font-size: 22px;
 }
 
-@keyframes float-up {
+/* 施放中的法術卡：放大展示後燃燒消散 */
+.cast-card {
+  position: fixed;
+  left: 80%;
+  top: 50%;
+  z-index: 65;
+  pointer-events: none;
+  animation: cast 0.7s ease-in-out forwards;
+}
+
+.cast-card.mine {
+  --from: 38vh;
+}
+
+.cast-card.theirs {
+  --from: -38vh;
+}
+
+.cast-card .secret-card {
+  width: 150px;
+  height: 210px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 90px;
+  font-weight: 900;
+  color: #ffe9a8;
+  background: radial-gradient(circle, #a14fd0, #3a1650);
+  border: 4px solid #d9b25a;
+  box-shadow: 0 0 30px #a14fd0;
+}
+
+@keyframes cast {
   0% {
+    transform: translate(-50%, calc(-50% + var(--from))) scale(0.45);
     opacity: 0;
-    transform: translate(-50%, 10px) scale(0.6);
+    filter: none;
   }
-  15% {
+  26% {
+    transform: translate(-50%, -50%) scale(1);
     opacity: 1;
-    transform: translate(-50%, 0) scale(1.2);
+    filter: none;
+  }
+  60% {
+    transform: translate(-50%, -52%) scale(1.02);
+    opacity: 1;
+    filter: brightness(1.1) drop-shadow(0 0 18px #ffcf6a);
   }
   100% {
+    transform: translate(-50%, -62%) scale(1.08);
     opacity: 0;
-    transform: translate(-50%, -30px) scale(1);
+    filter: brightness(2.4) blur(6px) drop-shadow(0 0 30px #ff9a3a);
   }
 }
 

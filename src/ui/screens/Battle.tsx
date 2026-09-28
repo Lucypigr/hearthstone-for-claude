@@ -3,7 +3,7 @@ import { getCard, hasCard, HEROES } from '../../cards/registry';
 import { aiMulligan, chooseAction } from '../../engine/ai';
 import { Game, isHero } from '../../engine/game';
 import { CLASS_NAMES } from '../../engine/heroes';
-import type { Action, Fx, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
+import type { Action, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
 import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
 import { makeAiDeck } from '../../game/opponents';
@@ -11,6 +11,7 @@ import { recordMatch } from '../../game/profile';
 import type { BattleConfig } from '../App';
 import { CLASS_COLORS, formatCardText } from '../cardText';
 import { Art, CardBack, CardView } from '../components/Card';
+import { direct, type Snap } from '../fx';
 import { clamp, useViewport } from '../hooks';
 import { getProfile, setProfile, useProfile } from '../store';
 
@@ -20,13 +21,6 @@ type Mode =
   | { k: 'attack'; attacker: number }
   | { k: 'heroPower'; option?: number }
   | { k: 'powerChoose' };
-
-interface Float {
-  id: number;
-  uid: number;
-  text: string;
-  kind: string;
-}
 
 const AI_DELAY = { slow: 1300, normal: 800, fast: 350 };
 
@@ -54,7 +48,6 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [mode, setMode] = useState<Mode>({ k: 'idle' });
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId } | null>(null);
-  const [floats, setFloats] = useState<Float[]>([]);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
   const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
   const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw' } | null>(null);
@@ -71,6 +64,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const g = gameRef.current!;
   const s = g?.s;
+  // 開發模式：讓自動化測試可以直接擺好盤面（正式版不會包含）
+  if (import.meta.env.DEV) (window as unknown as { __battle?: unknown }).__battle = { g, refresh };
 
   // ------------------------------------------------------------ 動作
   const act = useCallback(
@@ -101,7 +96,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       const a = chooseAction(g, config.difficulty);
       if (!g.apply(a)) g.apply({ type: 'endTurn' });
       refresh();
-    }, AI_DELAY[profile.settings.aiSpeed]);
+    }, Math.max(AI_DELAY[profile.settings.aiSpeed], busyUntil.current - performance.now() + 150));
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, profile.settings.aiSpeed]);
@@ -112,19 +107,16 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     const fresh = s.fx.filter((f) => f.id > lastFx.current);
     if (!fresh.length) return;
     lastFx.current = fresh[fresh.length - 1].id;
-    const newFloats: Float[] = [];
     for (const f of fresh) {
-      const fl = fxFloat(f);
-      if (fl) newFloats.push(fl);
       if (f.kind === 'play' && f.player === AI) {
-        if (f.cardId && hasCard(f.cardId)) setBanner({ id: f.id, cardId: f.cardId, text: `${s.players[AI].name}打出了` });
+        const def = f.cardId && hasCard(f.cardId) ? getCard(f.cardId) : null;
+        // 法術由施放動畫顯示；對手的奧秘不能讓玩家看到是哪一張
+        if (def?.secret) setBanner({ id: f.id, text: `${s.players[AI].name}打出了一張奧秘` });
+        else if (def?.type === 'SPELL') continue;
+        else if (def) setBanner({ id: f.id, cardId: def.id, text: `${s.players[AI].name}打出了` });
         else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${g.powerInfo(s.players[AI]).name}` });
       }
       if (f.kind === 'secret' && f.cardId) setBanner({ id: f.id, cardId: f.cardId, text: '奧秘揭露！' });
-    }
-    if (newFloats.length) {
-      setFloats((old) => [...old, ...newFloats]);
-      window.setTimeout(() => setFloats((old) => old.filter((x) => !newFloats.includes(x))), 1300);
     }
   });
 
@@ -146,33 +138,29 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     return () => window.clearTimeout(t);
   }, [banner]);
 
-  // 攻擊動畫：攻擊者飛向目標撞擊後返回；死亡的手下碎裂。
+  // 對戰動畫：每次狀態更新後，依照新的特效事件排出時間軸播放（見 ../fx.ts）。
   // 已經從畫面消失的角色，用上一次畫面的快照來播放。
   const battleRef = useRef<HTMLDivElement>(null);
   const snapshot = useRef(new Map<number, Snap>());
   const lastAnimFx = useRef<number | null>(null);
+  /** 動畫播完的時間（電腦會等動畫播完才行動） */
+  const busyUntil = useRef(0);
+  const [cast, setCast] = useState<{ id: number; cardId: string; player: PlayerId } | null>(null);
   useLayoutEffect(() => {
     const root = battleRef.current;
     if (!root || !s) return;
     const fresh = s.fx.filter((f) => f.id > (lastAnimFx.current ?? Infinity));
     const newest = s.fx.length ? s.fx[s.fx.length - 1].id : 0;
     lastAnimFx.current = Math.max(lastAnimFx.current ?? newest, newest);
-    const dying = new Set(fresh.filter((f) => f.kind === 'death' && f.uid !== undefined).map((f) => f.uid!));
-    // 死在攻擊中的手下：撞擊結束後才碎裂（殘影留到那時）
-    const shatterAt = new Map<number, { at: number; ghost?: HTMLElement }>();
-    fresh
-      .filter((f) => f.kind === 'attack' && f.uid !== undefined && f.target !== undefined)
-      .forEach((f, i) => {
-        const r = playAttack(root, snapshot.current, f.uid!, f.target!, i * 600, dying);
-        for (const [uid, ghost] of r.ghosts) shatterAt.set(uid, { at: r.end, ghost });
-        for (const uid of [f.uid!, f.target!]) if (dying.has(uid) && !shatterAt.has(uid)) shatterAt.set(uid, { at: r.end });
+    if (fresh.length) {
+      const duration = direct(root, fresh, snapshot.current, {
+        cast: (cardId, player, at) => {
+          const id = Date.now() + Math.random();
+          window.setTimeout(() => setCast({ id, cardId, player }), at);
+          window.setTimeout(() => setCast((c) => (c?.id === id ? null : c)), at + 720);
+        },
       });
-    let k = 0;
-    for (const uid of dying) {
-      const snap = snapshot.current.get(uid);
-      const plan = shatterAt.get(uid);
-      if (snap) shatter(root, snap, plan?.at ?? 150 + 90 * k++, plan?.ghost);
-      else plan?.ghost?.remove();
+      busyUntil.current = Math.max(busyUntil.current, performance.now() + duration);
     }
     const next = new Map<number, Snap>();
     root.querySelectorAll<HTMLElement>('[data-uid]').forEach((el) => next.set(Number(el.dataset.uid), { rect: el.getBoundingClientRect(), html: el.outerHTML }));
@@ -355,15 +343,6 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     return cls.join(' ');
   };
 
-  const floatsFor = (uid: number) =>
-    floats
-      .filter((f) => f.uid === uid)
-      .map((f) => (
-        <span key={f.id} className={`float ${f.kind}`}>
-          {f.text}
-        </span>
-      ));
-
   const renderMinion = (m: Minion) => (
     <MinionView
       key={m.uid}
@@ -372,9 +351,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
       onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts || m.starship ? g.minionDef(m) : undefined } : null)}
-    >
-      {floatsFor(m.uid)}
-    </MinionView>
+    />
   );
 
   return (
@@ -419,15 +396,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       <div className="side foe-side">
         <div className="hand foe-hand">
           {foe.hand.map((h) => (
-            <CardBack key={h.uid} width={46} />
+            <span key={h.uid} data-hand-uid={h.uid}>
+              <CardBack width={46} />
+            </span>
           ))}
         </div>
         <div className="hero-row">
           <PlayerInfo p={foe} />
           <WeaponView p={foe} />
-          <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
-            {floatsFor(foe.hero.uid)}
-          </HeroView>
+          <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)} />
           <HeroPowerView p={foe} g={g} usable={false} onHover={(on) => setInspect(on ? { power: AI } : null)} />
           <StarshipView p={foe} g={g} usable={false} onHover={inspectShip(AI)} />
         </div>
@@ -466,9 +443,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="hero-row">
           <PlayerInfo p={me} />
           <WeaponView p={me} />
-          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)}>
-            {floatsFor(me.hero.uid)}
-          </HeroView>
+          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)} />
           <HeroPowerView
             p={me}
             g={g}
@@ -487,6 +462,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             return (
               <div
                 key={h.uid}
+                data-hand-uid={h.uid}
                 className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''} ${h.echo ? 'echo-copy' : ''}`}
                 style={{ '--i': i } as CSSProperties}
                 title={h.echo ? '回音的複製：只能在本回合使用' : undefined}
@@ -535,6 +511,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       {turnBanner > 0 && (
         <div className="turn-banner" key={turnBanner}>
           你的回合
+        </div>
+      )}
+      {cast && (
+        <div className={`cast-card ${cast.player === ME ? 'mine' : 'theirs'}`} key={cast.id}>
+          {cast.player !== ME && getCard(cast.cardId).secret ? <div className="secret-card">?</div> : <CardView cardId={cast.cardId} width={210} />}
         </div>
       )}
       {banner && (
@@ -727,21 +708,6 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   );
 }
 
-function fxFloat(f: Fx): Float | null {
-  if (f.uid === undefined) return null;
-  switch (f.kind) {
-    case 'damage':
-      return { id: f.id, uid: f.uid, text: `-${f.amount}`, kind: 'damage' };
-    case 'heal':
-      return { id: f.id, uid: f.uid, text: `+${f.amount}`, kind: 'heal' };
-    case 'armor':
-      return { id: f.id, uid: f.uid, text: `+${f.amount}🛡`, kind: 'armor' };
-    case 'shield':
-      return { id: f.id, uid: f.uid, text: '聖盾！', kind: 'shield' };
-  }
-  return null;
-}
-
 function Slot({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -751,221 +717,6 @@ function Slot({ onClick }: { onClick: () => void }) {
         onClick();
       }}
     />
-  );
-}
-
-/** 角色在上一次畫面中的位置與外觀 */
-type Snap = { rect: DOMRect; html: string };
-
-const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-/** 從快照複製出角色的畫面元素 */
-function cloneSnap(snap: Snap): HTMLElement | null {
-  const holder = document.createElement('div');
-  holder.innerHTML = snap.html;
-  const el = holder.firstElementChild as HTMLElement | null;
-  el?.removeAttribute('data-uid');
-  return el;
-}
-
-/** 找到角色的畫面元素；已經消失的話，用最後的畫面做一個殘影 */
-function charElement(root: HTMLElement, snap: Map<number, Snap>, uid: number): { el: HTMLElement; ghost: boolean } | null {
-  const live = root.querySelector<HTMLElement>(`[data-uid="${uid}"]`);
-  if (live) return { el: live, ghost: false };
-  const old = snap.get(uid);
-  if (!old) return null;
-  const el = cloneSnap(old);
-  if (!el) return null;
-  Object.assign(el.style, {
-    position: 'fixed',
-    left: `${old.rect.left}px`,
-    top: `${old.rect.top}px`,
-    width: `${old.rect.width}px`,
-    height: `${old.rect.height}px`,
-    margin: '0',
-    pointerEvents: 'none',
-    zIndex: '60',
-  });
-  root.appendChild(el);
-  return { el, ghost: true };
-}
-
-/**
- * 攻擊動畫：攻擊者先往後蓄力，再衝向目標撞擊，最後返回；目標在撞擊時閃爍搖晃。
- * 回傳動畫結束的時間，以及要留給碎裂動畫接手的殘影（dying 中的角色）。
- */
-function playAttack(
-  root: HTMLElement,
-  snap: Map<number, Snap>,
-  attackerUid: number,
-  targetUid: number,
-  delay: number,
-  dying: Set<number>,
-): { end: number; ghosts: Map<number, HTMLElement> } {
-  const ghosts = new Map<number, HTMLElement>();
-  if (reducedMotion()) return { end: delay, ghosts };
-  const att = charElement(root, snap, attackerUid);
-  const tgt = charElement(root, snap, targetUid);
-  if (!att || !tgt || typeof att.el.animate !== 'function') {
-    if (att?.ghost) att.el.remove();
-    if (tgt?.ghost) tgt.el.remove();
-    return { end: delay, ghosts };
-  }
-  const a = att.el.getBoundingClientRect();
-  const b = tgt.el.getBoundingClientRect();
-  // 停在目標前方一點（兩張卡的邊緣相碰）
-  const dx = (b.left + b.width / 2 - (a.left + a.width / 2)) * 0.82;
-  const dy = (b.top + b.height / 2 - (a.top + a.height / 2)) * 0.82;
-  const DURATION = 620;
-  const IMPACT = 0.55;
-  const prevZ = att.el.style.zIndex;
-  att.el.style.zIndex = '50';
-  const lunge = att.el.animate(
-    [
-      { transform: 'translate(0, 0) scale(1)' },
-      { transform: `translate(${-dx * 0.08}px, ${-dy * 0.08}px) scale(1.12)`, offset: 0.25, easing: 'ease-in' },
-      { transform: `translate(${dx}px, ${dy}px) scale(1.12)`, offset: IMPACT, easing: 'ease-out' },
-      { transform: 'translate(0, 0) scale(1)' },
-    ],
-    { duration: DURATION, delay, fill: 'backwards' },
-  );
-  const hit = tgt.el.animate(
-    [
-      { transform: 'none', filter: 'none' },
-      { transform: `translate(${dx * 0.06}px, ${dy * 0.06}px) rotate(-4deg)`, filter: 'brightness(1.8) saturate(1.4)', offset: 0.2 },
-      { transform: 'translateX(5px) rotate(3deg)', offset: 0.5 },
-      { transform: 'translateX(-3px)', offset: 0.75 },
-      { transform: 'none', filter: 'none' },
-    ],
-    { duration: 360, delay: delay + DURATION * IMPACT },
-  );
-  // 殘影：死亡的交給碎裂動畫；其他的撞擊後淡出
-  const handleGhost = (x: { el: HTMLElement; ghost: boolean }, uid: number, after: Animation) => {
-    if (!x.ghost) return;
-    if (dying.has(uid)) {
-      ghosts.set(uid, x.el);
-      return;
-    }
-    after.onfinish = () => x.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(0.9)' }], { duration: 260 }).finished.then(() => x.el.remove(), () => x.el.remove());
-    after.oncancel = () => x.el.remove();
-  };
-  lunge.onfinish = () => {
-    att.el.style.zIndex = prevZ;
-  };
-  handleGhost(tgt, targetUid, hit);
-  handleGhost(att, attackerUid, lunge);
-  return { end: delay + DURATION, ghosts };
-}
-
-/** 手下死亡：卡片先出現裂痕，接著碎成好幾塊往外飛散並淡出 */
-function shatter(root: HTMLElement, snap: Snap, delay: number, ghost?: HTMLElement) {
-  if (reducedMotion() || typeof root.animate !== 'function') {
-    ghost?.remove();
-    return;
-  }
-  const { rect } = snap;
-  const box = document.createElement('div');
-  Object.assign(box.style, {
-    position: 'fixed',
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-    pointerEvents: 'none',
-    zIndex: '55',
-    // 有殘影時，等殘影播完撞擊才換成碎片；否則立刻顯示完整的卡片（碎片在 delay 前保持原狀）
-    visibility: ghost ? 'hidden' : 'visible',
-  });
-  root.appendChild(box);
-
-  // 裂痕中心與邊緣上的點（含四個角），把卡片切成以中心為頂點的三角形碎片
-  const cx = 40 + Math.random() * 20;
-  const cy = 35 + Math.random() * 25;
-  const params = [0, 1, 2, 3];
-  for (let i = 0; i < 8; i++) params.push(Math.random() * 4);
-  params.sort((a, b) => a - b);
-  const edge = (t: number): [number, number] => {
-    const side = Math.floor(t) % 4;
-    const u = (t - Math.floor(t)) * 100;
-    return side === 0 ? [u, 0] : side === 1 ? [100, u] : side === 2 ? [100 - u, 100] : [0, 100 - u];
-  };
-  const pts = params.map(edge);
-
-  // 裂痕線
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 100 100');
-  svg.setAttribute('preserveAspectRatio', 'none');
-  Object.assign(svg.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', zIndex: '2', overflow: 'visible' });
-  for (const [x, y] of pts) {
-    const line = document.createElementNS(svgNS, 'line');
-    line.setAttribute('x1', String(cx));
-    line.setAttribute('y1', String(cy));
-    line.setAttribute('x2', String(x));
-    line.setAttribute('y2', String(y));
-    line.setAttribute('stroke', '#fff6d8');
-    line.setAttribute('stroke-width', '1.6');
-    line.setAttribute('vector-effect', 'non-scaling-stroke');
-    svg.appendChild(line);
-  }
-
-  const DURATION = 820;
-  const CRACK = 0.22;
-  const anims: Animation[] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
-    const piece = cloneSnap(snap);
-    if (!piece) continue;
-    Object.assign(piece.style, {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      width: '100%',
-      height: '100%',
-      margin: '0',
-      clipPath: `polygon(${cx}% ${cy}%, ${a[0]}% ${a[1]}%, ${b[0]}% ${b[1]}%)`,
-    });
-    box.appendChild(piece);
-    // 往碎片重心的方向飛出，再加一點重力
-    const gx = (cx + a[0] + b[0]) / 3 - cx;
-    const gy = (cy + a[1] + b[1]) / 3 - cy;
-    const len = Math.hypot(gx, gy) || 1;
-    const dist = rect.width * (0.45 + Math.random() * 0.5);
-    const vx = (gx / len) * dist;
-    const vy = (gy / len) * dist + rect.height * 0.35;
-    const rot = (Math.random() - 0.5) * 90;
-    const anim = piece.animate(
-      [
-        { transform: 'none', opacity: 1, filter: 'none' },
-        { transform: `translate(${(gx / len) * 2}px, ${(gy / len) * 2}px)`, opacity: 1, filter: 'brightness(1.5)', offset: CRACK },
-        { transform: `translate(${vx}px, ${vy}px) rotate(${rot}deg) scale(0.8)`, opacity: 0, filter: 'brightness(0.8)' },
-      ],
-      { duration: DURATION, delay, easing: 'cubic-bezier(.25,.6,.35,1)', fill: 'both' },
-    );
-    anims.push(anim);
-  }
-  box.appendChild(svg);
-  const crack = svg.animate(
-    [
-      { opacity: 0 },
-      { opacity: 1, offset: 0.08 },
-      { opacity: 1, offset: CRACK },
-      { opacity: 0, offset: CRACK + 0.08 },
-      { opacity: 0 },
-    ],
-    { duration: DURATION, delay, fill: 'both' },
-  );
-  anims.push(crack);
-  // 殘影播完撞擊後換成碎片；全部碎片的動畫結束後移除
-  const swap = box.animate([{ opacity: 1 }, { opacity: 1 }], { duration: Math.max(1, delay) });
-  swap.onfinish = () => {
-    box.style.visibility = 'visible';
-    ghost?.remove();
-  };
-  Promise.all(anims.map((a) => a.finished)).then(
-    () => box.remove(),
-    () => box.remove(),
   );
 }
 
@@ -1029,6 +780,7 @@ function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: G
   return (
     <div
       data-uid={h.uid}
+      data-hero={p.id}
       className={`hero ${h.frozen ? 'frozen' : ''} ${h.immune ? 'immune' : ''} ${className}`}
       style={{ '--class': CLASS_COLORS[p.heroClass] } as CSSProperties}
       onClick={(e) => {
@@ -1075,6 +827,7 @@ function HeroPowerView({
   const info = g.powerInfo(p);
   return (
     <button
+      data-power={p.id}
       className={`hero-power ${p.heroPower.used ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
@@ -1152,7 +905,7 @@ function PlayerInfo({ p }: { p: PlayerState }) {
         </div>
         {p.overloadOwed > 0 && <span className="overload">超載 {p.overloadOwed}</span>}
       </div>
-      <div className="deck-count" title="牌庫剩餘">
+      <div className="deck-count" title="牌庫剩餘" data-deck={p.id}>
         🂠 {p.deck.length}
       </div>
       <div className="hand-count" title="手牌數">
