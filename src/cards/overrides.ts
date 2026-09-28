@@ -188,4 +188,15 @@ export const OVERRIDES: Record<string, Override> = {
     abilities: play({ e: 'destroy', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } }),
     heroPower: { effects: [{ e: 'addRandom', pool: { type: 'MINION', cls: 'PRIEST' }, count: 1, who: 'self' }] },
   },
+  // 『死屍獸王』雷克薩：對所有敵方手下造成 2 點傷害；英雄能力「製造殭屍獸」
+  //（先發現一張獵人野獸，再發現一張殭屍獸專用野獸，縫合成一張卡加入手牌）
+  ICC_828: {
+    abilities: play({ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, amount: 2 }),
+    heroPower: { effects: [{ e: 'custom', fn: 'buildABeast' }] },
+    tokens: ['ICC_828t', 'ICC_828t2', 'ICC_828t3', 'ICC_828t4', 'ICC_828t5', 'ICC_828t6', 'ICC_828t7'],
+  },
+  // 殭屍獸本體（數值與效果由兩個部位合成，見 src/cards/zombeast.ts）
+  ICC_828t: {},
+  // 狩獵獒犬：回響尚未支援，只保留突襲
+  ICC_828t5: { keywords: ['RUSH'] },
 };

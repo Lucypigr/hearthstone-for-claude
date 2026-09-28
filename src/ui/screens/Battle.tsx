@@ -4,6 +4,7 @@ import { aiMulligan, chooseAction } from '../../engine/ai';
 import { Game, isHero } from '../../engine/game';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { Action, Fx, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
+import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
 import { makeAiDeck } from '../../game/opponents';
 import { recordMatch } from '../../game/profile';
@@ -52,7 +53,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [mode, setMode] = useState<Mode>({ k: 'idle' });
-  const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number } | { power: PlayerId } | null>(null);
+  const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId } | null>(null);
   const [floats, setFloats] = useState<Float[]>([]);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
   const [anim, setAnim] = useState<{ attacker: number; target: number; id: number } | null>(null);
@@ -207,7 +208,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   };
 
   const afterOption = (handUid: number, option: number | undefined) => {
-    const def = getCard(me.hand.find((h) => h.uid === handUid)!.cardId);
+    const def = g.handDef(me.hand.find((h) => h.uid === handUid)!);
     if (def.type === 'MINION') setMode({ k: 'card', handUid, option, stage: 'place' });
     else if (needsTarget(handUid, option)) setMode({ k: 'card', handUid, option, stage: 'target' });
     else act({ type: 'play', handUid, option });
@@ -215,9 +216,9 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const onHandClick = (handUid: number) => {
     const hc = me.hand.find((h) => h.uid === handUid)!;
-    const def = getCard(hc.cardId);
+    const def = g.handDef(hc);
     if (!myTurn) {
-      setInspect({ cardId: hc.cardId });
+      setInspect({ cardId: hc.cardId, def: hc.parts ? def : undefined });
       return;
     }
     if (mode.k === 'card' && mode.handUid === handUid && mode.stage === 'select') {
@@ -264,7 +265,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setMode({ k: 'idle' });
       return;
     }
-    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid });
+    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts ? g.minionDef(c) : undefined });
   };
 
   const onHeroPower = () => {
@@ -331,7 +332,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       g={g}
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
-      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid } : null)}
+      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts ? g.minionDef(m) : undefined } : null)}
     >
       {floatsFor(m.uid)}
     </MinionView>
@@ -438,12 +439,13 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </div>
         <div className="hand my-hand" style={{ '--n': me.hand.length } as CSSProperties}>
           {me.hand.map((h, i) => {
-            const def = getCard(h.cardId);
+            const def = g.handDef(h);
             const playable = myTurn && g.canPlay(h.uid).ok;
             return (
               <div key={h.uid} className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''}`} style={{ '--i': i } as CSSProperties}>
                 <CardView
                   cardId={h.cardId}
+                  def={h.parts ? def : undefined}
                   width={cw}
                   cost={g.costOf(me, h)}
                   attack={def.type === 'MINION' ? (def.attack ?? 0) + h.atkBuff : undefined}
@@ -471,7 +473,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       )}
       {inspect && 'cardId' in inspect && hasCard(inspect.cardId) && (
         <div className="inspect" onClick={() => setInspect(null)}>
-          <CardView cardId={inspect.cardId} width={220} attack={inspect.atk} health={inspect.hp} />
+          <CardView cardId={inspect.cardId} def={inspect.def} width={220} attack={inspect.atk} health={inspect.hp} />
           <Glossary cardId={inspect.cardId} minion={inspect.uid !== undefined ? g.minion(inspect.uid) : null} g={g} />
         </div>
       )}
@@ -518,6 +520,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 <div key={h.uid} className={`mulligan-card ${mulliganPick.has(h.uid) ? 'replace' : ''}`}>
                   <CardView
                     cardId={h.cardId}
+                    def={h.parts ? g.handDef(h) : undefined}
                     width={150}
                     onClick={() => {
                       const next = new Set(mulliganPick);
@@ -711,7 +714,7 @@ function MinionView({
   onHover: (on: boolean) => void;
   children?: ReactNode;
 }) {
-  const def = getCard(m.cardId);
+  const def = g.minionDef(m);
   const atk = g.atkOf(m);
   const kw = (k: Parameters<Game['hasKw']>[1]) => g.hasKw(m, k);
   const hasDeathrattle = !m.silenced && m.abilities.some((a) => a.on.k === 'deathrattle');

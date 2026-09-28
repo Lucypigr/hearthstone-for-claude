@@ -11,6 +11,8 @@ export interface HandCard {
   /** 手牌中的手下增益 */
   atkBuff: number;
   hpBuff: number;
+  /** 殭屍獸：由兩張野獸縫合而成 */
+  parts?: [string, string];
 }
 
 export interface Minion {
@@ -43,6 +45,8 @@ export interface Minion {
   attacks: number;
   playOrder: number;
   dead: boolean;
+  /** 殭屍獸的兩個部位 */
+  parts?: [string, string];
 }
 
 export interface Hero {

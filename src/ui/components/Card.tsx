@@ -34,6 +34,8 @@ export function Art({
 
 export interface CardViewProps {
   cardId: string;
+  /** 動態合成的卡（例如殭屍獸）：一律用自繪卡面顯示 */
+  def?: CardDef;
   width?: number;
   cost?: number;
   attack?: number;
@@ -54,14 +56,14 @@ export interface CardViewProps {
 const failedRenders = new Set<string>();
 
 export function CardView(p: CardViewProps) {
-  const def = getCard(p.cardId);
+  const def = p.def ?? getCard(p.cardId);
   const width = p.width ?? 160;
   const cost = p.cost ?? def.cost;
   const attack = p.attack ?? def.attack;
   const health = p.health ?? def.health;
   const [, setFailedTick] = useState(0);
 
-  if (!def.custom && !failedRenders.has(def.id)) {
+  if (!p.def && !def.custom && !failedRenders.has(def.id)) {
     const changed = (v: number | undefined, base: number | undefined) => v !== undefined && base !== undefined && v !== base;
     return (
       <div
@@ -100,7 +102,7 @@ export function CardView(p: CardViewProps) {
 
 /** 自繪卡面（官方卡面無法載入或自訂卡牌時使用） */
 function DrawnCard(p: CardViewProps) {
-  const def = getCard(p.cardId);
+  const def = p.def ?? getCard(p.cardId);
   const width = p.width ?? 160;
   const cost = p.cost ?? def.cost;
   const attack = p.attack ?? def.attack;
