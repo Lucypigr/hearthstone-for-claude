@@ -693,6 +693,60 @@ textarea {
   box-shadow: 0 0 0 calc(var(--w) * 0.025) var(--gold), 0 0 calc(var(--w) * 0.15) var(--gold);
 }
 
+/* 官方完整卡面 */
+.card.rendered {
+  height: calc(var(--w) * 1.515);
+}
+
+.card-render {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px #000c);
+  transition: filter 0.15s;
+}
+
+.card.rendered.playable .card-render {
+  filter: drop-shadow(0 0 calc(var(--w) * 0.02) #48ff6e) drop-shadow(0 0 calc(var(--w) * 0.05) #48ff6e);
+}
+
+.card.rendered.selected .card-render {
+  filter: drop-shadow(0 0 calc(var(--w) * 0.025) var(--gold)) drop-shadow(0 0 calc(var(--w) * 0.07) var(--gold));
+}
+
+/* 數值改變時蓋在原本數字上的標記 */
+.card.rendered .ov {
+  width: calc(var(--w) * 0.22);
+  height: calc(var(--w) * 0.22);
+  font-size: calc(var(--w) * 0.14);
+  transform: translate(-50%, -50%);
+}
+
+.card.rendered .card-cost.ov {
+  top: 14%;
+  left: 17%;
+}
+
+.card.rendered .card-atk.ov {
+  top: auto;
+  bottom: auto;
+  top: 86%;
+  left: 18%;
+}
+
+.card.rendered .card-hp.ov {
+  top: 86%;
+  bottom: auto;
+  right: auto;
+  left: 83%;
+}
+
+.card-atk.nerfed,
+.card-hp.nerfed {
+  color: #ff7a6a;
+}
+
 .card-back {
   --w: 60px;
   width: var(--w);
@@ -2146,7 +2200,7 @@ textarea {
 
 .reveal {
   width: 170px;
-  height: 238px;
+  height: 258px;
   cursor: pointer;
 }
 

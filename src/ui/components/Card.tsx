@@ -2,7 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { getCard, hasCard } from '../../cards/registry';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardDef } from '../../engine/types';
-import { artUrl, CLASS_COLORS, formatCardText, RACE_NAMES, RARITY_COLORS } from '../cardText';
+import { artUrl, CLASS_COLORS, formatCardText, RACE_NAMES, RARITY_COLORS, renderUrl, tileUrl } from '../cardText';
 
 /** 卡圖（載入失敗時以職業色塊代替） */
 export function Art({
@@ -50,7 +50,56 @@ export interface CardViewProps {
   className?: string;
 }
 
+/** 載入失敗過的官方卡面（改用自繪卡面，避免重複請求） */
+const failedRenders = new Set<string>();
+
 export function CardView(p: CardViewProps) {
+  const def = getCard(p.cardId);
+  const width = p.width ?? 160;
+  const cost = p.cost ?? def.cost;
+  const attack = p.attack ?? def.attack;
+  const health = p.health ?? def.health;
+  const [, setFailedTick] = useState(0);
+
+  if (!def.custom && !failedRenders.has(def.id)) {
+    const changed = (v: number | undefined, base: number | undefined) => v !== undefined && base !== undefined && v !== base;
+    return (
+      <div
+        className={`card rendered card-${def.type.toLowerCase()} ${p.dimmed ? 'dimmed' : ''} ${p.selected ? 'selected' : ''} ${p.playable ? 'playable' : ''} ${p.className ?? ''}`}
+        style={{ '--w': `${width}px` } as CSSProperties}
+        onClick={p.onClick}
+        onMouseEnter={p.onMouseEnter}
+        onMouseLeave={p.onMouseLeave}
+        title={def.name}
+      >
+        <img
+          className="card-render"
+          src={renderUrl(def.id, width)}
+          alt={def.name}
+          loading="lazy"
+          draggable={false}
+          onError={() => {
+            failedRenders.add(def.id);
+            setFailedTick((t) => t + 1);
+          }}
+        />
+        {cost !== def.cost && <div className={`card-cost ov ${cost < def.cost ? 'lower' : 'higher'}`}>{cost}</div>}
+        {def.type !== 'SPELL' && changed(attack, def.attack) && (
+          <div className={`card-atk ov ${attack! > def.attack! ? 'buffed' : 'nerfed'}`}>{attack}</div>
+        )}
+        {def.type !== 'SPELL' && changed(health, def.health) && (
+          <div className={`card-hp ov ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${health! > def.health! ? 'buffed' : 'nerfed'}`}>{health}</div>
+        )}
+        {p.count !== undefined && <div className={`card-count ${p.count === 0 ? 'none' : ''}`}>×{p.count}</div>}
+        {p.footer}
+      </div>
+    );
+  }
+  return <DrawnCard {...p} />;
+}
+
+/** 自繪卡面（官方卡面無法載入或自訂卡牌時使用） */
+function DrawnCard(p: CardViewProps) {
   const def = getCard(p.cardId);
   const width = p.width ?? 160;
   const cost = p.cost ?? def.cost;
@@ -94,6 +143,13 @@ export function CardView(p: CardViewProps) {
       {p.footer}
     </div>
   );
+}
+
+/** 牌組清單的橫條卡圖（載入失敗時退回一般卡圖） */
+export function Tile({ cardId, className }: { cardId: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Art cardId={cardId} className={className} />;
+  return <img className={className} src={tileUrl(cardId)} alt="" loading="lazy" draggable={false} onError={() => setFailed(true)} />;
 }
 
 export function CardBack({ width = 60 }: { width?: number }) {
