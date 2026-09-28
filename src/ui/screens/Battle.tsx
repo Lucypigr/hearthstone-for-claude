@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { getCard, hasCard, HEROES } from '../../cards/registry';
 import { aiMulligan, chooseAction } from '../../engine/ai';
 import { Game, isHero } from '../../engine/game';
@@ -56,7 +56,6 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId } | null>(null);
   const [floats, setFloats] = useState<Float[]>([]);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
-  const [anim, setAnim] = useState<{ attacker: number; target: number; id: number } | null>(null);
   const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
   const [reward, setReward] = useState<{ gold: number; daily: number; result: 'win' | 'loss' | 'draw' } | null>(null);
   const [showLog, setShowLog] = useState(false);
@@ -122,7 +121,6 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${g.powerInfo(s.players[AI]).name}` });
       }
       if (f.kind === 'secret' && f.cardId) setBanner({ id: f.id, cardId: f.cardId, text: '奧秘揭露！' });
-      if (f.kind === 'attack' && f.uid !== undefined && f.target !== undefined) setAnim({ attacker: f.uid, target: f.target, id: f.id });
     }
     if (newFloats.length) {
       setFloats((old) => [...old, ...newFloats]);
@@ -148,11 +146,23 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     return () => window.clearTimeout(t);
   }, [banner]);
 
-  useEffect(() => {
-    if (!anim) return;
-    const t = window.setTimeout(() => setAnim(null), 450);
-    return () => window.clearTimeout(t);
-  }, [anim]);
+  // 攻擊動畫：攻擊者飛向目標撞擊後返回。已經死亡的一方用上一次畫面的殘影來播放。
+  const battleRef = useRef<HTMLDivElement>(null);
+  const snapshot = useRef(new Map<number, { rect: DOMRect; html: string }>());
+  const lastAttackFx = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const root = battleRef.current;
+    if (!root || !s) return;
+    const attacks = s.fx.filter((f) => f.kind === 'attack' && f.id > (lastAttackFx.current ?? Infinity));
+    const newest = s.fx.length ? s.fx[s.fx.length - 1].id : 0;
+    lastAttackFx.current = Math.max(lastAttackFx.current ?? newest, newest);
+    attacks.forEach((f, i) => {
+      if (f.uid !== undefined && f.target !== undefined) playAttack(root, snapshot.current, f.uid, f.target, i * 600);
+    });
+    const next = new Map<number, { rect: DOMRect; html: string }>();
+    root.querySelectorAll<HTMLElement>('[data-uid]').forEach((el) => next.set(Number(el.dataset.uid), { rect: el.getBoundingClientRect(), html: el.outerHTML }));
+    snapshot.current = next;
+  });
 
   // ------------------------------------------------------------ 對戰結束 → 發放獎勵
   useEffect(() => {
@@ -327,8 +337,6 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (validTargets.has(c.uid)) cls.push('targetable');
     if (myTurn && c.owner === ME && mode.k === 'idle' && g.canAttack(c.uid)) cls.push('can-attack');
     if (mode.k === 'attack' && mode.attacker === c.uid) cls.push('attacking-selected');
-    if (anim?.attacker === c.uid) cls.push(c.owner === ME ? 'lunge-up' : 'lunge-down');
-    if (anim?.target === c.uid) cls.push('hit');
     return cls.join(' ');
   };
 
@@ -356,6 +364,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   return (
     <div
+      ref={battleRef}
       className={`battle ${myTurn ? 'my-turn' : ''}`}
       style={{ '--mw': `${mw}px`, '--hw': `${hw}px`, '--cw': `${cw}px` } as CSSProperties}
       onContextMenu={(e) => {
@@ -730,6 +739,81 @@ function Slot({ onClick }: { onClick: () => void }) {
   );
 }
 
+/** 找到角色的畫面元素；已經消失的話，用最後的畫面做一個殘影 */
+function charElement(root: HTMLElement, snap: Map<number, { rect: DOMRect; html: string }>, uid: number): { el: HTMLElement; ghost: boolean } | null {
+  const live = root.querySelector<HTMLElement>(`[data-uid="${uid}"]`);
+  if (live) return { el: live, ghost: false };
+  const old = snap.get(uid);
+  if (!old) return null;
+  const holder = document.createElement('div');
+  holder.innerHTML = old.html;
+  const el = holder.firstElementChild as HTMLElement | null;
+  if (!el) return null;
+  el.removeAttribute('data-uid');
+  Object.assign(el.style, {
+    position: 'fixed',
+    left: `${old.rect.left}px`,
+    top: `${old.rect.top}px`,
+    width: `${old.rect.width}px`,
+    height: `${old.rect.height}px`,
+    margin: '0',
+    pointerEvents: 'none',
+    zIndex: '60',
+  });
+  root.appendChild(el);
+  return { el, ghost: true };
+}
+
+/** 攻擊動畫：攻擊者先往後蓄力，再衝向目標撞擊，最後返回；目標在撞擊時閃爍搖晃 */
+function playAttack(root: HTMLElement, snap: Map<number, { rect: DOMRect; html: string }>, attackerUid: number, targetUid: number, delay: number) {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const att = charElement(root, snap, attackerUid);
+  const tgt = charElement(root, snap, targetUid);
+  if (!att || !tgt || typeof att.el.animate !== 'function') {
+    if (att?.ghost) att.el.remove();
+    if (tgt?.ghost) tgt.el.remove();
+    return;
+  }
+  const a = att.el.getBoundingClientRect();
+  const b = tgt.el.getBoundingClientRect();
+  // 停在目標前方一點（兩張卡的邊緣相碰）
+  const dx = (b.left + b.width / 2 - (a.left + a.width / 2)) * 0.82;
+  const dy = (b.top + b.height / 2 - (a.top + a.height / 2)) * 0.82;
+  const DURATION = 620;
+  const IMPACT = 0.55;
+  const prevZ = att.el.style.zIndex;
+  att.el.style.zIndex = '50';
+  const lunge = att.el.animate(
+    [
+      { transform: 'translate(0, 0) scale(1)' },
+      { transform: `translate(${-dx * 0.08}px, ${-dy * 0.08}px) scale(1.12)`, offset: 0.25, easing: 'ease-in' },
+      { transform: `translate(${dx}px, ${dy}px) scale(1.12)`, offset: IMPACT, easing: 'ease-out' },
+      { transform: 'translate(0, 0) scale(1)' },
+    ],
+    { duration: DURATION, delay, fill: 'backwards' },
+  );
+  const hit = tgt.el.animate(
+    [
+      { transform: 'none', filter: 'none' },
+      { transform: `translate(${dx * 0.06}px, ${dy * 0.06}px) rotate(-4deg)`, filter: 'brightness(1.8) saturate(1.4)', offset: 0.2 },
+      { transform: 'translateX(5px) rotate(3deg)', offset: 0.5 },
+      { transform: 'translateX(-3px)', offset: 0.75 },
+      { transform: 'none', filter: 'none' },
+    ],
+    { duration: 360, delay: delay + DURATION * IMPACT },
+  );
+  const fadeGhost = (x: { el: HTMLElement; ghost: boolean }, after: Animation) => {
+    if (!x.ghost) return;
+    after.onfinish = () => x.el.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(0.9)' }], { duration: 260 }).finished.then(() => x.el.remove(), () => x.el.remove());
+    after.oncancel = () => x.el.remove();
+  };
+  lunge.onfinish = () => {
+    att.el.style.zIndex = prevZ;
+  };
+  fadeGhost(tgt, hit);
+  if (att.ghost) fadeGhost(att, lunge);
+}
+
 function MinionView({
   m,
   g,
@@ -754,6 +838,7 @@ function MinionView({
   const atkClass = atk > (def.attack ?? 0) ? 'buffed' : atk < (def.attack ?? 0) ? 'damaged' : '';
   return (
     <div
+      data-uid={m.uid}
       className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
       onClick={(e) => {
         e.stopPropagation();
@@ -788,6 +873,7 @@ function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: G
   const atk = g.atkOf(h);
   return (
     <div
+      data-uid={h.uid}
       className={`hero ${h.frozen ? 'frozen' : ''} ${h.immune ? 'immune' : ''} ${className}`}
       style={{ '--class': CLASS_COLORS[p.heroClass] } as CSSProperties}
       onClick={(e) => {

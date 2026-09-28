@@ -1106,40 +1106,6 @@ textarea {
   }
 }
 
-.lunge-up {
-  animation: lunge-up 0.45s ease;
-}
-
-.lunge-down {
-  animation: lunge-down 0.45s ease;
-}
-
-@keyframes lunge-up {
-  40% {
-    transform: translateY(-40%) scale(1.1);
-  }
-}
-
-@keyframes lunge-down {
-  40% {
-    transform: translateY(40%) scale(1.1);
-  }
-}
-
-.hit {
-  animation: hit 0.45s ease;
-}
-
-@keyframes hit {
-  30%,
-  70% {
-    transform: translateX(-4px);
-  }
-  50% {
-    transform: translateX(4px);
-  }
-}
-
 .float {
   position: absolute;
   top: 30%;
