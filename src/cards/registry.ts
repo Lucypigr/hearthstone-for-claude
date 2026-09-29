@@ -94,6 +94,9 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.nameEn && !c.nameEn.includes(pool.nameEn)) return false;
     if (pool.set !== undefined && c.set !== pool.set) return false;
     if (pool.classes && !cardClasses(c).some((x) => pool.classes!.includes(x))) return false;
+    if (pool.health !== undefined && (c.type !== 'MINION' || c.health !== pool.health)) return false;
+    if (pool.combo && !JSON.stringify(c.abilities ?? []).includes('"c":"combo"')) return false;
+    if (pool.chooseOne && !c.chooseOne) return false;
     if (pool.otherClass) {
       const classes = cardClasses(c);
       if (classes.includes('NEUTRAL') || classes.includes(ownClass)) return false;

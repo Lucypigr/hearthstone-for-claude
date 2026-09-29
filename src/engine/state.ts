@@ -30,6 +30,16 @@ export interface HandCard {
   temporary?: boolean;
   /** 卡札克斯藥水：組成的兩種材料 */
   potion?: string[];
+  /** 在手牌中累積的計數（例如尼斯蘭德瑪斯、法術石的升級進度） */
+  counter?: number;
+  /** 一開始就在牌堆中的卡（不是之後產生的） */
+  starting?: boolean;
+  /** 在手牌中會變形的卡的原本身分（例如變色龍克米里歐） */
+  origin?: string;
+  /** 打出時手下額外獲得的能力（例如瓦蘭尼珥的「死亡時重新裝備」） */
+  grant?: Ability[];
+  /** 死亡魔影的暗影：抽到時召喚這個手下的複製 */
+  shadowOf?: string;
 }
 
 export interface Minion {
@@ -76,6 +86,12 @@ export interface Minion {
   canAttackTurn?: number;
   /** 暫時控制：回合結束時還給原本的玩家 */
   returnTo?: PlayerId;
+  /** 計數（例如休眠的瑪洛尼還要等幾隻野獸死亡） */
+  counter?: number;
+  /** 連結的手下（巫毒人偶選擇的目標） */
+  linked?: number;
+  /** 記住的卡（過期品商人棄掉的卡） */
+  stash?: string;
 }
 
 export interface Hero {
@@ -103,6 +119,8 @@ export interface Weapon {
   keywords: Keyword[];
   /** 這把武器消滅的手下（霜之哀傷） */
   killed?: string[];
+  /** 在這個回合具有生命竊取（吸血毒藥） */
+  lifestealTurn?: number;
 }
 
 export interface SecretInst {
@@ -183,6 +201,30 @@ export interface PlayerState {
   diedThisTurn?: { turn: number; ids: string[] };
   /** 在這個回合結束時執行的效果 */
   endOfTurnEffects?: { effects: Effect[]; sourceCardId: string }[];
+  /** 在這個回合少了幾個法力水晶（法力燃燒） */
+  manaBurn?: { amount: number; turn: number };
+  /** 本場對戰中超載 / 棄掉的數量 */
+  overloadTotal?: number;
+  discardedCount?: number;
+  /** 最近一次施放消耗 5 以上法術的回合，以及本場對戰施放的次數 */
+  bigSpellTurn?: number;
+  bigSpells?: number;
+  /** 本場對戰中打出過的卡 */
+  playedCards?: string[];
+  /** 本場對戰中對友方手下施放過的法術 */
+  spellsOnMinions?: string[];
+  /** 本場對戰中被摧毀的武器 */
+  destroyedWeapons?: string[];
+  /** 進行中的任務 */
+  quest?: { cardId: string; progress: number };
+  /** 你的二選一卡牌同時具有兩種效果（奧希里安之淚） */
+  chooseBoth?: boolean;
+  /** 在這個回合，下一個戰吼觸發兩次（once）或所有戰吼觸發兩次（all） */
+  doubleBattlecry?: { turn: number; all: boolean };
+  /** 最近一次英雄受到傷害的回合 */
+  heroDamagedTurn?: number;
+  /** 你的跟班是 4/4（黑暗法老特卡恩） */
+  lackeys44?: boolean;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
@@ -256,6 +298,8 @@ export interface GameState {
   fxSeq: number;
   pendingChoice: ChoiceRequest | null;
   deathsThisTurn: number;
+  /** 接下來輪到的玩家（額外回合，例如坦普拉斯） */
+  turnQueue?: PlayerId[];
 }
 
 export type Action =

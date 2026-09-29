@@ -406,6 +406,8 @@ async function main() {
   const extra = ['GAME_005', 'CS2_101t', 'CS2_082', 'CS2_050', 'CS2_051', 'NEW1_009', 'CS2_052', 'HERO_11bpt'];
   // 強化後的英雄能力（審判者瑪瑞爾）用到的卡
   extra.push('AT_132_ROGUEt', 'HERO_11bp2t');
+  // 任務獎勵的英雄能力用到的卡
+  extra.push('ULD_326t', 'ULD_711t');
   // 各職業的星艦本體
   extra.push('GDB_100t2', 'GDB_100t4', 'GDB_100t5', 'GDB_100t6', 'GDB_100t7', 'GDB_100t8', 'GDB_100t9', 'SC_999t');
   for (const id of extra) {
@@ -439,6 +441,11 @@ async function main() {
     if (!bp?.strs.CARDNAME?.zhTW) throw new Error(`英雄能力 ${id} 不存在`);
     powers[id] = { id, name: clean(bp.strs.CARDNAME.zhTW), text: clean(bp.strs.CARDTEXT?.zhTW), cost: bp.tags.COST ?? 0 };
   }
+  // 英雄能力也收錄成（不可收藏的）卡，讓「發現一個英雄能力」可以顯示
+  const powerCards: CardDef[] = Object.values(powers).map((pw) => {
+    const bp = byId.get(pw.id)!;
+    return { id: pw.id, dbfId: bp.dbf, name: pw.name, nameEn: clean(bp.strs.CARDNAME.enUS), text: pw.text, type: 'SPELL', cardClass: CLASS_MAP[bp.tags.CLASS ?? 12] ?? 'NEUTRAL', rarity: 'FREE', set: bp.tags.CARD_SET ?? 0, cost: pw.cost, collectible: false };
+  });
 
   // 所有英雄（含造型）的 dbfId → 職業，讓匯入的牌組代碼可以判斷職業
   const heroSkins: Record<number, string> = {};
@@ -447,7 +454,7 @@ async function main() {
   }
 
   const tokens = [...tokenDefs.values()].filter((d): d is CardDef => !!d && !cards.some((c) => c.id === d.id));
-  const all = [...cards, ...tokens.map((t) => ({ ...t, collectible: false }))];
+  const all = [...cards, ...tokens.map((t) => ({ ...t, collectible: false })), ...powerCards.filter((c) => !cards.some((x) => x.id === c.id) && !tokens.some((x) => x.id === c.id))];
 
   // ------------------------------------------------------------------ 輸出
   mkdirSync('src/data', { recursive: true });

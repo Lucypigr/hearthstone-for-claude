@@ -916,7 +916,7 @@ function MinionView({
   return (
     <div
       data-uid={m.uid}
-      className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
+      className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${kw('DORMANT') ? 'dormant' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -962,8 +962,13 @@ function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: G
       <div className="hero-portrait">
         <Art cardId={h.cardId} label={CLASS_NAMES[p.heroClass]} color={CLASS_COLORS[p.heroClass]} />
       </div>
-      {p.secrets.length > 0 && (
+      {(p.secrets.length > 0 || p.quest) && (
         <div className="secrets">
+          {p.quest && (
+            <span className="secret quest" title={`任務：${getCard(p.quest.cardId).name}（${p.quest.progress}/${getCard(p.quest.cardId).quest?.goal ?? '?'}）`}>
+              !
+            </span>
+          )}
           {p.secrets.map((sec) => (
             <span key={sec.uid} className="secret" title={p.id === ME ? getCard(sec.cardId).name : '奧秘'}>
               ?

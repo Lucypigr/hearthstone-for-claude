@@ -58,7 +58,9 @@ export type Keyword =
   /** 雙生法術：施放後把一張沒有雙生法術的複製加入手牌 */
   | 'TWINSPELL'
   /** 回音：本回合可以重複使用 */
-  | 'ECHO';
+  | 'ECHO'
+  /** 休眠：無法攻擊、無法被攻擊或指定為目標，也不會受到傷害 */
+  | 'DORMANT';
 
 /** 相對於效果擁有者（controller）的陣營 */
 export type Side = 'friendly' | 'enemy' | 'any';
@@ -87,6 +89,8 @@ export interface Filter {
   legendary?: boolean;
   /** 具有亡語的手下 */
   hasDeathrattle?: boolean;
+  /** 英文名稱包含這段文字（例如「Lackey」、「Silver Hand Recruit」） */
+  nameIncludes?: string;
 }
 
 export type TargetExpr =
@@ -141,7 +145,23 @@ export type DynAmount =
   /** 你目前的法術傷害 */
   | 'spellDamage'
   /** 本場對戰中你打出的奧秘數 */
-  | 'secretsPlayed';
+  | 'secretsPlayed'
+  /** 本回合死亡的友方手下數 */
+  | 'friendlyDiedThisTurn'
+  /** 這張牌在手牌中累積的計數（例如尼斯蘭德瑪斯） */
+  | 'handCounter'
+  | 'weaponDurability'
+  /** 本場對戰中你棄掉的牌數 */
+  | 'discardedThisGame'
+  | 'enemyDeathrattleMinions'
+  /** 本場對戰中你超載的法力水晶數 */
+  | 'overloadedThisGame'
+  /** 你控制的白銀之手新兵數 */
+  | 'recruits'
+  /** 觸發事件的卡的消耗 */
+  | 'itCost'
+  /** 本場對戰中你施放的消耗 5 以上的法術數 */
+  | 'bigSpellsThisGame';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -175,12 +195,18 @@ export interface Pool {
   set?: number;
   /** 不限職業（預設隨機產生的卡只會來自你的職業與中立） */
   anyClass?: boolean;
+  /** 生命值為這個值的手下 */
+  health?: number;
+  /** 有連擊的卡 */
+  combo?: boolean;
+  /** 有二選一的卡 */
+  chooseOne?: boolean;
 }
 
 export type Condition =
-  | { c: 'holding'; race?: Race; type?: CardType }
+  | { c: 'holding'; race?: Race; type?: CardType; minCost?: number }
   /** 你（side = enemy 時為對手）控制符合條件的其他手下 */
-  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number }
+  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean }
   | { c: 'combo' }
   | { c: 'outcast' }
   | { c: 'heroAttacked' }
@@ -228,6 +254,40 @@ export type Condition =
   | { c: 'weaponAttack'; n: number }
   /** 本場對戰中有某張友方手下（英文名）死亡 */
   | { c: 'died'; name: string }
+  /** 你還有沒用完的法力 */
+  | { c: 'unspentMana' }
+  /** 觸發事件的卡：是奧秘 / 來自其他職業 / 消耗為 n / 攻擊力為 n / 是某張卡 / 有連擊 */
+  | { c: 'itSecret' }
+  | { c: 'itOtherClass' }
+  | { c: 'itCost'; n: number }
+  | { c: 'itAttack'; n: number }
+  | { c: 'itCard'; id: string }
+  | { c: 'itHasCombo' }
+  /** 所選的目標：被凍結 / 受傷 / 是友方 */
+  | { c: 'chosenFrozen' }
+  | { c: 'chosenDamaged' }
+  | { c: 'chosenFriendly' }
+  /** 你的英雄本回合受到過傷害 */
+  | { c: 'heroDamaged' }
+  /** 本回合有手下死亡 */
+  | { c: 'anyDiedThisTurn' }
+  /** 你的牌堆沒有消耗為 n 的卡 */
+  | { c: 'deckNoCost'; n: number }
+  /** 你的牌堆只有奇數（odd）/ 偶數消耗的卡 */
+  | { c: 'deckParity'; odd: boolean }
+  | { c: 'deckNoMinions' }
+  /** 戰場上（雙方）剛好有 n 個手下 */
+  | { c: 'boardCount'; n: number }
+  /** 你至少有 n 點護甲值 */
+  | { c: 'armor'; n: number }
+  /** 你本回合施放過消耗 5 以上的法術 */
+  | { c: 'bigSpellThisTurn' }
+  /** 你本回合剛好施放了 n 張法術 */
+  | { c: 'spellsThisTurn'; n: number }
+  /** 你被超載了 */
+  | { c: 'overloaded' }
+  /** 你有進行中的任務 */
+  | { c: 'questActive' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -367,6 +427,14 @@ export type Trig =
   | { k: 'dealtDamage' }
   /** 你裝備武器時 */
   | { k: 'equip'; side: Side }
+  /** 此手下被攻擊後 */
+  | { k: 'attacked' }
+  /** 友方手下失去聖盾後 */
+  | { k: 'shieldLost'; side: Side }
+  /** 你的武器被摧毀時 */
+  | { k: 'weaponDestroyed'; side: Side }
+  /** 你獲得護甲值時 */
+  | { k: 'armorGained' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -383,7 +451,11 @@ export type SecretEvent =
   | 'turnStart'
   | 'enemyTurnEnd'
   /** 對手施放一個法術之後 */
-  | 'afterEnemySpell';
+  | 'afterEnemySpell'
+  /** 對手在一個回合中打出第三張牌之後 */
+  | 'enemyThirdCard'
+  /** 一個手下攻擊你的英雄之後 */
+  | 'afterMinionAttacksHero';
 
 export interface Ability {
   on: Trig;
@@ -403,6 +475,10 @@ export interface Aura {
   race?: Race;
   /** 只影響這個英文名稱的手下（例如白銀之手新兵） */
   nameEn?: string;
+  /** 只影響具有這個關鍵字的手下 */
+  keyword?: Keyword;
+  /** 條件成立時才有效（以光環來源的擁有者判斷） */
+  cond?: Condition;
   atk?: number;
   hp?: number;
   keywords?: Keyword[];
@@ -414,10 +490,21 @@ export interface CostAura {
   type?: CardType;
   secret?: boolean;
   hasBattlecry?: boolean;
+  hasDeathrattle?: boolean;
+  race?: Race;
+  /** 只影響每位玩家在自己回合打出的第一張牌 */
+  firstCard?: boolean;
   /** 消耗設為固定值 */
   set?: number;
   /** 消耗增加（負數為減少） */
   add?: number;
+}
+
+/** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
+export interface QuestDef {
+  kind: 'unspentTurn' | 'draw' | 'summon' | 'battlecry' | 'otherClassCard' | 'reborn' | 'spell' | 'heroAttack' | 'heal';
+  goal: number;
+  reward: string;
 }
 
 /** 你下一張符合條件的牌的消耗變化 */
@@ -552,6 +639,18 @@ export interface CardDef {
   summonFromDeckAfter?: Race;
   /** 開局效果（自訂效果名稱） */
   startOfGame?: string;
+  /** 流放：在手牌最左或最右時的消耗 */
+  outcastCost?: number;
+  /** 額外的攻擊力（例如「每有一個其他野獸 +1 攻擊力」、「攻擊力等同你的護甲值」） */
+  atkPer?: Amount;
+  /** 條件成立時具有的關鍵字（以此手下為效果來源判斷） */
+  kwIf?: { cond: Condition; keywords: Keyword[] };
+  /** 只有條件成立時才能攻擊 */
+  attackIf?: Condition;
+  /** 在手牌中時，每個你的回合開始時變形：swap = 換成 into；opponentCard = 對手手牌中的一張；randomSpell = 隨機一張 cls 法術 */
+  handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell'; into?: string; cls?: CardClass };
+  /** 任務 */
+  quest?: QuestDef;
 }
 
 /**
@@ -569,6 +668,19 @@ export interface CardDef {
  * bodyguard：你的英雄受到的傷害改由此手下承受
  * heroImmuneOnTurn：在你的回合，你的英雄免疫
  * unlimitedAttacks（武器）：每回合可以攻擊任意次數
+ * heroImmune：你的英雄免疫
+ * heroPowerFreeze：你的英雄能力也會凍結目標
+ * weaponNoWear：在你的回合，你的武器不會失去耐久度
+ * copyFrozen：每當另一個手下被凍結，把它的複製加入你的手牌
+ * noHeroPowers：雙方都無法使用英雄能力
+ * heroPowerDouble：你的英雄能力的傷害與治療加倍
+ * allMisdirect：所有手下有 50% 機率攻擊錯誤的敵人
+ * heroPowerTargetMinions：你的（獵人）英雄能力可以指定手下為目標
+ * noAttackDamaged：受傷時無法攻擊
+ * doubleEndTurn：你的回合結束效果觸發兩次
+ * heroElusive：你的英雄無法成為法術或英雄能力的目標
+ * elusiveOnOppTurn：在對手的回合具有法術免疫
+ * immuneAttacking（武器）：你的英雄在攻擊時免疫
  */
 export type MinionFlag =
   | 'noTurnDraw'
@@ -585,4 +697,17 @@ export type MinionFlag =
   | 'misdirect'
   | 'bodyguard'
   | 'heroImmuneOnTurn'
-  | 'unlimitedAttacks';
+  | 'unlimitedAttacks'
+  | 'heroImmune'
+  | 'heroPowerFreeze'
+  | 'weaponNoWear'
+  | 'copyFrozen'
+  | 'noHeroPowers'
+  | 'heroPowerDouble'
+  | 'allMisdirect'
+  | 'heroPowerTargetMinions'
+  | 'noAttackDamaged'
+  | 'doubleEndTurn'
+  | 'heroElusive'
+  | 'elusiveOnOppTurn'
+  | 'immuneAttacking';

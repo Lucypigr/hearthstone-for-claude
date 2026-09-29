@@ -69,6 +69,15 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   HERO_11bp2: { effects: [{ e: 'summon', card: 'HERO_11bp2t', count: 1, who: 'self' }], needsBoardSpace: true },
   AT_050t: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 2 }], target: { filter: { type: 'character', side: 'any' } } },
   BRM_027p: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
+  // 奧丹姆的任務獎勵
+  ULD_140p: { effects: [{ e: 'draw', count: 1, who: 'self' }, { e: 'costMod', amount: -99, scope: 'it' }] },
+  ULD_155p: { effects: [{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } }, atk: 2 }] },
+  ULD_291p: { effects: [{ e: 'custom', fn: 'doubleBattlecry', args: { all: true } }] },
+  ULD_326p: { effects: [{ e: 'equip', card: 'ULD_326t' }] },
+  ULD_431p: { effects: [{ e: 'custom', fn: 'emperorWraps' }], target: { filter: { type: 'minion', side: 'friendly' } }, needsBoardSpace: true },
+  ULD_433p: { effects: [{ e: 'addRandom', pool: { type: 'SPELL', cls: 'MAGE' }, count: 1, who: 'self' }, { e: 'costMod', amount: -2, scope: 'it' }] },
+  ULD_711p3: { effects: [{ e: 'summon', card: 'ULD_711t', count: 1, who: 'self' }], needsBoardSpace: true },
+  ULD_724p: { effects: [{ e: 'custom', fn: 'obeliskEye' }], target: { filter: { type: 'character', side: 'any' } } },
 };
 
 /** 管理者埃克索圖斯：換成『炎魔』拉格納羅斯 */

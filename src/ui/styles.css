@@ -1045,6 +1045,9 @@ textarea {
   opacity: 0.55;
   filter: contrast(0.8) blur(0.5px);
 }
+.minion.dormant {
+  filter: grayscale(0.8) brightness(0.7);
+}
 
 .minion-atk,
 .minion-hp,
@@ -1311,6 +1314,10 @@ textarea {
   color: #3a2200;
   border: 1px solid #000;
   font-size: 0.8em;
+}
+.secret.quest {
+  background: radial-gradient(circle, #9ff0ff, #1a7fa8);
+  color: #002233;
 }
 
 .hero-power {
