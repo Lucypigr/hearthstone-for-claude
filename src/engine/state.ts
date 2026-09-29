@@ -1,5 +1,5 @@
 // 對戰狀態（純資料，可 structuredClone，供 AI 模擬使用）
-import type { Ability, Aura, CardClass, Effect, Keyword, Race } from './types';
+import type { Ability, Aura, CardClass, Effect, Keyword, PendingDiscount, Race } from './types';
 
 export type PlayerId = 0 | 1;
 
@@ -28,6 +28,8 @@ export interface HandCard {
   healthCostUntil?: number;
   /** 暫時的卡：回合結束時從手牌消失 */
   temporary?: boolean;
+  /** 卡札克斯藥水：組成的兩種材料 */
+  potion?: string[];
 }
 
 export interface Minion {
@@ -68,6 +70,12 @@ export interface Minion {
   starship?: StarshipPiece[];
   /** 這個手下消滅的手下（厄索克） */
   killed?: string[];
+  /** 被此手下吞掉、亡語時要還回去的手下（護城河潛伏者） */
+  captured?: { cardId: string; owner: PlayerId }[];
+  /** 在這個回合可以正常攻擊（銀白巡邏兵） */
+  canAttackTurn?: number;
+  /** 暫時控制：回合結束時還給原本的玩家 */
+  returnTo?: PlayerId;
 }
 
 export interface Hero {
@@ -109,7 +117,7 @@ export interface PlayerState {
   hero: Hero;
   weapon: Weapon | null;
   /** heroCard：打出英雄卡後，英雄能力改用該卡附帶的能力 */
-  heroPower: { id: string; used: boolean; cost: number; heroCard?: string };
+  heroPower: { id: string; used: boolean; cost: number; heroCard?: string; uses?: number };
   /** 本場對戰中賦予手下的關鍵字（例如「你的元素具有生命竊取」） */
   grants: { keyword: Keyword; race?: Race }[];
   /** 本回合下一張牌的折扣 */
@@ -140,8 +148,8 @@ export interface PlayerState {
   spellsThisTurn?: number;
   /** 延遲的效果（例如「2 回合後召喚…」） */
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
-  /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」） */
-  eternal?: { ability: Ability; sourceCardId: string }[];
+  /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」）；turn：只在這個回合有效；minSpells：施放的法術數達到這個值才觸發 */
+  eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number }[];
   /** 你的手下在這個回合消耗增加（對手的冰涼腳丫等） */
   minionTax?: { amount: number; turn: number };
   /** 本回合下一張法術的折扣 */
@@ -160,6 +168,21 @@ export interface PlayerState {
   endOfTurnCards?: string[];
   /** 洗進對手牌堆的瘟疫數 */
   plaguesShuffled?: number;
+  /** 下一張符合條件的牌的消耗變化（turn：只在這個回合有效） */
+  pendingDiscounts?: (PendingDiscount & { turn?: number })[];
+  /** 你的法術 / 英雄能力在這個回合消耗增加（對手的憎恨者 / 破壞者） */
+  spellTax?: { amount: number; turn: number };
+  powerTax?: { amount: number; turn: number };
+  /** 下一次使用英雄能力的折扣 */
+  powerDiscount?: number;
+  /** 本場對戰中英雄能力消耗固定為這個值（綑縛者拉札） */
+  powerCostSet?: number;
+  /** 本場對戰中打出的奧秘數 */
+  secretsPlayed?: number;
+  /** 本回合死亡的友方手下 */
+  diedThisTurn?: { turn: number; ids: string[] };
+  /** 在這個回合結束時執行的效果 */
+  endOfTurnEffects?: { effects: Effect[]; sourceCardId: string }[];
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;

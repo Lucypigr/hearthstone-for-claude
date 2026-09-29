@@ -14,6 +14,7 @@ export interface HeroInfo {
 interface CardData {
   build?: string;
   heroes: Record<string, HeroInfo>;
+  powers?: Record<string, HeroInfo['power']>;
   aliases?: Record<string, string>;
   heroSkins?: Record<string, string>;
   cards: CardDef[];
@@ -34,6 +35,9 @@ for (const [id, patch] of Object.entries(OVERRIDES)) {
 for (const c of CUSTOM_CARDS) CARDS[c.id] = { ...c, custom: true };
 
 export const HEROES = raw.heroes as Record<Exclude<CardClass, 'NEUTRAL'>, HeroInfo>;
+
+/** 基本職業以外的英雄能力的名稱、敘述與消耗（以卡牌 ID 為 key） */
+export const POWER_INFO: Record<string, HeroInfo['power']> = raw.powers ?? {};
 
 export const PLAYABLE_CLASSES = Object.keys(HEROES) as Exclude<CardClass, 'NEUTRAL'>[];
 
@@ -86,6 +90,10 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.rune && !c.runes?.[pool.rune]) return false;
     if (pool.spendsCorpses && !JSON.stringify(c.abilities ?? []).includes('"spendCorpses')) return false;
     if (pool.terran && !c.terran) return false;
+    if (pool.overload && !c.overload) return false;
+    if (pool.nameEn && !c.nameEn.includes(pool.nameEn)) return false;
+    if (pool.set !== undefined && c.set !== pool.set) return false;
+    if (pool.classes && !cardClasses(c).some((x) => pool.classes!.includes(x))) return false;
     if (pool.otherClass) {
       const classes = cardClasses(c);
       if (classes.includes('NEUTRAL') || classes.includes(ownClass)) return false;

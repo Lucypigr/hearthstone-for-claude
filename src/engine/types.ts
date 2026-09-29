@@ -81,6 +81,12 @@ export interface Filter {
   /** 星艦或星艦組件 */
   starship?: boolean;
   terran?: boolean;
+  /** 排除某種族（例如「對惡魔以外的所有手下」） */
+  notRace?: Race;
+  /** 傳說手下 */
+  legendary?: boolean;
+  /** 具有亡語的手下 */
+  hasDeathrattle?: boolean;
 }
 
 export type TargetExpr =
@@ -131,7 +137,11 @@ export type DynAmount =
   /** 目前被冰凍的角色數 */
   | 'frozenChars'
   /** 本場對戰中洗進對手牌堆的瘟疫數 */
-  | 'plaguesShuffled';
+  | 'plaguesShuffled'
+  /** 你目前的法術傷害 */
+  | 'spellDamage'
+  /** 本場對戰中你打出的奧秘數 */
+  | 'secretsPlayed';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -156,21 +166,31 @@ export interface Pool {
   spellSchool?: string;
   /** 會花費屍體的卡 */
   spendsCorpses?: boolean;
+  /** 屬於其中任一職業（例如「發現一張獵人、聖騎士或戰士卡」） */
+  classes?: CardClass[];
+  /** 有超載的卡 */
+  overload?: boolean;
+  /** 英文名稱包含這段文字（例如「藥水」） */
+  nameEn?: string;
+  set?: number;
+  /** 不限職業（預設隨機產生的卡只會來自你的職業與中立） */
+  anyClass?: boolean;
 }
 
 export type Condition =
   | { c: 'holding'; race?: Race; type?: CardType }
-  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number }
+  /** 你（side = enemy 時為對手）控制符合條件的其他手下 */
+  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number }
   | { c: 'combo' }
   | { c: 'outcast' }
   | { c: 'heroAttacked' }
-  | { c: 'handSize'; op: '>=' | '<='; n: number }
+  | { c: 'handSize'; op: '>=' | '<='; n: number; side?: 'enemy' }
   | { c: 'maxMana'; n: number }
   | { c: 'opponentTurn' }
   | { c: 'secret' }
   | { c: 'weapon' }
   | { c: 'damaged' }
-  | { c: 'heroHealth'; op: '>=' | '<='; n: number }
+  | { c: 'heroHealth'; op: '>=' | '<='; n: number; side?: 'enemy' }
   | { c: 'itRace'; race: Race }
   | { c: 'itAlive' }
   | { c: 'itDied' }
@@ -194,6 +214,20 @@ export type Condition =
   | { c: 'heroHealed' }
   /** 「它」有亡語 */
   | { c: 'itHasDeathrattle' }
+  /** 「它」（或觸發事件的卡）有戰吼 */
+  | { c: 'itHasBattlecry' }
+  /** 你有法術傷害 */
+  | { c: 'spellDamage' }
+  /** 有敵人被冰凍 */
+  | { c: 'enemyFrozen' }
+  /** 所選的目標是某種族 */
+  | { c: 'chosenRace'; race: Race }
+  /** 效果來源（手下）至少有 n 點攻擊力 */
+  | { c: 'selfAttack'; n: number }
+  /** 你的武器至少有 n 點攻擊力 */
+  | { c: 'weaponAttack'; n: number }
+  /** 本場對戰中有某張友方手下（英文名）死亡 */
+  | { c: 'died'; name: string }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -284,6 +318,18 @@ export type Effect =
   | { e: 'minionAtkBonus'; amount: number }
   /** 你打出的下一張牌改為消耗屍體 */
   | { e: 'nextCardCostsCorpses' }
+  /** 你下一張符合條件的牌消耗改變（例如「你的下一張龍消耗減少 (2)」） */
+  | { e: 'pendingDiscount'; d: PendingDiscount }
+  /** 對手的法術在他的下個回合消耗增加 */
+  | { e: 'spellTax'; amount: number }
+  /** 對手的英雄能力在他的下個回合消耗增加 */
+  | { e: 'heroPowerTax'; amount: number }
+  /** 你下一次使用英雄能力消耗減少 */
+  | { e: 'heroPowerDiscount'; amount: number }
+  /** 換成另一個英雄能力（id 見 src/engine/heroes.ts 的 POWERS） */
+  | { e: 'replaceHeroPower'; power: string }
+  /** 在這個回合結束時執行 */
+  | { e: 'atEndOfTurn'; effects: Effect[] }
   | { e: 'cond'; cond: Condition; then: Effect[]; else?: Effect[] }
   | { e: 'repeat'; times: Amount; effects: Effect[] }
   | { e: 'custom'; fn: string; args?: Record<string, unknown> };
@@ -297,7 +343,7 @@ export type Trig =
   | { k: 'cardPlayed'; side: Side; cardType?: CardType; race?: Race; keyword?: Keyword }
   | { k: 'summon'; side: Side; race?: Race }
   | { k: 'minionDied'; side: Side; race?: Race }
-  | { k: 'damaged'; subject: 'self' | 'friendlyHero' | 'friendlyMinion' | 'anyMinion' }
+  | { k: 'damaged'; subject: 'self' | 'friendlyHero' | 'friendlyMinion' | 'anyMinion' | 'enemyMinion' }
   | { k: 'healed'; subject: 'any' | 'friendly' | 'minion' }
   | { k: 'attack'; subject: 'self' | 'friendlyHero' | 'friendlyMinion'; after?: boolean }
   | { k: 'heroPower'; side: Side }
@@ -307,6 +353,20 @@ export type Trig =
   | { k: 'launch' }
   /** 滅殺：在你的回合，造成的傷害超過消滅一個手下所需 */
   | { k: 'overkill' }
+  /** 你棄掉一張牌時 */
+  | { k: 'discard'; side: Side }
+  /** 這張牌被棄掉時（手牌中的能力，不是場上觸發） */
+  | { k: 'discarded' }
+  /** 這張牌被抽到時（手牌中的能力） */
+  | { k: 'drawn' }
+  /** 你以法術指定此手下為目標時 */
+  | { k: 'spellTarget' }
+  /** 溢療：此手下被治療超過生命值上限時 */
+  | { k: 'overheal' }
+  /** 此手下造成傷害時 */
+  | { k: 'dealtDamage' }
+  /** 你裝備武器時 */
+  | { k: 'equip'; side: Side }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -321,7 +381,9 @@ export type SecretEvent =
   | 'heroDamaged'
   | 'heroFatal'
   | 'turnStart'
-  | 'enemyTurnEnd';
+  | 'enemyTurnEnd'
+  /** 對手施放一個法術之後 */
+  | 'afterEnemySpell';
 
 export interface Ability {
   on: Trig;
@@ -339,9 +401,37 @@ export interface Aura {
   scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount';
   cost?: number;
   race?: Race;
+  /** 只影響這個英文名稱的手下（例如白銀之手新兵） */
+  nameEn?: string;
   atk?: number;
   hp?: number;
   keywords?: Keyword[];
+}
+
+/** 場上手下對手牌消耗的影響（例如「你的手下消耗為 (1)」、「有戰吼的手下消耗增加 (2)」） */
+export interface CostAura {
+  side: 'friendly' | 'enemy' | 'both';
+  type?: CardType;
+  secret?: boolean;
+  hasBattlecry?: boolean;
+  /** 消耗設為固定值 */
+  set?: number;
+  /** 消耗增加（負數為減少） */
+  add?: number;
+}
+
+/** 你下一張符合條件的牌的消耗變化 */
+export interface PendingDiscount {
+  amount?: number;
+  /** 消耗設為固定值 */
+  set?: number;
+  race?: Race;
+  type?: CardType;
+  secret?: boolean;
+  /** 改為消耗生命值 */
+  health?: boolean;
+  /** 只在本回合有效 */
+  thisTurn?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -452,11 +542,47 @@ export interface CardDef {
   castsWhenDrawn?: boolean;
   /** 場上時的特殊規則 */
   flags?: MinionFlag[];
+  /** 場上時影響手牌消耗的光環 */
+  costAuras?: CostAura[];
+  /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
+  atkIf?: { cond: Condition; atk: number };
+  /** 在手牌中時才會觸發的能力（例如肥油大亨） */
+  handAbilities?: Ability[];
+  /** 在你打出某種族的牌後，從你的牌堆召喚這張卡（海盜派奇） */
+  summonFromDeckAfter?: Race;
+  /** 開局效果（自訂效果名稱） */
+  startOfGame?: string;
 }
 
 /**
  * noTurnDraw：你的回合開始時不再抽牌
  * enemyNoHeal：敵方角色無法被治療
  * doubleCorpses：你獲得的屍體加倍
+ * heroPowerDamage：你的英雄能力額外造成 1 點傷害
+ * heroPowerTwice / heroPowerUnlimited：英雄能力每回合可以使用兩次 / 任意次數
+ * heroPowerCost1：你的英雄能力消耗為 (1)
+ * heroPowerDrawsFree：你以英雄能力抽到的牌消耗為 (0)
+ * heroPowerBuffsWeapon（武器）：英雄能力改為賦予這把武器 +1 攻擊力，而不是換掉它
+ * doubleDeathrattle：你的手下的亡語觸發兩次
+ * randomTargets：所有目標都隨機選擇
+ * misdirect：50% 機率攻擊錯誤的敵人
+ * bodyguard：你的英雄受到的傷害改由此手下承受
+ * heroImmuneOnTurn：在你的回合，你的英雄免疫
+ * unlimitedAttacks（武器）：每回合可以攻擊任意次數
  */
-export type MinionFlag = 'noTurnDraw' | 'enemyNoHeal' | 'doubleCorpses';
+export type MinionFlag =
+  | 'noTurnDraw'
+  | 'enemyNoHeal'
+  | 'doubleCorpses'
+  | 'heroPowerDamage'
+  | 'heroPowerTwice'
+  | 'heroPowerUnlimited'
+  | 'heroPowerCost1'
+  | 'heroPowerDrawsFree'
+  | 'heroPowerBuffsWeapon'
+  | 'doubleDeathrattle'
+  | 'randomTargets'
+  | 'misdirect'
+  | 'bodyguard'
+  | 'heroImmuneOnTurn'
+  | 'unlimitedAttacks';

@@ -3,7 +3,8 @@
 // key 是卡牌 ID（可在 hsreplay 卡牌網址或 .cache/unsupported.txt 找到）。
 // 修改後請執行 `npm run cards` 重新產生資料（覆寫的卡才會被收錄）。
 // ============================================================================
-import type { Ability, CardDef, Effect, HeroPowerSpec, TargetReq } from '../engine/types';
+import { KAZAKUS_TOKENS } from './kazakus';
+import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
 export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' | 'text' | 'heroPower'>> & {
   /** 英雄卡的新英雄能力（名稱、敘述、費用會自動從卡牌資料帶入） */
@@ -30,6 +31,18 @@ const heroAttacked = (...effects: Effect[]): Ability[] => [{ on: { k: 'attack', 
 /** 在你的回合結束時，此手下死亡 */
 const dieAtEndOfTurn: Ability = { on: { k: 'turnEnd', whose: 'mine' }, effects: [{ e: 'destroy', target: { t: 'self' } }] };
 const PLAGUES = ['TTN_450t', 'TTN_450t2', 'TTN_450t3'];
+/** 激勵：在你使用英雄能力後 */
+const inspire = (...effects: Effect[]): Ability[] => [{ on: { k: 'heroPower', side: 'friendly' }, effects }];
+/** 戰吼：若條件成立，執行效果 */
+const playIf = (cond: Condition, ...effects: Effect[]) => play({ e: 'cond', cond, then: effects });
+const selfBuff = (atk: number, hp: number, keywords?: Keyword[]): Effect => ({ e: 'buff', target: { t: 'self' }, atk, hp, keywords });
+const secretOn = (ev: SecretEvent, ...effects: Effect[]): Override => ({ secret: true, abilities: [{ on: { k: 'secret', ev }, effects }] });
+/** 此手下攻擊後，若符合條件（攻擊英雄 / 攻擊手下 / 消滅手下 / 存活）就執行效果 */
+const afterAttack = (when: { hero?: boolean; minion?: boolean; killed?: boolean; survive?: boolean }, ...then: Effect[]): Ability[] => [
+  { on: { k: 'attack', subject: 'self', after: true }, effects: [fn('ifAttack', { ...when, then })] },
+];
+const randomFriendly = (race: Race) => ({ t: 'random' as const, filter: { type: 'minion' as const, side: 'friendly' as const, race }, count: 1 });
+const optional = (filter: TargetReq['filter'], when?: Condition): TargetReq => ({ filter, optional: true, when });
 
 export const OVERRIDES: Record<string, Override> = {
   // 動物夥伴：隨機召喚米莎、雷歐克或霍弗
@@ -725,4 +738,472 @@ export const OVERRIDES: Record<string, Override> = {
     target: friendlyMinion,
     abilities: play({ e: 'evolve', target: { t: 'chosen' }, amount: 1 }),
   },
+
+  // ==========================================================================
+  // 納克薩瑪斯
+  // ==========================================================================
+  // 迴音軟泥怪：在回合結束時召喚一個此手下的完全複製
+  FP1_003: {
+    abilities: play({
+      e: 'buff',
+      target: { t: 'self' },
+      abilities: [{ on: { k: 'turnEnd', whose: 'each' }, once: true, effects: [{ e: 'summonCopy', target: { t: 'self' }, count: 1 }] }],
+    }),
+  },
+  // 瘋狂科學家：亡語：把牌堆中的一個奧秘放到戰場上
+  FP1_004: { abilities: dr(fn('secretsFromDeck', { count: 1 })) },
+  // 死亡領主：嘲諷；亡語：對手把他牌堆中的一個手下放到戰場上
+  FP1_009: { keywords: ['TAUNT'], abilities: dr(fn('recruitFor', { who: 'opponent' })) },
+  // 科爾蘇加德：在每個回合結束時，召喚本回合死亡的所有友方手下
+  FP1_013: { abilities: [{ on: { k: 'turnEnd', whose: 'each' }, effects: [fn('kelThuzad')] }] },
+  // 斯塔拉格 / 伏晨：亡語：若另一個也死亡過，召喚泰迪斯
+  FP1_014: { abilities: dr({ e: 'cond', cond: { c: 'died', name: 'Feugen' }, then: [{ e: 'summon', card: 'FP1_014t', count: 1, who: 'self' }] }), tokens: ['FP1_014t'] },
+  FP1_015: { abilities: dr({ e: 'cond', cond: { c: 'died', name: 'Stalagg' }, then: [{ e: 'summon', card: 'FP1_014t', count: 1, who: 'self' }] }), tokens: ['FP1_014t'] },
+  // 奈幽巴蛛網領主：有戰吼的手下消耗增加 (2)
+  FP1_017: { costAuras: [{ side: 'both', type: 'MINION', hasBattlecry: true, add: 2 }] },
+  // 複製：秘密：當一個友方手下死亡時，把它的 2 張複製加入你的手牌
+  FP1_018: secretOn('friendlyMinionDies', { e: 'addCopy', target: { t: 'it' }, count: 2 }),
+  // 劇毒種子：消滅所有手下，並召喚 2/2 樹人取代它們
+  FP1_019: { abilities: play(fn('poisonSeeds', { card: 'FP1_019t' })), tokens: ['FP1_019t'] },
+  // 虛無呼喚者：亡語：從你的手牌把一個隨機惡魔放到戰場上
+  FP1_022: { abilities: dr(fn('summonFromHand', { race: 'DEMON' })) },
+  // 重生：消滅一個手下，再讓它以全滿的生命值復活
+  FP1_025: { target: chosenMinion, abilities: play(fn('reincarnate')) },
+  // 殯葬管理員：每當你召喚有亡語的手下，獲得 +1/+1
+  FP1_028: { abilities: [{ on: { k: 'summon', side: 'friendly' }, cond: { c: 'itHasDeathrattle' }, effects: [selfBuff(1, 1)] }] },
+  // 憎恨者：敵方法術在下個回合消耗增加 (5)
+  FP1_030: { abilities: play({ e: 'spellTax', amount: 5 }) },
+  // 瑞文戴爾男爵：你的手下的亡語觸發兩次
+  FP1_031: { flags: ['doubleDeathrattle'] },
+
+  // ==========================================================================
+  // 黑石山
+  // ==========================================================================
+  // 惡魔怒火：對惡魔以外的所有手下造成 2 點傷害
+  BRM_005: { abilities: play({ e: 'damage', target: { t: 'all', filter: { type: 'minion', notRace: 'DEMON' } }, amount: 2, spell: true }) },
+  // 黑鐵潛伏者：對所有未受傷的敵方手下造成 2 點傷害
+  BRM_008: { abilities: play({ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'enemy', undamaged: true } }, amount: 2 }) },
+  // 熔岩震擊：造成 2 點傷害，解鎖被超載的法力水晶
+  BRM_011: { target: anyChar, abilities: play(hit(2), fn('unlockOverload')) },
+  // 火焰驅逐者：戰吼：獲得 1~4 點攻擊力；超載：(1)
+  BRM_012: { overload: 1, abilities: play(fn('gainRandomAtk', { min: 1, max: 4 })) },
+  // 復仇：對所有手下造成 1 點傷害；若你的生命值 12 以下，改為 3 點
+  BRM_015: {
+    abilities: play({
+      e: 'cond',
+      cond: { c: 'heroHealth', op: '<=', n: 12 },
+      then: [{ e: 'damage', target: { t: 'all', filter: { type: 'minion' } }, amount: 3, spell: true }],
+      else: [{ e: 'damage', target: { t: 'all', filter: { type: 'minion' } }, amount: 1, spell: true }],
+    }),
+  },
+  // 復活：召喚本場對戰中死亡的隨機友方手下
+  BRM_017: { abilities: play(fn('resurrectRandom', { count: 1 })) },
+  // 龍之伴侶：戰吼：你的下一張龍消耗減少 (2)
+  BRM_018: { abilities: play({ e: 'pendingDiscount', d: { race: 'DRAGON', amount: 2 } }) },
+  // 恐怖的黑鐵酒客：在此手下受到傷害並存活後，召喚另一個恐怖的黑鐵酒客
+  BRM_019: { abilities: [{ on: { k: 'damaged', subject: 'self' }, cond: { c: 'itAlive' }, effects: [{ e: 'summon', card: 'BRM_019', count: 1, who: 'self' }] }] },
+  // 龍人巫師：每當你以法術指定此手下為目標，獲得 +1/+1
+  BRM_020: { abilities: [{ on: { k: 'spellTarget' }, effects: [selfBuff(1, 1)] }] },
+  // 龍獸粉碎者：戰吼：若對手的生命值 15 以下，獲得 +3/+3
+  BRM_024: { abilities: playIf({ c: 'heroHealth', op: '<=', n: 15, side: 'enemy' }, selfBuff(3, 3)) },
+  // 管理者埃克索圖斯：亡語：你的英雄換成『炎魔』拉格納羅斯
+  BRM_027: { abilities: dr(fn('ragnaros')) },
+  // 索瑞森大帝：在你的回合結束時，你手牌中的卡消耗減少 (1)
+  BRM_028: { abilities: [{ on: { k: 'turnEnd', whose: 'mine' }, effects: [fn('discountHand', { amount: 1 })] }] },
+  // 雷德‧黑手：戰吼：若你手中有龍，消滅一個傳說手下
+  BRM_029: {
+    target: optional({ type: 'minion', side: 'any', legendary: true }, { c: 'holding', race: 'DRAGON' }),
+    abilities: play({ e: 'destroy', target: { t: 'chosen' } }),
+  },
+  // 克洛瑪古斯：每當你抽一張牌，把另一張複製加入你的手牌
+  BRM_031: { abilities: [{ on: { k: 'draw', side: 'friendly' }, effects: [{ e: 'addCopy', target: { t: 'it' }, count: 1 }] }] },
+
+  // ==========================================================================
+  // 銀白聯賽
+  // ==========================================================================
+  // 火焰稻草人：秘密：當一個友方手下死亡時，召喚一個消耗相同的隨機手下
+  AT_002: secretOn('friendlyMinionDies', fn('summonSameCost')),
+  // 陣亡英雄之靈：你的英雄能力額外造成 1 點傷害
+  AT_003: { flags: ['heroPowerDamage'] },
+  // 秘法衝擊：對一個手下造成 2 點傷害，法術傷害加成兩倍
+  AT_004: { target: chosenMinion, abilities: play({ e: 'damage', target: { t: 'chosen' }, amount: { dyn: 'spellDamage', base: 2 }, spell: true }) },
+  // 達拉然志士：法術傷害 +1；激勵：獲得法術傷害 +1
+  AT_006: { spellDamage: 1, abilities: inspire(fn('gainSpellDamage', { amount: 1 })) },
+  // 魔法鏢客：戰吼：雙方各獲得一張隨機法術，你的消耗減少 (2)
+  AT_007: { abilities: play(fn('spellslinger')) },
+  // 凜懼島飛龍：你的英雄能力可以使用任意次數
+  AT_008: { flags: ['heroPowerUnlimited'] },
+  // 羅甯：亡語：把 3 張秘法飛彈加入你的手牌
+  AT_009: { abilities: dr({ e: 'addCard', card: 'EX1_277', count: 3, who: 'self' }) },
+  // 山羊牧人：戰吼：若你控制野獸，隨機召喚一個野獸
+  AT_010: { abilities: playIf({ c: 'control', race: 'BEAST' }, { e: 'summonRandom', pool: { type: 'MINION', race: 'BEAST' }, count: 1, who: 'self' }) },
+  // 神聖勇士：溢療：獲得 +2 攻擊力
+  AT_011: { abilities: [{ on: { k: 'overheal' }, effects: [selfBuff(2, 0)] }] },
+  // 暗影爪牙：戰吼與激勵：對雙方英雄各造成 4 點傷害
+  AT_012: {
+    abilities: [
+      ...play({ e: 'damage', target: { t: 'hero', side: 'both' }, amount: 4 }),
+      ...inspire({ e: 'damage', target: { t: 'hero', side: 'both' }, amount: 4 }),
+    ],
+  },
+  // 真言術：耀：選擇一個手下，每當它攻擊時，為你的英雄恢復 4 點生命值
+  AT_013: { target: chosenMinion, abilities: play(fn('glory', { amount: 4 })) },
+  // 歸順：把一個敵方手下的複製加入你的手牌，其消耗為 (1)
+  AT_015: { target: enemyMinion, abilities: play(fn('copyToHand', { cost: 1 })) },
+  // 告解者帕爾璀絲：戰吼與激勵：隨機召喚一個傳說手下
+  AT_018: {
+    abilities: [
+      ...play({ e: 'summonRandom', pool: { type: 'MINION', rarity: 'LEGENDARY' }, count: 1, who: 'self' }),
+      ...inspire({ e: 'summonRandom', pool: { type: 'MINION', rarity: 'LEGENDARY' }, count: 1, who: 'self' }),
+    ],
+  },
+  // 恐懼戰馬：亡語：在這個回合結束時，召喚一個恐懼戰馬
+  AT_019: { abilities: dr({ e: 'atEndOfTurn', effects: [{ e: 'summon', card: 'AT_019', count: 1, who: 'self' }] }) },
+  // 小小邪惡騎士：每當你棄掉一張牌，獲得 +2/+1
+  AT_021: { abilities: [{ on: { k: 'discard', side: 'friendly' }, effects: [selfBuff(2, 1)] }] },
+  // 賈拉克瑟斯之拳：當你打出或棄掉這張牌時，對一個隨機敵人造成 4 點傷害
+  AT_022: {
+    abilities: [
+      ...play({ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 4, spell: true }),
+      { on: { k: 'discarded' }, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 4, spell: true }] },
+    ],
+  },
+  // 虛無粉碎者：激勵：雙方各摧毀一個隨機手下
+  AT_023: {
+    abilities: inspire(
+      { e: 'destroy', target: { t: 'random', filter: { type: 'minion', side: 'friendly' }, count: 1 } },
+      { e: 'destroy', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } },
+    ),
+  },
+  // 憤怒守衛：每當此手下受到傷害，也對你的英雄造成等量的傷害
+  AT_026: { abilities: [{ on: { k: 'damaged', subject: 'self' }, effects: [{ e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: { dyn: 'eventAmount' } }] }] },
+  // 威爾弗雷德‧菲斯巴恩：你以英雄能力抽到的牌消耗為 (0)
+  AT_027: { flags: ['heroPowerDrawsFree'] },
+  // 海賊：每當你裝備武器時，賦予它 +1 攻擊力
+  AT_029: { abilities: [{ on: { k: 'equip', side: 'friendly' }, effects: [{ e: 'weaponBuff', atk: 1 }] }] },
+  // 扒手：每當此手下攻擊英雄，把一枚幸運幣加入你的手牌
+  AT_031: { abilities: afterAttack({ hero: true }, { e: 'addCard', card: 'GAME_005', count: 1, who: 'self' }) },
+  // 黑市商人：戰吼：若你控制海盜，獲得 +1/+1
+  AT_032: { abilities: playIf({ c: 'control', race: 'PIRATE' }, selfBuff(1, 1)) },
+  // 盜竊：隨機獲得 3 張（對手職業的）卡
+  AT_033: { abilities: play({ e: 'addRandom', pool: { cls: 'opponent' }, count: 3, who: 'self' }) },
+  // 毒刃：你的英雄能力改為賦予這把武器 +1 攻擊力，而不是換掉它
+  AT_034: { flags: ['heroPowerBuffsWeapon'] },
+  // 地底潛伏：把 3 張奈幽蟲伏擊！洗入對手的牌堆（抽到時為你召喚 4/4 奈幽蟲族）
+  AT_035: { abilities: play({ e: 'shuffle', card: 'AT_035t', count: 3, who: 'opponent' }), tokens: ['AT_035t'] },
+  AT_035t: { castsWhenDrawn: true, abilities: play({ e: 'summon', card: 'FP1_007t', count: 1, who: 'opponent' }), tokens: ['FP1_007t'] },
+  // 阿努巴拉克：亡語：召喚一個有「亡語：召喚阿努巴拉克」的 4/4 奈幽蟲族
+  AT_036: { abilities: dr({ e: 'summon', card: 'AT_036t', count: 1, who: 'self' }), tokens: ['AT_036t'] },
+  AT_036t: { abilities: dr({ e: 'summon', card: 'AT_036', count: 1, who: 'self' }) },
+  // 達納蘇斯志士：戰吼：獲得一個空的法力水晶；亡語：失去一個法力水晶
+  AT_038: { abilities: [...play({ e: 'mana', kind: 'empty', amount: 1 }), ...dr({ e: 'mana', kind: 'destroy', amount: 1 })] },
+  // 堆肥：消滅一個手下，把一張隨機手下加入對手的手牌
+  AT_044: {
+    target: chosenMinion,
+    abilities: play({ e: 'destroy', target: { t: 'chosen' } }, { e: 'addRandom', pool: { type: 'MINION', anyClass: true }, count: 1, who: 'opponent' }),
+  },
+  // 艾維娜：你的手下消耗為 (1)
+  AT_045: { costAuras: [{ side: 'friendly', type: 'MINION', set: 1 }] },
+  // 德萊尼圖騰雕刻師：戰吼：每有一個友方圖騰，獲得 +1/+1
+  AT_047: { abilities: play({ e: 'buff', target: { t: 'self' }, atk: { dyn: 'friendlyRace', race: 'TOTEM' }, hp: { dyn: 'friendlyRace', race: 'TOTEM' } }) },
+  // 雷霆崖驍士：戰吼與激勵：賦予你的圖騰 +2 攻擊力
+  AT_049: {
+    abilities: [
+      ...play({ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', race: 'TOTEM' } }, atk: 2 }),
+      ...inspire({ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', race: 'TOTEM' } }, atk: 2 }),
+    ],
+  },
+  // 充能戰錘：亡語：你的英雄能力變成「造成 2 點傷害」
+  AT_050: { abilities: dr({ e: 'replaceHeroPower', power: 'AT_050t' }) },
+  // 元素毀滅：對全部手下造成 4~5 點傷害；超載：(2)
+  AT_051: { overload: 2, abilities: play(fn('randomDamageAll', { min: 4, max: 5 })) },
+  // 喚霧者：戰吼：賦予你手牌與牌堆中的所有手下 +1/+1
+  AT_054: { abilities: play(fn('buffHandAndDeck', { atk: 1, hp: 1 })) },
+  // 放熊陷阱：秘密：在你的英雄被攻擊後，召喚一隻 3/3 嘲諷的熊
+  AT_060: { ...secretOn('heroAttacked', { e: 'summon', card: 'CS2_125', count: 1, who: 'self' }), tokens: ['CS2_125'] },
+  // 全面備戰：本回合你每施放一張法術，獲得一張隨機獵人牌
+  AT_061: { cost: 2, abilities: play(fn('lockAndLoad')) },
+  // 蜘蛛囊：召喚三個 1/1 織網者
+  AT_062: { abilities: play({ e: 'summon', card: 'FP1_011', count: 3, who: 'self' }), tokens: ['FP1_011'] },
+  // 酸喉：每當敵方手下受到傷害，消滅它
+  AT_063: { abilities: [{ on: { k: 'damaged', subject: 'enemyMinion' }, effects: [{ e: 'destroy', target: { t: 'it' } }] }] },
+  // 王家防衛者：戰吼：若你控制嘲諷手下，獲得 +1 耐久度
+  AT_065: { abilities: playIf({ c: 'control', keyword: 'TAUNT' }, { e: 'weaponBuff', dur: 1 }) },
+  // 猛瑪象人首領：同時傷害被攻擊者兩側的手下
+  AT_067: { keywords: ['CLEAVE'] },
+  // 提振士氣：賦予你的嘲諷手下 +2/+2
+  AT_068: { abilities: play({ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', keyword: 'TAUNT' } }, atk: 2, hp: 2 }) },
+  // 天空隊長克拉格：衝鋒；每有一個友方海盜，消耗減少 (1)
+  AT_070: { keywords: ['CHARGE'], costRule: { per: 'friendlyRace', amount: 1, race: 'PIRATE' } },
+  // 瓦里安‧烏瑞恩：戰吼：抽 3 張牌，抽到的手下直接放到戰場上
+  AT_072: { abilities: play(fn('varian')) },
+  // 戰馬訓練師：你的白銀之手新兵 +2 攻擊力並具有嘲諷
+  AT_075: { auras: [{ scope: 'otherFriendly', nameEn: 'Silver Hand Recruit', atk: 2, keywords: ['TAUNT'] }] },
+  // 高手過招：消滅所有手下，每位玩家只留下攻擊力最高的一個
+  AT_078: { abilities: play(fn('coliseum')) },
+  // 神秘挑戰者：戰吼：把牌堆中每種奧秘各一個放到戰場上
+  AT_079: { abilities: play(fn('secretsFromDeck', { all: true })) },
+  // 要塞指揮官：你的英雄能力每回合可以使用兩次
+  AT_080: { flags: ['heroPowerTwice'] },
+  // 湖中少女：你的英雄能力消耗為 (1)
+  AT_085: { flags: ['heroPowerCost1'] },
+  // 破壞者：戰吼：對手的英雄能力在下個回合消耗增加 (5)
+  AT_086: { abilities: play({ e: 'heroPowerTax', amount: 5 }) },
+  // 莫古的勇士：有 50% 機率攻擊錯誤的敵人
+  AT_088: { flags: ['misdirect'] },
+  // 雜耍吞法者：戰吼：複製對手的英雄能力
+  AT_098: { abilities: play(fn('copyHeroPower')) },
+  // 銀白巡邏兵：無法攻擊；激勵：本回合可以正常攻擊
+  AT_109: { keywords: ['CANT_ATTACK'], abilities: inspire(fn('allowAttack')) },
+  // 擊劍教練：戰吼：你下一次使用英雄能力消耗減少 (2)
+  AT_115: { abilities: play({ e: 'heroPowerDiscount', amount: 2 }) },
+  // 大會主持人：戰吼：若你有法術傷害的手下，獲得 +2/+2
+  AT_117: { abilities: playIf({ c: 'spellDamage' }, selfBuff(2, 2)) },
+  // 大明星：每當你打出有戰吼的牌，獲得 +1/+1
+  AT_121: { abilities: [{ on: { k: 'cardPlayed', side: 'friendly' }, cond: { c: 'itHasBattlecry' }, effects: [selfBuff(1, 1)] }] },
+  // 『穿刺者』戈莫克：戰吼：若你控制至少 4 個其他手下，造成 4 點傷害
+  AT_122: {
+    target: optional({ type: 'character', side: 'any' }, { c: 'control', min: 4 }),
+    abilities: playIf({ c: 'control', min: 4 }, hit(4, false)),
+  },
+  // 波爾夫‧拉姆榭：你的英雄受到的傷害改由此手下承受
+  AT_124: { flags: ['bodyguard'] },
+  // 菲歐拉‧光寂：每當你以法術指定此手下為目標，獲得聖盾
+  AT_129: { abilities: [{ on: { k: 'spellTarget' }, effects: [selfBuff(0, 0, ['DIVINE_SHIELD'])] }] },
+  // 海劫者：當你抽到這張牌時，對你的手下造成 1 點傷害
+  //（官方資料標記為「抽中時施放」，但它抽到後會留在手牌）
+  AT_130: { castsWhenDrawn: false, abilities: [{ on: { k: 'drawn' }, effects: [{ e: 'damage', target: allFriendly, amount: 1 }] }] },
+  // 艾狄絲‧暗寂：每當你以法術指定此手下為目標，對一個隨機敵人造成 3 點傷害
+  AT_131: {
+    abilities: [{ on: { k: 'spellTarget' }, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 3 }] }],
+  },
+  // 審判者瑪瑞爾：戰吼：把你的基本英雄能力換成更強的版本
+  AT_132: { abilities: play(fn('upgradeHeroPower')) },
+
+  // ==========================================================================
+  // 卡拉贊之夜
+  // ==========================================================================
+  // 豹子戲法：秘密：在對手施放法術後，召喚一隻 4/2 潛行的豹
+  KAR_004: { ...secretOn('afterEnemySpell', { e: 'summon', card: 'KAR_004a', count: 1, who: 'self' }), tokens: ['KAR_004a'] },
+  // 披風女獵手：你的奧秘消耗為 (0)
+  KAR_006: { costAuras: [{ side: 'friendly', secret: true, set: 0 }] },
+  // 卡啦卡啦贊！：召喚 1/1 蠟燭、2/2 掃帚與 3/3 茶壺
+  KAR_025: {
+    abilities: play(
+      { e: 'summon', card: 'KAR_025a', count: 1, who: 'self' },
+      { e: 'summon', card: 'KAR_025b', count: 1, who: 'self' },
+      { e: 'summon', card: 'KAR_025c', count: 1, who: 'self' },
+    ),
+    tokens: ['KAR_025a', 'KAR_025b', 'KAR_025c'],
+  },
+  // 蠢人災厄：每回合可以攻擊任意次數；無法攻擊英雄
+  KAR_028: { keywords: ['CANT_ATTACK_HEROES'], flags: ['unlimitedAttacks'] },
+  // 餐廳蜘蛛：戰吼：召喚一隻 1/3 蜘蛛
+  KAR_030a: { abilities: play({ e: 'summon', card: 'KAR_030', count: 1, who: 'self' }), tokens: ['KAR_030'] },
+  // 護城河潛伏者：戰吼：消滅一個手下；亡語：讓它回來
+  KAR_041: { target: optional({ type: 'minion', side: 'any', excludeSelf: true }), abilities: [...play(fn('devour')), ...dr(fn('regurgitate'))] },
+  // 象牙騎士：戰吼：發現一張法術，為你的英雄恢復等同其消耗的生命值
+  KAR_057: { abilities: play({ e: 'discover', pool: { type: 'SPELL' }, then: [fn('healByItCost')] }) },
+  // 館長：嘲諷；戰吼：抽一張野獸、一張龍與一張魚人
+  KAR_061: {
+    keywords: ['TAUNT'],
+    abilities: play(
+      { e: 'draw', count: 1, who: 'self', pool: { race: 'BEAST' } },
+      { e: 'draw', count: 1, who: 'self', pool: { race: 'DRAGON' } },
+      { e: 'draw', count: 1, who: 'self', pool: { race: 'MURLOC' } },
+    ),
+  },
+  // 幽魂之爪：在你有法術傷害時 +2 攻擊力
+  KAR_063: { atkIf: { cond: { c: 'spellDamage' }, atk: 2 } },
+  // 唬爛海賊：戰吼：隨機把一張其他職業的卡加入你的手牌
+  KAR_069: { abilities: play({ e: 'addRandom', pool: { otherClass: true }, count: 1, who: 'self' }) },
+  // 以太道具商：戰吼：你手牌中其他職業的卡消耗減少 (2)
+  KAR_070: { abilities: play(fn('discountOtherClass', { amount: 2 })) },
+  // 莫克札的小鬼：每當你棄掉一張牌，抽一張牌
+  KAR_089: { abilities: [{ on: { k: 'discard', side: 'friendly' }, effects: [{ e: 'draw', count: 1, who: 'self' }] }] },
+  // 致命的叉子：亡語：把一把 3/2 的武器加入你的手牌
+  KAR_094: { abilities: dr({ e: 'addCard', card: 'KAR_094a', count: 1, who: 'self' }), tokens: ['KAR_094a'] },
+  // 動物管理機械人：戰吼：隨機賦予一個友方野獸、龍與魚人各 +1/+1
+  KAR_095: {
+    abilities: play(
+      { e: 'buff', target: randomFriendly('BEAST'), atk: 1, hp: 1 },
+      { e: 'buff', target: randomFriendly('DRAGON'), atk: 1, hp: 1 },
+      { e: 'buff', target: randomFriendly('MURLOC'), atk: 1, hp: 1 },
+    ),
+  },
+  // 莫克札王子：開局：把 5 張額外的傳說手下加入你的牌堆
+  KAR_096: { startOfGame: 'malchezaar' },
+  // 『守護者』麥迪文：戰吼：裝備阿泰絲（在你施放法術後，召喚一個消耗相同的隨機手下）
+  KAR_097: { abilities: play({ e: 'equip', card: 'KAR_097t' }), tokens: ['KAR_097t'] },
+  KAR_097t: { abilities: [{ on: { k: 'spellCast', side: 'friendly' }, effects: [fn('atiesh')] }] },
+  // 巴奈斯：戰吼：召喚你牌堆中一個隨機手下的 1/1 複製
+  KAR_114: { abilities: play(fn('barnes')) },
+  // 瑪瑙主教：戰吼：召喚本場對戰中死亡的隨機友方手下
+  KAR_204: { abilities: play(fn('resurrectRandom', { count: 1 })) },
+  // 銀器魔像：若你棄掉這個手下，召喚它
+  KAR_205: { abilities: [{ on: { k: 'discarded' }, effects: [{ e: 'summon', card: 'KAR_205', count: 1, who: 'self' }] }] },
+  // 展覽廳魔術師：戰吼：隨機賦予一個友方野獸、龍與魚人各 +2/+2
+  KAR_702: {
+    abilities: play(
+      { e: 'buff', target: randomFriendly('BEAST'), atk: 2, hp: 2 },
+      { e: 'buff', target: randomFriendly('DRAGON'), atk: 2, hp: 2 },
+      { e: 'buff', target: randomFriendly('MURLOC'), atk: 2, hp: 2 },
+    ),
+  },
+  // 秘法工匠：戰吼：召喚一個 0/5 嘲諷手下
+  KAR_710: { abilities: play({ e: 'summon', card: 'KAR_710m', count: 1, who: 'self' }), tokens: ['KAR_710m'] },
+  // 紫羅蘭幻術師：在你的回合，你的英雄免疫
+  KAR_712: { flags: ['heroImmuneOnTurn'] },
+
+  // ==========================================================================
+  // 龍蛇混雜的加基森
+  // ==========================================================================
+  // 綑縛者拉札：戰吼：若你的牌堆沒有重複的卡，本場對戰中你的英雄能力消耗為 (0)
+  CFM_020: { abilities: playIf({ c: 'noDuplicates' }, fn('powerCostZero')) },
+  // 發條強盜機械人：每當此手下攻擊手下並存活，抽一張牌
+  CFM_025: { abilities: afterAttack({ minion: true, survive: true }, { e: 'draw', count: 1, who: 'self' }) },
+  // 肥油大亨：在你的手牌中時，每當你召喚有戰吼的手下，獲得 +1/+1
+  CFM_064: { handAbilities: [{ on: { k: 'summon', side: 'friendly' }, cond: { c: 'itHasBattlecry' }, effects: [fn('growInHand', { atk: 1, hp: 1 })] }] },
+  // 黑謀會小弟：戰吼：你本回合打出的下一個奧秘消耗為 (1)
+  CFM_066: { abilities: play({ e: 'pendingDiscount', d: { secret: true, set: 1, thisTurn: true } }) },
+  // 黃鼠狼隧道工：亡語：把此手下洗入對手的牌堆
+  CFM_095: { abilities: dr({ e: 'shuffle', card: 'CFM_095', count: 1, who: 'opponent' }) },
+  // 先搶先贏：發現一張有超載的卡；超載：(1)
+  CFM_313: { overload: 1, abilities: play({ e: 'discover', pool: { overload: true } }) },
+  // 巷弄小貓：戰吼：召喚一隻 1/1 的貓
+  CFM_315: { abilities: play({ e: 'summon', card: 'CFM_315t', count: 1, who: 'self' }), tokens: ['CFM_315t'] },
+  // 鼠黨老大：亡語：召喚等同此手下攻擊力數量的 1/1 老鼠
+  CFM_316: { abilities: dr({ e: 'repeat', times: { dyn: 'selfAttack' }, effects: [{ e: 'summon', card: 'CFM_316t', count: 1, who: 'self' }] }), tokens: ['CFM_316t'] },
+  // 汙街線民：戰吼：發現一張獵人、聖騎士或戰士卡
+  CFM_321: { abilities: play({ e: 'discover', pool: { classes: ['HUNTER', 'PALADIN', 'WARRIOR'] } }) },
+  // 業餘海賊：在你裝備武器時 +2 攻擊力
+  CFM_325: { atkIf: { cond: { c: 'weapon' }, atk: 2 } },
+  // 對戰發起人：戰吼：若你控制生命值 6 以上的手下，抽兩張牌
+  CFM_328: { abilities: playIf({ c: 'control', minHp: 6 }, { e: 'draw', count: 2, who: 'self' }) },
+  // 『指虎』那寇斯：在此手下攻擊手下後，也會攻擊敵方英雄
+  CFM_333: { abilities: afterAttack({ minion: true, survive: true }, { e: 'damage', target: { t: 'hero', side: 'enemy' }, amount: { dyn: 'selfAttack' } }) },
+  // 巡邏科多獸：戰吼：造成等同此手下攻擊力的傷害
+  CFM_335: { target: optional({ type: 'character', side: 'any' }), abilities: play({ e: 'damage', target: { t: 'chosen' }, amount: { dyn: 'selfAttack' } }) },
+  // 走運海賊：戰吼：若你的武器至少有 3 點攻擊力，獲得 +4/+4
+  CFM_342: { abilities: playIf({ c: 'weaponAttack', n: 3 }, selfBuff(4, 4)) },
+  // 『流星魚忍』芬傑：潛行；每當此手下攻擊並消滅手下，從你的牌堆召喚 2 個魚人
+  CFM_344: { keywords: ['STEALTH'], abilities: afterAttack({ killed: true }, { e: 'recruit', count: 2, race: 'MURLOC' }) },
+  // 瘋狂藥水：控制一個攻擊力 2 以下的敵方手下直到回合結束
+  CFM_603: { target: { filter: { type: 'minion', side: 'enemy', maxAttack: 2 } }, abilities: play(fn('stealTemp')) },
+  // 龍獸探員：戰吼：若你手中有龍，發現對手牌堆中一張卡的複製
+  CFM_605: { abilities: playIf({ c: 'holding', race: 'DRAGON' }, fn('discoverFromOppDeck')) },
+  // 法力晶簇：溢療：召喚一個 2/2 水晶
+  CFM_606: { abilities: [{ on: { k: 'overheal' }, effects: [{ e: 'summon', card: 'CFM_606t', count: 1, who: 'self' }] }], tokens: ['CFM_606t'] },
+  // 晶爆藥水：消滅一個手下與你的一個法力水晶
+  CFM_608: { target: chosenMinion, abilities: play({ e: 'destroy', target: { t: 'chosen' } }, { e: 'mana', kind: 'destroy', amount: 1 }) },
+  // 血怒藥水：賦予一個手下 +3 攻擊力；若是惡魔，再 +3 生命值
+  CFM_611: {
+    target: chosenMinion,
+    abilities: play(
+      { e: 'buff', target: { t: 'chosen' }, atk: 3 },
+      { e: 'cond', cond: { c: 'chosenRace', race: 'DEMON' }, then: [{ e: 'buff', target: { t: 'chosen' }, hp: 3 }] },
+    ),
+  },
+  // 偷取力量：每有一個友方手下，獲得一個空的法力水晶
+  CFM_616: { abilities: play({ e: 'repeat', times: { dyn: 'friendlyMinions' }, effects: [{ e: 'mana', kind: 'empty', amount: 1 }] }) },
+  // 天尊睡夢者：戰吼：若你控制攻擊力 5 以上的手下，獲得 +2/+2
+  CFM_617: { abilities: playIf({ c: 'control', minAtk: 5 }, selfBuff(2, 2)) },
+  // 黑謀會藥劑師：戰吼：隨機把一張藥水加入你的手牌
+  CFM_619: { abilities: play({ e: 'addRandom', pool: { type: 'SPELL', nameEn: 'Potion', set: 25, anyClass: true }, count: 1, who: 'self' }) },
+  // 卡札克斯：戰吼：若你的牌堆沒有重複的卡，製造一個自訂法術
+  CFM_621: { abilities: playIf({ c: 'noDuplicates' }, fn('kazakus')), tokens: KAZAKUS_TOKENS },
+  // 卡札克斯藥水的材料（解析器看不懂的）
+  CFM_621t10: { abilities: play({ e: 'summon', card: 'CFM_621_m4', count: 1, who: 'self' }), tokens: ['CFM_621_m4'] },
+  CFM_621t20: { abilities: play({ e: 'summon', card: 'CFM_621_m2', count: 1, who: 'self' }), tokens: ['CFM_621_m2'] },
+  CFM_621t28: { abilities: play({ e: 'summon', card: 'CFM_621_m3', count: 1, who: 'self' }), tokens: ['CFM_621_m3'] },
+  CFM_621t21: { abilities: play({ e: 'transform', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 }, card: 'CFM_621_m5' }), tokens: ['CFM_621_m5'] },
+  CFM_621t29: { abilities: play({ e: 'transform', target: { t: 'all', filter: { type: 'minion' } }, card: 'CFM_621_m5' }), tokens: ['CFM_621_m5'] },
+  CFM_621t37: { abilities: play(fn('resurrectRandom', { count: 1 })) },
+  CFM_621t38: { abilities: play(fn('resurrectRandom', { count: 2 })) },
+  CFM_621t39: { abilities: play(fn('resurrectRandom', { count: 3 })) },
+  CFM_621t9: { abilities: play({ e: 'addRandom', pool: { type: 'MINION', race: 'DEMON' }, count: 1, who: 'self' }) },
+  CFM_621t23: { abilities: play({ e: 'addRandom', pool: { type: 'MINION', race: 'DEMON' }, count: 2, who: 'self' }) },
+  CFM_621t31: { abilities: play({ e: 'addRandom', pool: { type: 'MINION', race: 'DEMON' }, count: 3, who: 'self' }) },
+  CFM_621t: {},
+  CFM_621t14: {},
+  CFM_621t15: {},
+  CFM_621t11: {},
+  CFM_621t12: {},
+  CFM_621t13: {},
+  // 強效秘法飛彈：向隨機敵人發射三枚飛彈，每枚造成 3 點傷害
+  CFM_623: {
+    abilities: play({ e: 'repeat', times: 3, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 3, spell: true }] }),
+  },
+  // 玉蓮刺客：潛行；每當此手下攻擊並消滅手下，獲得潛行
+  CFM_634: { keywords: ['STEALTH'], abilities: afterAttack({ killed: true }, selfBuff(0, 0, ['STEALTH'])) },
+  // 海盜派奇：在你打出海盜後，從你的牌堆召喚此手下
+  CFM_637: { summonFromDeckAfter: 'PIRATE' },
+  // 荷巴爾特‧繫錘：戰吼：若你裝備了武器，賦予你手牌與牌堆中的所有手下 +2/+2
+  CFM_643: { abilities: playIf({ c: 'weapon' }, fn('buffHandAndDeck', { atk: 2, hp: 2 })) },
+  // 勒索慣犯：戰吼：召喚一個 6/6 的食人魔
+  CFM_648: { abilities: play({ e: 'summon', card: 'CFM_648t', count: 1, who: 'self' }), tokens: ['CFM_648t'] },
+  // 黑謀會信差：戰吼：發現一張法師、牧師或術士卡
+  CFM_649: { abilities: play({ e: 'discover', pool: { classes: ['MAGE', 'PRIEST', 'WARLOCK'] } }) },
+  // 二流打手：嘲諷；若對手有至少三個手下，消耗減少 (2)
+  CFM_652: { keywords: ['TAUNT'], costIf: { cond: { c: 'control', side: 'enemy', min: 3 }, cost: 3 } },
+  // 劇毒下水道軟泥怪：戰吼：對手的武器失去 1 點耐久度
+  CFM_655: { abilities: play(fn('weaponDurability', { who: 'opponent', amount: -1 })) },
+  // 街頭調查員：戰吼：敵方手下失去潛行
+  CFM_656: { abilities: play(fn('removeEnemyStealth')) },
+  // 狂躁魂術師：戰吼：選擇一個友方手下，把它的複製洗入你的牌堆
+  CFM_660: { target: optional({ type: 'minion', side: 'friendly', excludeSelf: true }), abilities: play({ e: 'shuffleCopy', target: { t: 'chosen' }, count: 1 }) },
+  // 縮小藥水：本回合敵方手下 -3 攻擊力
+  CFM_661: { abilities: play({ e: 'buff', target: allEnemy, atk: -3, temp: true }) },
+  // 龍火藥水：對龍以外的所有手下造成 5 點傷害
+  CFM_662: { abilities: play({ e: 'damage', target: { t: 'all', filter: { type: 'minion', notRace: 'DRAGON' } }, amount: 5, spell: true }) },
+  // 諾格弗格市長：所有目標都隨機選擇
+  CFM_670: { flags: ['randomTargets'] },
+  // 冰寒術師：戰吼：若有敵人被凍結，獲得 +2/+2
+  CFM_671: { abilities: playIf({ c: 'enemyFrozen' }, selfBuff(2, 2)) },
+  // 苟雅女士：戰吼：選擇一個友方手下，從你的牌堆召喚它的所有複製
+  CFM_672: { target: optional({ type: 'minion', side: 'friendly', excludeSelf: true }), abilities: play(fn('summonDeckCopies')) },
+  // 紋身大師索莉雅：戰吼：若你的牌堆沒有重複的卡，你本回合施放的下一張法術消耗為 (0)
+  CFM_687: { abilities: playIf({ c: 'noDuplicates' }, { e: 'pendingDiscount', d: { type: 'SPELL', set: 0, thisTurn: true } }) },
+  // 飆豬騎士：戰吼：若有敵方手下具有嘲諷，獲得衝鋒
+  CFM_688: { abilities: playIf({ c: 'control', side: 'enemy', keyword: 'TAUNT' }, selfBuff(0, 0, ['CHARGE'])) },
+  // 暗影師尊：戰吼：賦予一個潛行的手下 +2/+2
+  CFM_694: { target: optional({ type: 'minion', side: 'any', keyword: 'STEALTH' }), abilities: play({ e: 'buff', target: { t: 'chosen' }, atk: 2, hp: 2 }) },
+  // 退化：把所有敵方手下變成消耗少 (1) 的隨機手下
+  CFM_696: { abilities: play({ e: 'evolve', target: allEnemy, amount: -1 }) },
+  // 玉蓮幻術師：在此手下攻擊英雄後，把它變成隨機一個 6 費手下
+  CFM_697: { abilities: afterAttack({ hero: true }, { e: 'transformRandom', target: { t: 'self' }, pool: { type: 'MINION', cost: 6 } }) },
+  // 海魔釘刺者：戰吼：你本回合打出的下一個魚人改為消耗生命值
+  CFM_699: { abilities: play({ e: 'pendingDiscount', d: { race: 'MURLOC', health: true, thisTurn: true } }) },
+  // 『無縛者』庫魯爾：戰吼：若你的牌堆沒有重複的卡，從你的手牌召喚所有惡魔
+  CFM_750: { abilities: playIf({ c: 'noDuplicates' }, fn('summonFromHand', { race: 'DEMON', all: true })) },
+  // 汙街典當商：戰吼：賦予你手牌中一張隨機武器 +1/+1
+  CFM_755: { abilities: play(fn('buffHandWeapon', { atk: 1, dur: 1 })) },
+  // 暗巷護甲鍛造師：嘲諷；每當此手下造成傷害，獲得等量的護甲值
+  CFM_756: { keywords: ['TAUNT'], abilities: [{ on: { k: 'dealtDamage' }, effects: [{ e: 'armor', amount: { dyn: 'eventAmount' } }] }] },
+  // 黑街探長：亡語：若此手下至少有 2 點攻擊力，抽一張牌
+  CFM_759: { abilities: dr({ e: 'cond', cond: { c: 'selfAttack', n: 2 }, then: [{ e: 'draw', count: 1, who: 'self' }] }) },
+  // 黑謀會送晶員：本場對戰中你每打出一個奧秘，消耗減少 (2)
+  CFM_760: { costRule: { per: 'secretsPlayed', amount: 2 } },
+  // 『收藏者』夏庫：潛行；每當此手下攻擊時，隨機把一張其他職業的卡加入你的手牌
+  CFM_781: { keywords: ['STEALTH'], abilities: [{ on: { k: 'attack', subject: 'self' }, effects: [{ e: 'addRandom', pool: { otherClass: true }, count: 1, who: 'self' }] }] },
+  // 骯髒的老鼠：嘲諷；戰吼：對手從他的手牌召喚一個隨機手下
+  CFM_790: { keywords: ['TAUNT'], abilities: play(fn('summonFromHand', { who: 'opponent' })) },
+  // 怒西昂：嘲諷；戰吼：持續抽牌，直到抽到不是龍的牌
+  CFM_806: { keywords: ['TAUNT'], abilities: play(fn('wrathion')) },
+  // 拍賣大師比爾杜：在你施放法術後，英雄能力可以再使用
+  CFM_807: { abilities: [{ on: { k: 'spellCast', side: 'friendly' }, effects: [{ e: 'refreshHeroPower' }] }] },
+  // 『大白鯊』甘佐：每當此手下攻擊時，雙方抽牌直到有 3 張手牌
+  CFM_808: { abilities: [{ on: { k: 'attack', subject: 'self' }, effects: [fn('drawUntil', { n: 3 })] }] },
+  // 塔納利斯飆豬仔：戰吼：若對手沒有手牌，獲得衝鋒
+  CFM_809: { abilities: playIf({ c: 'handSize', op: '<=', n: 0, side: 'enemy' }, selfBuff(0, 0, ['CHARGE'])) },
+  // 飆豬幫首領：戰吼：若對手有 6 張以上的手牌，獲得衝鋒
+  CFM_810: { abilities: playIf({ c: 'handSize', op: '>=', n: 6, side: 'enemy' }, selfBuff(0, 0, ['CHARGE'])) },
+  // 月之洞察：抽 2 張牌，抽到的手下消耗減少 (2)
+  CFM_811: { abilities: play(fn('drawDiscount', { count: 2, type: 'MINION', amount: 2 })) },
+  // 有膽識的記者：每當對手抽一張牌，獲得 +1/+1
+  CFM_851: { abilities: [{ on: { k: 'draw', side: 'enemy' }, effects: [selfBuff(1, 1)] }] },
+  // 玉蓮密探：戰吼：發現一張德魯伊、盜賊或薩滿卡
+  CFM_852: { abilities: play({ e: 'discover', pool: { classes: ['DRUID', 'ROGUE', 'SHAMAN'] } }) },
+  // 迪菲亞清理者：戰吼：沉默一個有亡語的手下
+  CFM_855: { target: optional({ type: 'minion', side: 'any', hasDeathrattle: true }), abilities: play({ e: 'silence', target: { t: 'chosen' } }) },
 };

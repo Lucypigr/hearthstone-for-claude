@@ -308,7 +308,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     const hc = me.hand.find((h) => h.uid === handUid)!;
     const def = g.handDef(hc);
     if (!myTurn) {
-      setInspect({ cardId: hc.cardId, def: hc.parts ? def : undefined });
+      setInspect({ cardId: hc.cardId, def: hc.parts || hc.potion ? def : undefined });
       return;
     }
     if (mode.k === 'card' && mode.handUid === handUid && mode.stage === 'select') {
@@ -361,7 +361,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const onHeroPower = () => {
     if (!myTurn) return;
     if (!g.canHeroPower()) {
-      flash(me.heroPower.used ? '本回合已使用過英雄能力' : '無法使用英雄能力');
+      flash(me.heroPower.used && me.mana >= g.heroPowerCost(me) ? '本回合已使用過英雄能力' : '無法使用英雄能力');
       return;
     }
     if (mode.k === 'heroPower' || mode.k === 'powerChoose') {
@@ -489,7 +489,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </div>
         <div className="hero-row">
           <PlayerInfo p={foe} />
-          <WeaponView p={foe} />
+          <WeaponView p={foe} g={g} />
           <HeroView p={foe} g={g} className={charClasses(foe.hero)} onClick={() => onCharClick(foe.hero)}>
             {emotes
               .filter((x) => x.player === AI)
@@ -536,7 +536,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       <div className="side my-side">
         <div className="hero-row">
           <PlayerInfo p={me} />
-          <WeaponView p={me} />
+          <WeaponView p={me} g={g} />
           <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)}>
             {emotes
               .filter((x) => x.player === ME)
@@ -592,11 +592,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
               >
                 <CardView
                   cardId={h.cardId}
-                  def={h.parts ? def : undefined}
+                  def={h.parts || h.potion ? def : undefined}
                   width={cw}
                   cost={g.costOf(me, h)}
-                  attack={def.type === 'MINION' ? g.handStats(ME, h).atk : undefined}
-                  health={def.type === 'MINION' ? g.handStats(ME, h).hp : undefined}
+                  attack={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).atk : undefined}
+                  health={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).hp : undefined}
                   spellDamage={g.spellDamage(ME)}
                   playable={playable}
                   selected={selectedHand === h.uid}
@@ -619,7 +619,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="inspect" onClick={() => setInspect(null)}>
           <div className="power-card">
             <b>{g.powerInfo(s.players[inspect.power]).name}</b>
-            <span className="muted small">英雄能力・消耗 {s.players[inspect.power].heroPower.cost}</span>
+            <span className="muted small">英雄能力・消耗 {g.powerInfo(s.players[inspect.power]).cost}</span>
             <p dangerouslySetInnerHTML={{ __html: formatCardText(g.powerInfo(s.players[inspect.power]).text) }} />
           </div>
         </div>
@@ -678,7 +678,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 <div key={h.uid} className={`mulligan-card ${mulliganPick.has(h.uid) ? 'replace' : ''}`}>
                   <CardView
                     cardId={h.cardId}
-                    def={h.parts ? g.handDef(h) : undefined}
+                    def={h.parts || h.potion ? g.handDef(h) : undefined}
                     width={150}
                     onClick={() => {
                       const next = new Set(mulliganPick);
@@ -999,7 +999,7 @@ function HeroPowerView({
   return (
     <button
       data-power={p.id}
-      className={`hero-power ${p.heroPower.used ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}
+      className={`hero-power ${p.heroPower.used && !usable ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();
@@ -1008,7 +1008,7 @@ function HeroPowerView({
       onMouseLeave={() => onHover?.(false)}
     >
       <Art cardId={p.heroPower.id} className="hp-art" label={info.name.slice(0, 2)} color={CLASS_COLORS[p.heroClass]} />
-      <span className="hp-cost">{p.heroPower.cost}</span>
+      <span className="hp-cost">{info.cost}</span>
       <span className="hp-name">{info.name}</span>
     </button>
   );
@@ -1050,13 +1050,13 @@ function StarshipView({
   );
 }
 
-function WeaponView({ p }: { p: PlayerState }) {
+function WeaponView({ p, g }: { p: PlayerState; g: Game }) {
   const w = p.weapon;
   if (!w) return <div className="weapon empty" />;
   return (
     <div className="weapon" title={getCard(w.cardId).name}>
       <Art cardId={w.cardId} />
-      <span className="w-atk">{w.atk}</span>
+      <span className="w-atk">{g.weaponAtk(p)}</span>
       <span className="w-dur">{w.durability}</span>
     </div>
   );
