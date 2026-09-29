@@ -40,6 +40,8 @@ export interface HandCard {
   grant?: Ability[];
   /** 死亡魔影的暗影：抽到時召喚這個手下的複製 */
   shadowOf?: string;
+  /** 混亂凝視者的詛咒：這個回合結束時沒打出就會被摧毀 */
+  doomTurn?: number;
 }
 
 export interface Minion {
@@ -92,6 +94,8 @@ export interface Minion {
   linked?: number;
   /** 記住的卡（過期品商人棄掉的卡） */
   stash?: string;
+  /** 你對此手下施放過的法術 */
+  spellsOn?: string[];
 }
 
 export interface Hero {
@@ -216,7 +220,43 @@ export interface PlayerState {
   /** 本場對戰中被摧毀的武器 */
   destroyedWeapons?: string[];
   /** 進行中的任務 */
-  quest?: { cardId: string; progress: number };
+  quest?: { cardId: string; progress: number; names?: Record<string, number> };
+  questPlayed?: boolean;
+  /** 你的英雄 / 對手的英雄本回合受到的傷害 */
+  heroDamageTaken?: { turn: number; amount: number };
+  /** 本回合對敵方英雄造成的傷害 */
+  enemyHeroDamage?: { turn: number; amount: number };
+  /** 在這個回合：治療改為造成傷害 / 法術具有生命竊取 / 下一張法術施放兩次 */
+  healDamageTurn?: number;
+  spellLifestealTurn?: number;
+  doubleSpellTurn?: number;
+  /** 本回合下一張法術的額外法術傷害 */
+  nextSpellPower?: { turn: number; amount: number };
+  /** 本回合下一次英雄能力：額外傷害 / 消耗為 (0) */
+  powerDamageBonus?: { turn: number; amount: number };
+  powerFreeTurn?: number;
+  /** 本場對戰中英雄能力造成的傷害 */
+  heroPowerDamage?: number;
+  /** 本回合 / 上回合施放的法術 */
+  turnSpells?: { turn: number; ids: string[] };
+  prevTurnSpells?: string[];
+  /** 本場對戰中棄掉的卡 */
+  discardedCards?: string[];
+  spellManaSpent?: number;
+  /** 你的英雄在這個回合結束前免疫（暫停！） */
+  heroImmuneUntil?: number;
+  /** 起手的手牌 */
+  openingHand?: string[];
+  /** 本場對戰中你恢復的生命值 */
+  healedTotal?: number;
+  /** 本回合 / 上回合打出的元素數 */
+  elementalsThisTurn?: number;
+  elementalsLastTurn?: number;
+  otherClassAdded?: number;
+  /** 你的手下是 5/5（水晶核心） */
+  minions55?: boolean;
+  /** 你的戰吼卡在這個回合消耗增加（對手的爆爆槍手） */
+  battlecryTax?: { amount: number; turn: number };
   /** 你的二選一卡牌同時具有兩種效果（奧希里安之淚） */
   chooseBoth?: boolean;
   /** 在這個回合，下一個戰吼觸發兩次（once）或所有戰吼觸發兩次（all） */

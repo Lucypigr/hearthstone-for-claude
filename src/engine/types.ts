@@ -161,7 +161,20 @@ export type DynAmount =
   /** 觸發事件的卡的消耗 */
   | 'itCost'
   /** 本場對戰中你施放的消耗 5 以上的法術數 */
-  | 'bigSpellsThisGame';
+  | 'bigSpellsThisGame'
+  /** 你的英雄 / 對手的英雄本回合受到的傷害 */
+  | 'heroDamageThisTurn'
+  | 'enemyHeroDamageThisTurn'
+  /** 本場對戰中你花在法術上的法力 */
+  | 'spellManaSpent'
+  /** 本場對戰中死亡的友方樹人數 */
+  | 'treantsDied'
+  /** 本場對戰中加入你手牌的其他職業卡數 */
+  | 'otherClassAdded'
+  /** 你上個回合打出的元素數 */
+  | 'elementalsLastTurn'
+  /** 觸發事件的卡的超載 */
+  | 'itOverload';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -201,12 +214,16 @@ export interface Pool {
   combo?: boolean;
   /** 有二選一的卡 */
   chooseOne?: boolean;
+  minCost?: number;
+  /** 攻擊力為 attack / 至少為 minAttack 的手下 */
+  attack?: number;
+  minAttack?: number;
 }
 
 export type Condition =
-  | { c: 'holding'; race?: Race; type?: CardType; minCost?: number }
+  | { c: 'holding'; race?: Race; type?: CardType; minCost?: number; minAtk?: number }
   /** 你（side = enemy 時為對手）控制符合條件的其他手下 */
-  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean }
+  | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean; hp?: number; frozen?: boolean }
   | { c: 'combo' }
   | { c: 'outcast' }
   | { c: 'heroAttacked' }
@@ -283,11 +300,25 @@ export type Condition =
   /** 你本回合施放過消耗 5 以上的法術 */
   | { c: 'bigSpellThisTurn' }
   /** 你本回合剛好施放了 n 張法術 */
-  | { c: 'spellsThisTurn'; n: number }
+  | { c: 'spellsThisTurn'; n: number; atLeast?: boolean }
   /** 你被超載了 */
   | { c: 'overloaded' }
   /** 你有進行中的任務 */
   | { c: 'questActive' }
+  /** 本場對戰中你打出過任務 */
+  | { c: 'questPlayed' }
+  /** 打出的卡是手牌最右邊的一張 */
+  | { c: 'rightmost' }
+  /** 事件的數值（例如治療量）至少為 n */
+  | { c: 'eventAmount'; n: number }
+  /** 本場對戰中你恢復了至少 n 點生命值 */
+  | { c: 'healedThisGame'; n: number }
+  /** 本場對戰中你的英雄能力造成了至少 n 點傷害 */
+  | { c: 'heroPowerDamage'; n: number }
+  /** 觸發事件的卡的英文名稱包含這段文字 */
+  | { c: 'itNameIncludes'; s: string }
+  /** 你的牌堆、手牌與戰場上都沒有卡（機神克蘇恩） */
+  | { c: 'emptyEverything' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -455,7 +486,9 @@ export type SecretEvent =
   /** 對手在一個回合中打出第三張牌之後 */
   | 'enemyThirdCard'
   /** 一個手下攻擊你的英雄之後 */
-  | 'afterMinionAttacksHero';
+  | 'afterMinionAttacksHero'
+  /** 對手使用英雄能力之後 */
+  | 'enemyHeroPower';
 
 export interface Ability {
   on: Trig;
@@ -494,6 +527,8 @@ export interface CostAura {
   race?: Race;
   /** 只影響每位玩家在自己回合打出的第一張牌 */
   firstCard?: boolean;
+  /** 減少後的消耗不低於這個值（例如「但不會低於 1」） */
+  floor?: number;
   /** 消耗設為固定值 */
   set?: number;
   /** 消耗增加（負數為減少） */
@@ -502,8 +537,27 @@ export interface CostAura {
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
 export interface QuestDef {
-  kind: 'unspentTurn' | 'draw' | 'summon' | 'battlecry' | 'otherClassCard' | 'reborn' | 'spell' | 'heroAttack' | 'heal';
+  kind:
+    | 'unspentTurn'
+    | 'draw'
+    | 'summon'
+    | 'battlecry'
+    | 'otherClassCard'
+    | 'reborn'
+    | 'spell'
+    | 'heroAttack'
+    | 'heal'
+    | 'spellNotStarting'
+    | 'sameName'
+    | 'bigMinionSummon'
+    | 'discard'
+    | 'oneCostMinion'
+    | 'tauntMinion'
+    | 'deathrattleSummon'
+    | 'murlocSummon'
+    | 'spellOnMinion';
   goal: number;
+  /** 英雄能力（src/engine/heroes.ts 的 EXTRA_POWERS）或加入手牌的卡 */
   reward: string;
 }
 
@@ -648,7 +702,9 @@ export interface CardDef {
   /** 只有條件成立時才能攻擊 */
   attackIf?: Condition;
   /** 在手牌中時，每個你的回合開始時變形：swap = 換成 into；opponentCard = 對手手牌中的一張；randomSpell = 隨機一張 cls 法術 */
-  handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell'; into?: string; cls?: CardClass };
+  handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
+  /** 磁力：打出在友方機械左邊時，吸附到那個機械上 */
+  magnetic?: boolean;
   /** 任務 */
   quest?: QuestDef;
 }
@@ -681,6 +737,19 @@ export interface CardDef {
  * heroElusive：你的英雄無法成為法術或英雄能力的目標
  * elusiveOnOppTurn：在對手的回合具有法術免疫
  * immuneAttacking（武器）：你的英雄在攻擊時免疫
+ * doubleBattlecries：你的戰吼觸發兩次
+ * doubleHealing：你的治療加倍
+ * spellDamage2Damaged：受傷時具有法術傷害 +2
+ * bothSpellDamage2：雙方都有法術傷害 +2
+ * heroPowerKillDraw：你的英雄能力消滅手下時抽一張牌
+ * heroPowerAdjacent：你的英雄能力也會指定相鄰手下
+ * heroPowerDamage2：你的英雄能力額外造成 2 點傷害
+ * rushImmune：你的突襲手下在被召喚的回合免疫
+ * adjacentBodyguard：相鄰手下受到的傷害改由此手下承受
+ * doubleHeroDamage（武器）：你的英雄受到的傷害加倍
+ * heroDamageCap1：你的英雄每次最多受到 1 點傷害
+ * redirectAttackers：攻擊此手下的敵人有 50% 機率攻擊其他目標
+ * shuffleExtra：每當你把卡洗入牌堆，多洗一張複製
  */
 export type MinionFlag =
   | 'noTurnDraw'
@@ -710,4 +779,17 @@ export type MinionFlag =
   | 'doubleEndTurn'
   | 'heroElusive'
   | 'elusiveOnOppTurn'
-  | 'immuneAttacking';
+  | 'immuneAttacking'
+  | 'doubleBattlecries'
+  | 'doubleHealing'
+  | 'spellDamage2Damaged'
+  | 'bothSpellDamage2'
+  | 'heroPowerKillDraw'
+  | 'heroPowerAdjacent'
+  | 'heroPowerDamage2'
+  | 'rushImmune'
+  | 'adjacentBodyguard'
+  | 'doubleHeroDamage'
+  | 'heroDamageCap1'
+  | 'redirectAttackers'
+  | 'shuffleExtra';

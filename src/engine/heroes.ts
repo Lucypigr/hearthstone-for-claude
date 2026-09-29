@@ -78,6 +78,9 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   ULD_433p: { effects: [{ e: 'addRandom', pool: { type: 'SPELL', cls: 'MAGE' }, count: 1, who: 'self' }, { e: 'costMod', amount: -2, scope: 'it' }] },
   ULD_711p3: { effects: [{ e: 'summon', card: 'ULD_711t', count: 1, who: 'self' }], needsBoardSpace: true },
   ULD_724p: { effects: [{ e: 'custom', fn: 'obeliskEye' }], target: { filter: { type: 'character', side: 'any' } } },
+  // 恐龍學：賦予一個野獸 +3/+3；薩弗拉斯：對一個隨機敵人造成 8 點傷害
+  UNG_917t1: { effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 3, hp: 3 }], target: { filter: { type: 'minion', side: 'any', race: 'BEAST' } } },
+  UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
 };
 
 /** 管理者埃克索圖斯：換成『炎魔』拉格納羅斯 */

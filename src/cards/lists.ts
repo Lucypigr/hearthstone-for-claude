@@ -14,3 +14,9 @@ export const ANIMAL_COMPANIONS = ['NEW1_032', 'NEW1_033', 'NEW1_034'];
 export const SIAMAT_OPTIONS = ['ULD_178a', 'ULD_178a2', 'ULD_178a3', 'ULD_178a4'];
 /** 尋找出路的三個選項 */
 export const BRANCHING_PATHS = ['LOOT_054b', 'LOOT_054c', 'LOOT_054d'];
+/** 演化的十種選項（UNG_999t2 ~ t14） */
+export const ADAPTATIONS = ['UNG_999t2', 'UNG_999t3', 'UNG_999t4', 'UNG_999t5', 'UNG_999t6', 'UNG_999t7', 'UNG_999t8', 'UNG_999t10', 'UNG_999t13', 'UNG_999t14'];
+/** 神鬼大盜拉法姆的神器 */
+export const ARTIFACTS = ['LOEA16_3', 'LOEA16_4', 'LOEA16_5'];
+/** 卡力摩斯的元素祈願 */
+export const INVOCATIONS = ['UNG_211a', 'UNG_211b', 'UNG_211c', 'UNG_211d'];

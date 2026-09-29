@@ -442,7 +442,8 @@ async function main() {
     powers[id] = { id, name: clean(bp.strs.CARDNAME.zhTW), text: clean(bp.strs.CARDTEXT?.zhTW), cost: bp.tags.COST ?? 0 };
   }
   // 英雄能力也收錄成（不可收藏的）卡，讓「發現一個英雄能力」可以顯示
-  const powerCards: CardDef[] = Object.values(powers).map((pw) => {
+  const basicPowers = Object.values(heroes).map((h) => h.power);
+  const powerCards: CardDef[] = [...Object.values(powers), ...basicPowers].map((pw) => {
     const bp = byId.get(pw.id)!;
     return { id: pw.id, dbfId: bp.dbf, name: pw.name, nameEn: clean(bp.strs.CARDNAME.enUS), text: pw.text, type: 'SPELL', cardClass: CLASS_MAP[bp.tags.CLASS ?? 12] ?? 'NEUTRAL', rarity: 'FREE', set: bp.tags.CARD_SET ?? 0, cost: pw.cost, collectible: false };
   });
