@@ -23,30 +23,4 @@
 // ============================================================================
 import type { CardDef } from '../engine/types';
 
-export const CUSTOM_CARDS: CardDef[] = [
-  // 血腥醫生薩蕾娜的第二個英雄能力「吸血鬼之吻」：以每回合回到手牌的法術來表現（消耗屍體）
-  {
-    id: 'JAIL_446hp',
-    dbfId: 9000446,
-    name: '吸血鬼之吻',
-    nameEn: "Vampyr's Kiss",
-    text: '賦予一個手下+3攻擊力。此牌消耗<b>屍體</b>而不是法力。（回合結束時回到你的手牌）',
-    type: 'SPELL',
-    cardClass: 'DEATHKNIGHT',
-    rarity: 'FREE',
-    set: 1988,
-    cost: 3,
-    collectible: false,
-    costsCorpses: true,
-    target: { filter: { type: 'minion', side: 'any' } },
-    abilities: [
-      {
-        on: { k: 'play' },
-        effects: [
-          { e: 'buff', target: { t: 'chosen' }, atk: 3 },
-          { e: 'custom', fn: 'vampyrKiss' },
-        ],
-      },
-    ],
-  },
-];
+export const CUSTOM_CARDS: CardDef[] = [];

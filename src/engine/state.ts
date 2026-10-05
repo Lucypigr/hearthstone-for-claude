@@ -151,6 +151,8 @@ export interface Weapon {
   killed?: string[];
   /** 在這個回合具有生命竊取（吸血毒藥） */
   lifestealTurn?: number;
+  /** 小夥伴選擇的元素彈藥（0 ~ 3） */
+  ammo?: number;
 }
 
 export interface SecretInst {
@@ -166,6 +168,8 @@ export interface PlayerState {
   weapon: Weapon | null;
   /** heroCard：打出英雄卡後，英雄能力改用該卡附帶的能力 */
   heroPower: { id: string; used: boolean; cost: number; heroCard?: string; uses?: number };
+  /** 第二個英雄能力（血腥醫生薩蕾娜：消耗屍體） */
+  heroPower2?: { id: string; used: boolean; cost: number };
   /** 本場對戰中賦予手下的關鍵字（例如「你的元素具有生命竊取」） */
   grants: { keyword: Keyword; race?: Race }[];
   /** 本回合下一張牌的折扣 */
@@ -405,6 +409,8 @@ export type Action =
   | { type: 'prepare'; handUid: number }
   | { type: 'attack'; attacker: number; target: number }
   | { type: 'heroPower'; target?: number; option?: number }
+  /** 使用第二個英雄能力（消耗屍體） */
+  | { type: 'heroPower2'; target?: number }
   | { type: 'trade'; handUid: number }
   /** 發射星艦 */
   | { type: 'launch' }

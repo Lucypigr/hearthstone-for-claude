@@ -344,6 +344,9 @@ export class Game {
         this.drive(this.wrap(this.useHeroPower(target, action.option)));
         return true;
       }
+      case 'heroPower2':
+        this.drive(this.wrap(this.useSecondPower(action.target)));
+        return true;
       case 'trade':
         this.drive(this.wrap(this.trade(action.handUid)));
         return true;
@@ -397,6 +400,16 @@ export class Game {
         const req = this.powerTarget(p, action.option);
         if (req) {
           const valid = this.validTargets(req, s.current, true);
+          if (action.target === undefined || !valid.includes(action.target)) return { ok: false, reason: '請選擇目標' };
+        }
+        return { ok: true };
+      }
+      case 'heroPower2': {
+        const r = this.canSecondPower();
+        if (!r.ok) return r;
+        const spec = this.secondPowerSpec(p)!;
+        if (spec.target) {
+          const valid = this.validTargets(spec.target, s.current, true);
           if (action.target === undefined || !valid.includes(action.target)) return { ok: false, reason: '請選擇目標' };
         }
         return { ok: true };
@@ -878,6 +891,51 @@ export class Game {
     return true;
   }
 
+  /** 第二個英雄能力（血腥醫生薩蕾娜）的效果 */
+  secondPowerSpec(p: PlayerState): HeroPowerSpec | undefined {
+    return p.heroPower2 ? EXTRA_POWERS[p.heroPower2.id] : undefined;
+  }
+
+  secondPowerInfo(p: PlayerState): { name: string; text: string; cost: number } | null {
+    if (!p.heroPower2) return null;
+    const info = POWER_INFO[p.heroPower2.id];
+    return { name: info?.name ?? '英雄能力', text: info?.text ?? '', cost: p.heroPower2.cost };
+  }
+
+  canSecondPower(): { ok: boolean; reason?: string } {
+    const p = this.me;
+    const spec = this.secondPowerSpec(p);
+    if (!spec || !p.heroPower2) return { ok: false, reason: '沒有第二個英雄能力' };
+    if (this.flagOnBoard('noHeroPowers')) return { ok: false, reason: '無法使用英雄能力' };
+    if (p.heroPower2.used) return { ok: false, reason: '本回合已使用過' };
+    if ((p.corpses ?? 0) < p.heroPower2.cost) return { ok: false, reason: '屍體不足' };
+    if (spec.target && !this.validTargets(spec.target, this.s.current, true).length) return { ok: false, reason: '沒有可選擇的目標' };
+    return { ok: true };
+  }
+
+  secondPowerTargets(): number[] {
+    const spec = this.secondPowerSpec(this.me);
+    return spec?.target ? this.validTargets(spec.target, this.s.current, true) : [];
+  }
+
+  private *useSecondPower(target: number | undefined): Gen {
+    const p = this.me;
+    const spec = this.secondPowerSpec(p)!;
+    this.spendCorpses(p, p.heroPower2!.cost);
+    p.heroPower2!.used = true;
+    p.heroPowersUsed++;
+    this.log(p.id, `${p.name}使用了第二個英雄能力【${this.secondPowerInfo(p)!.name}】`);
+    this.fx({ kind: 'play', cardId: p.heroPower2!.id, player: p.id, target });
+    const ctx = this.baseCtx(p.id);
+    ctx.sourceUid = p.hero.uid;
+    ctx.sourceCardId = p.heroPower2!.id;
+    ctx.chosen = target ?? null;
+    ctx.isHeroPower = true;
+    yield* this.runEffects(spec.effects, ctx);
+    yield* this.emit({ k: 'heroPower', player: p.id });
+    yield* this.checkSecrets(opp(p.id), 'enemyHeroPower', {});
+  }
+
   maxAttacks(c: Char): number {
     if (isHero(c)) {
       const w = this.s.players[c.owner].weapon;
@@ -1138,6 +1196,7 @@ export class Game {
     if (p.manaBurn?.turn === s.turn) p.mana = Math.max(0, p.mana - p.manaBurn.amount);
     p.heroPower.used = false;
     p.heroPower.uses = 0;
+    if (p.heroPower2) p.heroPower2.used = false;
     p.cardsPlayedThisTurn = 0;
     p.spellsThisTurn = 0;
     p.drawnThisTurn = 0;
@@ -7515,26 +7574,32 @@ export class Game {
         break;
       }
       case 'tinyPalChoose': {
-        if (!self) break;
+        const w = me.weapon && me.weapon.uid === ctx.sourceUid ? me.weapon : null;
+        if (!w) break;
         const ids = ['JAIL_458t1', 'JAIL_458t2', 'JAIL_458t3', 'JAIL_458t4'];
         const id = yield* this.choose(ctx, ids, '選擇你的元素彈藥');
-        self.counter = ids.indexOf(id);
+        w.ammo = ids.indexOf(id);
         break;
       }
       case 'tinyPalFire': {
-        if (!self) break;
+        const w = me.weapon && me.weapon.uid === ctx.sourceUid ? me.weapon : null;
+        if (!w) break;
         const ids = ['JAIL_458t1', 'JAIL_458t2', 'JAIL_458t3', 'JAIL_458t4'];
-        switch (self.counter ?? 0) {
+        const ammo = w.ammo ?? 0;
+        switch (ammo) {
           case 0: {
             const last = this.lastAttack?.defender;
+            const hit: number[] = last !== undefined ? [last] : [];
             for (let i = 0; i < 2; i++) {
-              const t = this.randomEnemyChar(ctx, {}, last !== undefined ? [last] : []);
-              if (t) this.freeze(t);
+              const t = this.randomEnemyChar(ctx, {}, hit);
+              if (!t) break;
+              hit.push(t.uid);
+              this.freeze(t);
             }
             break;
           }
           case 1:
-            for (const c of this.chars().filter((x) => this.alive(x) && x.owner !== me.id)) yield* this.damage(this.dmgSource(ctx), c.uid, 1);
+            for (const c of this.chars().filter((x) => this.alive(x) && x.owner !== me.id)) yield* this.damage({ owner: me.id, uid: me.hero.uid }, c.uid, 1);
             break;
           case 2: {
             const c = pick(s, this.randomPool({ type: 'MINION', cost: 3 }, me.id, false));
@@ -7547,9 +7612,9 @@ export class Game {
           default:
             yield* this.customViolet('addRandomDiscount', { pool: { type: 'MINION', hasBattlecry: true }, count: 1, discount: 2 }, ctx);
         }
-        const others = ids.filter((_id, i) => i !== (self.counter ?? 0));
+        const others = ids.filter((_id, i) => i !== ammo);
         const id = yield* this.choose(ctx, others, '選擇另一種元素彈藥');
-        self.counter = ids.indexOf(id);
+        if (me.weapon === w) w.ammo = ids.indexOf(id);
         break;
       }
       case 'lotusTroublemaker': {
@@ -7818,13 +7883,10 @@ export class Game {
         if (hc) hc.trial = [first, second];
         break;
       }
-      case 'thalena': {
-        // 血腥醫生薩蕾娜：第二個英雄能力（消耗屍體）。這裡以每回合回到手牌的法術來表現
-        this.addToHand(me, 'JAIL_446hp');
-        break;
-      }
-      case 'vampyrKiss':
-        (me.endOfTurnCards ??= []).push('JAIL_446hp');
+      case 'thalena':
+        // 血腥醫生薩蕾娜：獲得第二個英雄能力（消耗 3 具屍體）
+        me.heroPower2 = { id: 'JAIL_446hp', used: false, cost: 3 };
+        this.log(me.id, `${me.name}獲得了第二個英雄能力`);
         break;
     }
   }
