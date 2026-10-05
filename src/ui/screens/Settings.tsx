@@ -1,11 +1,25 @@
 import { useState } from 'react';
 import { COLLECTIBLE, DATA_BUILD } from '../../cards/registry';
+import { redeemCode } from '../../game/profile';
 import { exportProfile, importProfile, resetProfile, setProfile, useProfile } from '../store';
 
 export function Settings() {
   const p = useProfile();
   const [text, setText] = useState('');
   const [msg, setMsg] = useState('');
+  const [code, setCode] = useState('');
+  const [codeMsg, setCodeMsg] = useState('');
+
+  const redeem = () => {
+    const r = redeemCode(p, code);
+    if (!r.ok) {
+      setCodeMsg('無效的獎勵碼');
+      return;
+    }
+    setProfile(r.profile);
+    setCodeMsg(`兌換成功！獲得 ${r.gold.toLocaleString()} 金幣`);
+    setCode('');
+  };
 
   const download = () => {
     const blob = new Blob([exportProfile()], { type: 'application/json' });
@@ -28,6 +42,16 @@ export function Settings() {
             </button>
           ))}
         </div>
+      </div>
+      <div className="panel">
+        <h3>🎁 獎勵碼</h3>
+        <div className="row">
+          <input placeholder="輸入獎勵碼" value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && redeem()} />
+          <button className="btn primary" onClick={redeem} disabled={!code.trim()}>
+            兌換
+          </button>
+        </div>
+        {codeMsg && <p className="message">{codeMsg}</p>}
       </div>
       <div className="panel">
         <h3>存檔</h3>

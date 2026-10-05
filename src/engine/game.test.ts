@@ -389,7 +389,11 @@ describe('英雄卡', () => {
     const def = g.handDef(zb);
     expect(def.attack).toBe((getCard(a).attack ?? 0) + (getCard(b).attack ?? 0));
     expect(g.costOf(me, zb)).toBe(Math.min(10, getCard(a).cost + getCard(b).cost));
-    expect(g.apply({ type: 'play', handUid: zb.uid })).toBe(true);
+    me.mana = 10;
+    // 隨機縫合出來的野獸可能有需要選擇目標的戰吼
+    const req = g.playTargetReq(zb.uid);
+    const target = req ? g.validTargets(req, 0, false)[0] : undefined;
+    expect(g.apply({ type: 'play', handUid: zb.uid, target })).toBe(true);
     const m = me.board[me.board.length - 1];
     expect(m.hp).toBe(def.health);
     for (const k of getCard(b).keywords ?? []) expect(g.hasKw(m, k)).toBe(true);

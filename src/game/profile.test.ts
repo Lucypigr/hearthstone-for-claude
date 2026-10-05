@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getCard } from '../cards/registry';
 import { validateDeck } from './decks';
 import { LEGENDARY_PITY, WIN_REWARD, DAILY_FIRST_WIN_BONUS } from './economy';
-import { buyPacks, craftCard, disenchantCard, disenchantExtras, newProfile, openPack, recordMatch, rollPack, sanitizeProfile } from './profile';
+import { buyPacks, craftCard, disenchantCard, disenchantExtras, newProfile, openPack, recordMatch, redeemCode, rollPack, sanitizeProfile } from './profile';
 import { PACKS, packById } from './sets';
 
 function seeded(seed: number) {
@@ -90,5 +90,18 @@ describe('對戰獎勵', () => {
     const r2 = recordMatch(r1.profile, 'win', 'normal', 'MAGE', 'WARRIOR', '2026-1-1');
     expect(r2.gold).toBe(WIN_REWARD.normal);
     expect(r2.profile.wins).toBe(2);
+  });
+});
+
+describe('獎勵碼', () => {
+  it('yiho 送 50000 金幣，可以重複使用；無效的碼不會改變存檔', () => {
+    const p = newProfile();
+    const a = redeemCode(p, ' YIHO ');
+    expect(a.ok).toBe(true);
+    expect(a.profile.gold).toBe(p.gold + 50000);
+    expect(redeemCode(a.profile, 'yiho').profile.gold).toBe(p.gold + 100000);
+    const bad = redeemCode(p, 'nope');
+    expect(bad.ok).toBe(false);
+    expect(bad.profile).toBe(p);
   });
 });

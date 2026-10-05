@@ -1045,6 +1045,9 @@ textarea {
   opacity: 0.55;
   filter: contrast(0.8) blur(0.5px);
 }
+.minion.dormant {
+  filter: grayscale(0.8) brightness(0.7);
+}
 
 .minion-atk,
 .minion-hp,
@@ -1311,6 +1314,10 @@ textarea {
   color: #3a2200;
   border: 1px solid #000;
   font-size: 0.8em;
+}
+.secret.quest {
+  background: radial-gradient(circle, #9ff0ff, #1a7fa8);
+  color: #002233;
 }
 
 .hero-power {
@@ -3097,4 +3104,40 @@ textarea {
 
 .cost-kind.corpses {
   background: radial-gradient(circle at 35% 30%, #d8ff9a, #4d8a1c 65%);
+}
+
+.prepared-badge {
+  background: #7a4fd0;
+}
+
+/* 拖曳出牌：卡牌變半透明，跟著滑鼠 / 手指 */
+.hand-slot {
+  touch-action: none;
+}
+
+.hand-slot.dragging {
+  opacity: 0.25;
+  transform: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  transform: translate(-50%, -60%);
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 200;
+  filter: drop-shadow(0 8px 14px #000a);
+}
+
+/* 手機長按不要跳出系統的圖片選單 */
+.battle,
+.battle img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.card img,
+.minion img {
+  pointer-events: none;
 }
