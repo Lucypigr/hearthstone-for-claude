@@ -474,12 +474,47 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     window.addEventListener('pointercancel', up);
   };
 
+  /** 已進入選目標狀態（點選手牌 / 戰吼 / 英雄能力 / 攻擊）時，按住拖動也能拉箭頭選目標 */
+  const onTargetDrag = (e: React.PointerEvent) => {
+    if (validTargets.size === 0) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('.hand-slot, button')) return;
+    const root = battleRef.current;
+    if (!root) return;
+    let originEl: Element | null = null;
+    if (mode.k === 'card') originEl = root.querySelector(`[data-hand-uid="${mode.handUid}"]`);
+    else if (mode.k === 'attack') originEl = root.querySelector(`[data-uid="${mode.attacker}"]`);
+    else originEl = root.querySelector(`[data-hero="${ME}"]`);
+    if (!originEl) return;
+    const r = originEl.getBoundingClientRect();
+    const from = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
+    const detach = () => {
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', detach);
+      window.removeEventListener('pointercancel', detach);
+    };
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 10) return;
+      detach();
+      beginAim(from, [...validTargets], onTarget);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', detach);
+    window.addEventListener('pointercancel', detach);
+  };
+
   /** 按住己方角色拖出箭頭攻擊；手機長按手下放大查看 */
   const charPress = (c: Minion | Hero) => (e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const el = e.currentTarget as HTMLElement;
     const sx = e.clientX;
     const sy = e.clientY;
+    if (validTargets.size > 0) return; // 選目標狀態交給 onTargetDrag
     const canAtk = myTurn && c.owner === ME && g.canAttack(c.uid);
     let timer = 0;
     if (!isHero(c) && e.pointerType !== 'mouse') {
@@ -652,6 +687,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       ref={battleRef}
       className={`battle ${myTurn ? 'my-turn' : ''}`}
       style={{ '--mw': `${mw}px`, '--hw': `${hw}px`, '--cw': `${cw}px` } as CSSProperties}
+      onPointerDown={onTargetDrag}
       onContextMenu={(e) => {
         e.preventDefault();
         setMode({ k: 'idle' });
