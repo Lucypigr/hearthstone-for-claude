@@ -3109,3 +3109,35 @@ textarea {
 .prepared-badge {
   background: #7a4fd0;
 }
+
+/* 拖曳出牌：卡牌變半透明，跟著滑鼠 / 手指 */
+.hand-slot {
+  touch-action: none;
+}
+
+.hand-slot.dragging {
+  opacity: 0.25;
+  transform: none;
+}
+
+.drag-ghost {
+  position: fixed;
+  transform: translate(-50%, -60%);
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 200;
+  filter: drop-shadow(0 8px 14px #000a);
+}
+
+/* 手機長按不要跳出系統的圖片選單 */
+.battle,
+.battle img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.card img,
+.minion img {
+  pointer-events: none;
+}
