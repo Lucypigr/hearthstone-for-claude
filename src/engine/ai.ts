@@ -26,6 +26,10 @@ export function legalActions(g: Game): Action[] {
         for (const t of targets) out.push({ type: 'play', handUid: hc.uid, target: t, option });
       } else if (!req || req.optional) out.push({ type: 'play', handUid: hc.uid, option });
     }
+    // 偽裝手下也可以打在對手的戰場上
+    if (def.disguised && g.canPlay(hc.uid, undefined, 'enemy').ok) out.push({ type: 'play', handUid: hc.uid, side: 'enemy' });
+    // 預備：把卡拖進牌堆，花光剩餘法力
+    if ((def.prepare || hc.canPrepare) && g.check({ type: 'prepare', handUid: hc.uid }).ok) out.push({ type: 'prepare', handUid: hc.uid });
   }
   if (g.canHeroPower()) {
     const options = g.heroPowerOptions() ? g.heroPowerOptions()!.map((_o, i) => i) : [undefined];
@@ -112,6 +116,9 @@ export function evaluate(g: Game, me: PlayerId, w: EvalWeights = DEFAULT_WEIGHTS
   // 打出英雄卡後的強化英雄能力
   if (a.heroPower.heroCard) score += 6;
   if (b.heroPower.heroCard) score -= 6;
+  // 預備好的卡在牌堆裡，之後會以折扣抽到
+  const prepared = (p: typeof a) => p.deck.reduce((x, h) => x + (h.prepared ? 1.2 + Math.min(10, -h.costMod) * 0.35 : 0), 0);
+  score += prepared(a) - prepared(b) * 0.3;
   // 對手場上的攻擊力威脅
   const threat = b.board.reduce((x, m) => x + (m.hp > 0 && !m.dead ? g.atkOf(m) : 0), 0);
   if (threat >= a.hero.hp + a.hero.armor) score -= 50;

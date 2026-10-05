@@ -4,6 +4,7 @@
 // 修改後請執行 `npm run cards` 重新產生資料（覆寫的卡才會被收錄）。
 // ============================================================================
 import { KAZAKUS_TOKENS } from './kazakus';
+import { VIOLET_OVERRIDES } from './violet';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -2863,3 +2864,6 @@ export const OVERRIDES: Record<string, Override> = {
     tokens: ['UNG_810'],
   },
 };
+
+// 逃離紫羅蘭堡
+Object.assign(OVERRIDES, VIOLET_OVERRIDES);

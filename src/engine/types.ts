@@ -91,6 +91,9 @@ export interface Filter {
   hasDeathrattle?: boolean;
   /** 英文名稱包含這段文字（例如「Lackey」、「Silver Hand Recruit」） */
   nameIncludes?: string;
+  /** 屬於某個職業 / 不屬於某個職業的手下 */
+  cardClass?: CardClass;
+  notClass?: CardClass;
 }
 
 export type TargetExpr =
@@ -174,7 +177,17 @@ export type DynAmount =
   /** 你上個回合打出的元素數 */
   | 'elementalsLastTurn'
   /** 觸發事件的卡的超載 */
-  | 'itOverload';
+  | 'itOverload'
+  /** 你手牌中的幸運幣數量 */
+  | 'coinsInHand'
+  /** 你的牌堆張數 */
+  | 'deckSize'
+  /** 本場對戰中你打出的消耗為 (2) 法力的卡數 */
+  | 'twoManaPlayed'
+  /** 本場對戰中你的英雄攻擊的次數 */
+  | 'heroAttacksThisGame'
+  /** 你目前剩餘的法力 */
+  | 'remainingMana';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -319,6 +332,26 @@ export type Condition =
   | { c: 'itNameIncludes'; s: string }
   /** 你的牌堆、手牌與戰場上都沒有卡（機神克蘇恩） */
   | { c: 'emptyEverything' }
+  /** 你的牌堆張數 */
+  | { c: 'deckSize'; op: '>=' | '<='; n: number }
+  /** 你的牌堆沒有中立卡牌 */
+  | { c: 'deckNoNeutral' }
+  /** 「它」具有某關鍵字（例如潛行） */
+  | { c: 'itKeyword'; k: Keyword }
+  /** 所選的目標具有某關鍵字 */
+  | { c: 'chosenKeyword'; k: Keyword }
+  /** 打出的卡在手牌中累積的計數至少為 n */
+  | { c: 'handCounter'; n: number }
+  /** 「它」（手牌中的卡）的消耗不超過 n */
+  | { c: 'itCostAtMost'; n: number }
+  /** 觸發事件的卡是從對手那裡複製來的 */
+  | { c: 'itFromOpp' }
+  /** 「它」是某張卡（以卡牌 ID 判斷，手下或手牌） */
+  | { c: 'itIsCardId'; id: string }
+  /** 本場對戰中，墓地裡有至少 n 張某張卡（英文名） */
+  | { c: 'graveyardCount'; name: string; n: number }
+  /** 你的牌堆在開始時沒有法術 */
+  | { c: 'startedNoSpells' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -466,6 +499,8 @@ export type Trig =
   | { k: 'weaponDestroyed'; side: Side }
   /** 你獲得護甲值時 */
   | { k: 'armorGained' }
+  /** 你預備一張卡時（手牌中的能力；amount = 折扣） */
+  | { k: 'prepare' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -604,6 +639,8 @@ export interface HeroPowerSpec {
   /** 打出一張牌後可以再次使用 */
   refresh?: 'cardPlayed';
   chooseOne?: { id: string; name?: string; text?: string; effects: Effect[]; target?: TargetReq }[];
+  /** 被動：無法主動使用 */
+  passive?: boolean;
 }
 
 export interface HeroPowerDef extends HeroPowerSpec {
@@ -705,6 +742,18 @@ export interface CardDef {
   handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
   /** 磁力：打出在友方機械左邊時，吸附到那個機械上 */
   magnetic?: boolean;
+  /** 預備：可以把這張卡拖進牌堆，花光剩餘法力，之後抽到時折扣（花費 + 1） */
+  prepare?: boolean;
+  /** 偽裝：可以在任一方的戰場打出 */
+  disguised?: boolean;
+  /** 抽到時召喚（為放進牌堆的玩家） */
+  summonedWhenDrawn?: boolean;
+  /** 在手牌中時，你每施放 n 張法術就變成另一張卡 */
+  transformAfterSpells?: { n: number; into: string };
+  /** 重生時保留全部生命值與附魔 */
+  rebornFull?: boolean;
+  /** 獲得體質後，額外獲得這些（無論在手牌、牌堆或場上） */
+  extraOnBuff?: { atk: number; hp: number };
   /** 任務 */
   quest?: QuestDef;
 }
@@ -750,6 +799,9 @@ export interface CardDef {
  * heroDamageCap1：你的英雄每次最多受到 1 點傷害
  * redirectAttackers：攻擊此手下的敵人有 50% 機率攻擊其他目標
  * shuffleExtra：每當你把卡洗入牌堆，多洗一張複製
+ * pirateBonus：在你的回合，友方海盜造成的傷害提高 1 點
+ * extraShot：你的砲手額外發射一次
+ * livingPlague：此手下不會對英雄造成傷害，而是把等量的疫病洗入其牌堆
  */
 export type MinionFlag =
   | 'noTurnDraw'
@@ -792,4 +844,7 @@ export type MinionFlag =
   | 'doubleHeroDamage'
   | 'heroDamageCap1'
   | 'redirectAttackers'
-  | 'shuffleExtra';
+  | 'shuffleExtra'
+  | 'pirateBonus'
+  | 'extraShot'
+  | 'livingPlague';

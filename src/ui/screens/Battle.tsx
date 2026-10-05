@@ -58,6 +58,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const [mode, setMode] = useState<Mode>({ k: 'idle' });
+  /** 選中了一張有預備的卡（即使現在打不出，也可以預備） */
+  const [prepPick, setPrepPick] = useState<number | null>(null);
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId } | null>(null);
   const [banner, setBanner] = useState<{ id: number; cardId?: string; text: string } | null>(null);
   const [mulliganPick, setMulliganPick] = useState<Set<number>>(new Set());
@@ -87,6 +89,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     (a: Action) => {
       const ok = g.apply(a);
       setMode({ k: 'idle' });
+      setPrepPick(null);
       if (!ok) {
         const r = g.check(a);
         if (r.reason) flash(r.reason);
@@ -308,9 +311,10 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     const hc = me.hand.find((h) => h.uid === handUid)!;
     const def = g.handDef(hc);
     if (!myTurn) {
-      setInspect({ cardId: hc.cardId, def: hc.parts || hc.potion ? def : undefined });
+      setInspect({ cardId: hc.cardId, def: hc.parts || hc.potion || hc.trial ? def : undefined });
       return;
     }
+    setPrepPick(def.prepare || hc.canPrepare ? handUid : null);
     if (mode.k === 'card' && mode.handUid === handUid && mode.stage === 'select') {
       act({ type: 'play', handUid });
       return;
@@ -318,7 +322,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     const can = g.canPlay(handUid);
     if (!can.ok) {
       flash(can.reason ?? '無法打出');
-      setInspect({ cardId: hc.cardId });
+      if (!(def.prepare || hc.canPrepare)) setInspect({ cardId: hc.cardId });
       return;
     }
     setInspect(null);
@@ -332,6 +336,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k !== 'card') return;
     if (needsTarget(mode.handUid, mode.option)) setMode({ ...mode, position, stage: 'target' });
     else act({ type: 'play', handUid: mode.handUid, option: mode.option, position });
+  };
+
+  const onPlaceEnemy = (position: number) => {
+    if (mode.k !== 'card') return;
+    act({ type: 'play', handUid: mode.handUid, option: mode.option, position, side: 'enemy' });
   };
 
   const onTarget = (uid: number) => {
@@ -396,14 +405,18 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const selectedHand = mode.k === 'card' ? mode.handUid : null;
   const canTrade = selectedHand !== null && g.check({ type: 'trade', handUid: selectedHand }).ok;
+  const prepHand = prepPick !== null ? me.hand.find((h) => h.uid === prepPick) : undefined;
+  const canPrepare = myTurn && !!prepHand && g.check({ type: 'prepare', handUid: prepHand.uid }).ok;
   const selectedDef = selectedHand !== null ? getCard(me.hand.find((h) => h.uid === selectedHand)?.cardId ?? 'GAME_005') : null;
   const placing = mode.k === 'card' && mode.stage === 'place';
+  // 偽裝手下可以打在對手的戰場上
+  const placingEnemy = placing && !!selectedDef?.disguised && foe.board.length < 7;
 
   const hint = (() => {
     if (s.phase === 'mulligan') return '';
     if (!myTurn) return s.pendingChoice ? '' : `${foe.name}的回合…`;
     if (mode.k === 'card') {
-      if (mode.stage === 'place') return '點選位置放置手下（Esc 取消）';
+      if (mode.stage === 'place') return selectedDef?.disguised ? '點選位置放置手下（偽裝手下也可以放在對手的戰場上，Esc 取消）' : '點選位置放置手下（Esc 取消）';
       if (mode.stage === 'target') return '選擇目標（Esc 取消）';
       if (mode.stage === 'select') return '再點一次卡牌或點戰場使用';
     }
@@ -505,7 +518,15 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       </div>
 
       <div className="boards" onClick={() => mode.k === 'card' && mode.stage === 'select' && act({ type: 'play', handUid: mode.handUid })}>
-        <div className="board foe-board">{foe.board.map(renderMinion)}</div>
+        <div className="board foe-board">
+          {placingEnemy && <Slot onClick={() => onPlaceEnemy(0)} />}
+          {foe.board.map((m, i) => (
+            <span className="board-cell" key={m.uid}>
+              {renderMinion(m)}
+              {placingEnemy && <Slot onClick={() => onPlaceEnemy(i + 1)} />}
+            </span>
+          ))}
+        </div>
         <div className="board-divider">
           <span className="hint">{hint}</span>
           <button className={`end-turn ${myTurn ? 'ready' : ''}`} disabled={!myTurn} onClick={(e) => { e.stopPropagation(); act({ type: 'endTurn' }); }}>
@@ -592,7 +613,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
               >
                 <CardView
                   cardId={h.cardId}
-                  def={h.parts || h.potion ? def : undefined}
+                  def={h.parts || h.potion || h.trial ? def : undefined}
                   width={cw}
                   cost={g.costOf(me, h)}
                   attack={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).atk : undefined}
@@ -603,6 +624,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                   onClick={() => onHandClick(h.uid)}
                 />
                 {echo && <span className="echo-badge">回音</span>}
+                {h.prepared && <span className="echo-badge prepared-badge">已預備</span>}
                 {g.costKind(me, h) !== 'mana' && (
                   <span className={`cost-kind ${g.costKind(me, h)}`} title={g.costKind(me, h) === 'health' ? '消耗生命值而不是法力' : '消耗屍體而不是法力'}>
                     {g.costKind(me, h) === 'health' ? '❤' : '💀'}
@@ -631,6 +653,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {canPrepare && prepHand && (
+        <button className="btn trade-btn prepare-btn" onClick={() => act({ type: 'prepare', handUid: prepHand.uid })}>
+          🛠 預備（花光 {me.mana} 點法力，之後消耗減少 {me.mana + 1}）
+        </button>
+      )}
       {canTrade && selectedHand !== null && (
         <button className="btn trade-btn" onClick={() => act({ type: 'trade', handUid: selectedHand })}>
           🔁 交易（1 法力：洗回牌堆並抽一張）
@@ -678,7 +705,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 <div key={h.uid} className={`mulligan-card ${mulliganPick.has(h.uid) ? 'replace' : ''}`}>
                   <CardView
                     cardId={h.cardId}
-                    def={h.parts || h.potion ? g.handDef(h) : undefined}
+                    def={h.parts || h.potion || h.trial ? g.handDef(h) : undefined}
                     width={150}
                     onClick={() => {
                       const next = new Set(mulliganPick);
@@ -857,6 +884,9 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
     lines.push(`符文：套牌需要 ${need}（一副套牌最多 3 個符文）`);
   }
   if (def.castsWhenDrawn) lines.push('抽中時施放：抽到這張牌時會立即施放，然後再抽一張牌');
+  if (def.prepare) lines.push('預備：把這張卡拖進牌堆，花光你剩餘的法力，之後抽到它時消耗減少（花費的法力 + 1）');
+  if (def.disguised) lines.push('偽裝：可以打在任何一方的戰場上');
+  if (def.summonedWhenDrawn) lines.push('抽到時召喚：被抽到時為放進牌堆的玩家召喚');
   if (def.costsHealth) lines.push('消耗生命值而不是法力（生命值不夠就不能打出）');
   if (def.costsHealthIf) lines.push('條件成立時改為消耗生命值而不是法力');
   if (def.costsCorpses) lines.push('消耗屍體而不是法力');

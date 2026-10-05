@@ -3105,3 +3105,7 @@ textarea {
 .cost-kind.corpses {
   background: radial-gradient(circle at 35% 30%, #d8ff9a, #4d8a1c 65%);
 }
+
+.prepared-badge {
+  background: #7a4fd0;
+}

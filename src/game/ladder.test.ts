@@ -143,7 +143,7 @@ describe('像真人的對手', () => {
   it('技術好的對手比較常贏', () => {
     let high = 0;
     let low = 0;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 40; i++) {
       const deck = buildDeck('HUNTER', { seed: 30 + i, noise: 0.5 });
       const lo = new AiBrain(persona(0.12, i + 1, 0));
       const hi = new AiBrain(persona(0.9, i + 50, 0));
@@ -158,5 +158,5 @@ describe('像真人的對手', () => {
       }
     }
     expect(high).toBeGreaterThan(low);
-  }, 120000);
+  }, 300000);
 });

@@ -42,6 +42,30 @@ export interface HandCard {
   shadowOf?: string;
   /** 混亂凝視者的詛咒：這個回合結束時沒打出就會被摧毀 */
   doomTurn?: number;
+  /** 「跟隨…」：本回合打出這張卡後，重複某個效果（follow = FOLLOW_EFFECTS 的 key） */
+  follow?: { id: string; turn: number };
+  /** 抽到時召喚（為這位玩家，也就是把它放進牌堆的人） */
+  summonFor?: PlayerId;
+  /** 從對手那裡複製來的卡 */
+  fromOpp?: boolean;
+  /** 進入手牌的回合 */
+  enteredTurn?: number;
+  /** 被賦予了預備 */
+  canPrepare?: boolean;
+  /** 打出時施放兩次 */
+  castTwice?: boolean;
+  /** 二選一卡牌同時具有兩種效果 */
+  both?: boolean;
+  /** 萬能鑰匙：打出其他卡牌後，變成消耗少 2 的隨機法術 */
+  skeleton?: boolean;
+  /** 軟泥攻擊的魂能：要重新召喚的手下 */
+  slimed?: string[];
+  /** R4T-C4TCH3R：這張複製是為哪個手下留的 */
+  markedFor?: number;
+  /** 卡札克斯的審判：選擇的兩種效果與長度 */
+  trial?: string[];
+  /** 預備中：這張卡已經被預備過（顯示用） */
+  prepared?: boolean;
 }
 
 export interface Minion {
@@ -96,6 +120,8 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
+  dormantTurns?: number;
 }
 
 export interface Hero {
@@ -171,7 +197,7 @@ export interface PlayerState {
   /** 延遲的效果（例如「2 回合後召喚…」） */
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
   /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」）；turn：只在這個回合有效；minSpells：施放的法術數達到這個值才觸發 */
-  eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number }[];
+  eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number; until?: number }[];
   /** 你的手下在這個回合消耗增加（對手的冰涼腳丫等） */
   minionTax?: { amount: number; turn: number };
   /** 本回合下一張法術的折扣 */
@@ -265,6 +291,36 @@ export interface PlayerState {
   heroDamagedTurn?: number;
   /** 你的跟班是 4/4（黑暗法老特卡恩） */
   lackeys44?: boolean;
+  /** 本回合進入手牌的計數、虛無（伊莉妲）、小鬼的卡等逃離紫羅蘭堡的狀態 */
+  void?: HandCard[];
+  voidSouls?: number;
+  /** 本場對戰中你的英雄攻擊的次數 */
+  heroAttacks?: number;
+  /** 本場對戰中你打出的消耗為 (2) 法力的卡數 */
+  twoManaPlayed?: number;
+  /** 取代幸運幣的偽造品 */
+  coinCard?: string;
+  /** 調查：對手在這個回合打出同名的卡，你就獲得幸運幣 */
+  investigation?: { cardId: string; turn: number };
+  /** 高佛雷：超抽的卡 */
+  godfrey?: HandCard[] | null;
+  /** 重生過的手下 */
+  rebornCards?: string[];
+  /** 本回合打出的卡（斬碎重播用） */
+  playedThisTurn?: { turn: number; ids: string[] };
+  /** 本回合受到傷害的友方角色 */
+  damagedChars?: { turn: number; uids: number[] };
+  /** 牌堆在開始時沒有法術 */
+  startedNoSpells?: boolean;
+  /** 瑪格 / 吉的被動英雄能力 */
+  mug?: boolean;
+  zee?: { minions: number };
+  /** 可以說「抱歉」 */
+  sorry?: boolean;
+  /** 在第幾回合把法力改為 10（奈絲芮克大廚） */
+  chefTurn?: number;
+  /** 這回合結束後要結束回合（大卸八塊） */
+  endTurnAfter?: boolean;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
@@ -343,7 +399,10 @@ export interface GameState {
 }
 
 export type Action =
-  | { type: 'play'; handUid: number; target?: number; position?: number; option?: number }
+  /** side = 'enemy'：偽裝手下打在對手的戰場上 */
+  | { type: 'play'; handUid: number; target?: number; position?: number; option?: number; side?: 'enemy' }
+  /** 預備：把卡拖進牌堆，花光剩餘法力 */
+  | { type: 'prepare'; handUid: number }
   | { type: 'attack'; attacker: number; target: number }
   | { type: 'heroPower'; target?: number; option?: number }
   | { type: 'trade'; handUid: number }
