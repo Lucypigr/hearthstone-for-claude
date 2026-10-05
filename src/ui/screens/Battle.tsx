@@ -63,6 +63,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const [prepPick, setPrepPick] = useState<number | null>(null);
   /** 拖曳出牌：卡牌變半透明，跟著滑鼠 / 手指移動 */
   const [drag, setDrag] = useState<{ handUid: number; x: number; y: number } | null>(null);
+  const [aim, setAim] = useState<{ fx: number; fy: number; x: number; y: number; hit: number | null; set: Set<number> } | null>(null);
   const press = useRef<{ uid: number; sx: number; sy: number; dragging: boolean; long: boolean; timer: number } | null>(null);
   const suppressClick = useRef(false);
   const [inspect, setInspect] = useState<{ cardId: string; atk?: number; hp?: number; uid?: number; def?: CardDef } | { power: PlayerId; second?: boolean } | null>(null);
@@ -375,10 +376,41 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     else act({ type: 'play', handUid, position, side });
   };
 
+  /** 拖出瞄準箭頭：放開時指在合法目標上就執行，否則取消 */
+  const beginAim = (from: { x: number; y: number }, targets: number[], onHit: (uid: number) => void) => {
+    const set = new Set(targets);
+    const hitAt = (x: number, y: number) => {
+      for (const el of document.elementsFromPoint(x, y)) {
+        const d = (el as HTMLElement).closest<HTMLElement>('[data-uid]');
+        if (d && set.has(Number(d.dataset.uid))) return Number(d.dataset.uid);
+      }
+      return null;
+    };
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
+    setAim({ fx: from.x, fy: from.y, x: from.x, y: from.y, hit: null, set });
+    const move = (ev: PointerEvent) => setAim({ fx: from.x, fy: from.y, x: ev.clientX, y: ev.clientY, hit: hitAt(ev.clientX, ev.clientY), set });
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      setAim(null);
+      suppressClick.current = true;
+      window.setTimeout(() => (suppressClick.current = false), 50);
+      const t = ev.type === 'pointerup' ? hitAt(ev.clientX, ev.clientY) : null;
+      if (t !== null) onHit(t);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
   const startPress = (handUid: number, e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const hc = me.hand.find((h) => h.uid === handUid);
     if (!hc) return;
+    const slotEl = e.currentTarget as HTMLElement;
     const st = { uid: handUid, sx: e.clientX, sy: e.clientY, dragging: false, long: false, timer: 0 };
     // 手機：長按放大查看卡牌
     if (e.pointerType !== 'mouse') {
@@ -396,22 +428,37 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         if (Math.hypot(ev.clientX - st.sx, ev.clientY - st.sy) < 10) return;
         window.clearTimeout(st.timer);
         if (st.long || !myTurn || !g.canPlay(handUid).ok) return;
-        st.dragging = true;
         setInspect(null);
         setMode({ k: 'idle' });
+        // 需要選目標的法術 / 武器：拖出箭頭瞄準，放開在目標上就施放
+        const def = g.handDef(hc);
+        const req = def.type !== 'MINION' && !def.chooseOne ? g.playTargetReq(handUid) : null;
+        if (req) {
+          const targets = g.validTargets(req, ME, g.cardIsSpell(handUid));
+          if (targets.length > 0) {
+            detach();
+            const r = slotEl.getBoundingClientRect();
+            beginAim({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, targets, (t) => act({ type: 'play', handUid, target: t }));
+            return;
+          }
+        }
+        st.dragging = true;
       }
       setDrag({ handUid, x: ev.clientX, y: ev.clientY });
     };
     // iOS：必須在 touchmove 阻止預設行為，瀏覽器才不會接手手勢（捲動 / 下拉）
     const block = (ev: TouchEvent) => ev.preventDefault();
     window.addEventListener('touchmove', block, { passive: false });
-    const up = (ev: PointerEvent) => {
+    const detach = () => {
       window.removeEventListener('touchmove', block);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       window.clearTimeout(st.timer);
       if (press.current === st) press.current = null;
+    };
+    const up = (ev: PointerEvent) => {
+      detach();
       if (st.dragging) {
         suppressClick.current = true;
         window.setTimeout(() => (suppressClick.current = false), 50);
@@ -427,23 +474,44 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     window.addEventListener('pointercancel', up);
   };
 
-  /** 手機：長按手下放大查看 */
-  const minionPress = (m: Minion) => (e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
-    const timer = window.setTimeout(() => {
-      setInspect({ cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts || m.starship ? g.minionDef(m) : undefined });
-      suppressClick.current = true;
-      window.setTimeout(() => (suppressClick.current = false), 400);
-    }, 420);
-    const end = () => {
+  /** 按住己方角色拖出箭頭攻擊；手機長按手下放大查看 */
+  const charPress = (c: Minion | Hero) => (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const el = e.currentTarget as HTMLElement;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const canAtk = myTurn && c.owner === ME && g.canAttack(c.uid);
+    let timer = 0;
+    if (!isHero(c) && e.pointerType !== 'mouse') {
+      timer = window.setTimeout(() => {
+        setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts || c.starship ? g.minionDef(c) : undefined });
+        suppressClick.current = true;
+        window.setTimeout(() => (suppressClick.current = false), 400);
+      }, 420);
+    }
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    if (canAtk) window.addEventListener('touchmove', block, { passive: false });
+    const detach = () => {
       window.clearTimeout(timer);
-      window.removeEventListener('pointerup', end);
-      window.removeEventListener('pointermove', end);
-      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('touchmove', block);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', detach);
+      window.removeEventListener('pointercancel', detach);
     };
-    window.addEventListener('pointerup', end);
-    window.addEventListener('pointermove', end);
-    window.addEventListener('pointercancel', end);
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 10) return;
+      detach();
+      if (!canAtk) return;
+      const targets = g.attackTargets(c.uid);
+      if (targets.length === 0) return;
+      const r = el.getBoundingClientRect();
+      setMode({ k: 'idle' });
+      setInspect(null);
+      beginAim({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, targets, (t) => act({ type: 'attack', attacker: c.uid, target: t }));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', detach);
+    window.addEventListener('pointercancel', detach);
   };
 
   const onPlace = (position: number) => {
@@ -561,7 +629,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const charClasses = (c: Minion | Hero) => {
     const cls: string[] = [];
-    if (validTargets.has(c.uid)) cls.push('targetable');
+    if (validTargets.has(c.uid) || aim?.set.has(c.uid)) cls.push('targetable');
     if (myTurn && c.owner === ME && mode.k === 'idle' && g.canAttack(c.uid)) cls.push('can-attack');
     if (mode.k === 'attack' && mode.attacker === c.uid) cls.push('attacking-selected');
     return cls.join(' ');
@@ -575,7 +643,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
       onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts || m.starship ? g.minionDef(m) : undefined } : null)}
-      onPointerDown={minionPress(m)}
+      onPointerDown={charPress(m)}
     />
   );
 
@@ -697,7 +765,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         <div className="hero-row">
           <PlayerInfo p={me} />
           <WeaponView p={me} g={g} />
-          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)}>
+          <HeroView p={me} g={g} className={charClasses(me.hero)} onClick={() => onCharClick(me.hero)} onPointerDown={charPress(me.hero)}>
             {emotes
               .filter((x) => x.player === ME)
               .map((x) => (
@@ -807,6 +875,16 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
+      {aim && (
+        <svg className="aim-arrow" width="100%" height="100%">
+          <defs>
+            <marker id="aimhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 z" fill={aim.hit !== null ? '#ff3b3b' : '#f5d36b'} />
+            </marker>
+          </defs>
+          <line x1={aim.fx} y1={aim.fy} x2={aim.x} y2={aim.y} stroke={aim.hit !== null ? '#ff3b3b' : '#f5d36b'} strokeWidth="10" strokeLinecap="round" strokeDasharray="1 14" markerEnd="url(#aimhead)" />
+        </svg>
+      )}
       {drag && (() => {
         const hc = me.hand.find((h) => h.uid === drag.handUid);
         if (!hc) return null;
@@ -1130,13 +1208,14 @@ function MinionView({
   );
 }
 
-function HeroView({ p, g, className, onClick, children }: { p: PlayerState; g: Game; className: string; onClick: () => void; children?: ReactNode }) {
+function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: PlayerState; g: Game; className: string; onClick: () => void; onPointerDown?: (e: React.PointerEvent) => void; children?: ReactNode }) {
   const h = p.hero;
   const atk = g.atkOf(h);
   return (
     <div
       data-uid={h.uid}
       data-hero={p.id}
+      onPointerDown={onPointerDown}
       className={`hero ${h.frozen ? 'frozen' : ''} ${h.immune ? 'immune' : ''} ${className}`}
       style={{ '--class': CLASS_COLORS[p.heroClass] } as CSSProperties}
       onClick={(e) => {

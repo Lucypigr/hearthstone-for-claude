@@ -3152,3 +3152,16 @@ html,
 body {
   overscroll-behavior: none;
 }
+
+.aim-arrow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 190;
+  filter: drop-shadow(0 0 4px #000c);
+}
+
+.hero,
+.minion {
+  touch-action: none;
+}
