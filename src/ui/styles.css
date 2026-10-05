@@ -3141,3 +3141,14 @@ textarea {
 .minion img {
   pointer-events: none;
 }
+
+.my-hand,
+.hand-slot,
+.hand-slot * {
+  touch-action: none;
+}
+
+html,
+body {
+  overscroll-behavior: none;
+}
