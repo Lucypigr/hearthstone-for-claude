@@ -402,7 +402,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       }
       setDrag({ handUid, x: ev.clientX, y: ev.clientY });
     };
+    // iOS：必須在 touchmove 阻止預設行為，瀏覽器才不會接手手勢（捲動 / 下拉）
+    const block = (ev: TouchEvent) => ev.preventDefault();
+    window.addEventListener('touchmove', block, { passive: false });
     const up = (ev: PointerEvent) => {
+      window.removeEventListener('touchmove', block);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
