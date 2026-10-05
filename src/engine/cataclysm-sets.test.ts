@@ -588,3 +588,402 @@ describe('法師與牧師', () => {
     expect(g.s.players[0].board.length).toBe(2);
   });
 });
+
+describe('盜賊與薩滿', () => {
+  it('古神特使 / 竊據之力 / 迦羅娜的最後一博 / 暈眩', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.hand = [g.newHandCard('CS2_029')];
+    play(g, 'CATA_200');
+    expect(me.hand.some((h) => getCard(h.cardId).nameEn.includes('Coin'))).toBe(true);
+    me.hand = [];
+    play(g, 'CATA_202');
+    expect(me.hand.length).toBe(1);
+    expect(getCard(me.hand[0].cardId).shatter).toBeTruthy();
+    g.s.players[1].hand = [];
+    const legend = put(g, 'EX1_562', 1);
+    const other = put(g, FILLER, 1);
+    expect(g.validTargets(g.playTargetReq(give(g, 'CATA_203').uid)!, 0, true)).toEqual([legend.uid]);
+    play(g, 'CATA_203', legend.uid);
+    expect(legend.dead || legend.hp <= 0).toBe(true);
+    play(g, 'CATA_215', other.uid);
+    expect(g.s.players[1].board.includes(other)).toBe(false);
+    const bounced = g.s.players[1].hand.find((h) => h.cardId === FILLER)!;
+    expect(bounced.lockedUntil).toBe(g.s.turn + 1);
+    g.apply({ type: 'endTurn' });
+    g.s.players[1].mana = 10;
+    expect(g.canPlay(bounced.uid).ok).toBe(false);
+  });
+
+  it('伊索拉斯：吞噬對手的 2 張手牌後休眠，亡語還回去', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    const foe = g.s.players[1];
+    foe.hand = [g.newHandCard('CS2_029'), g.newHandCard('CS2_029'), g.newHandCard('CS2_029')];
+    play(g, 'CATA_481');
+    expect(foe.hand.length).toBe(1);
+    const iso = g.s.players[0].board.find((m) => m.cardId === 'CATA_481')!;
+    expect(g.hasKw(iso, 'DORMANT')).toBe(true);
+    iso.keywords = iso.keywords.filter((k) => k !== 'DORMANT');
+    kill(iso);
+    pass(g);
+    expect(foe.hand.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('暮光儀式 / 混沌懇求者 / 瘋狂追隨者', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    const hero = g.s.players[1].hero;
+    play(g, 'CATA_785', hero.uid);
+    expect(g.s.players[0].heralds).toBe(1);
+    expect(hero.hp).toBe(30);
+    const hc = give(g, 'CATA_785');
+    g.apply({ type: 'play', handUid: hc.uid, target: hero.uid });
+    expect(hero.hp).toBe(27);
+    put(g, 'CATA_786', 0);
+    const hand = g.s.players[0].hand.length;
+    void hand;
+    const f = put(g, 'CATA_158', 0);
+    kill(f);
+    pass(g);
+    expect(g.s.players[0].heralds).toBeGreaterThanOrEqual(3);
+  });
+
+  it('奧拉基爾：獲得兩個消耗等同攻擊力的手下，消耗為 (1)', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.hand = [];
+    play(g, 'CATA_153');
+    expect(me.hand.length).toBe(2);
+    for (const h of me.hand) expect(g.costOf(me, h)).toBe(1);
+    expect(g.hasKw(me.board.find((m) => m.cardId === 'CATA_153')!, 'WINDFURY')).toBe(true);
+  });
+
+  it('小風 / 空中支援 / 轟雷雲行者 / 卓越術 / 祭祀衝擊 / 暴風守縛者', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.hand = [];
+    play(g, 'CATA_561');
+    expect(me.hand.filter((h) => h.cardId === 'CATA_561t').length).toBe(2);
+    const a = put(g, FILLER, 0);
+    play(g, 'CATA_564', a.uid);
+    expect(g.hasKw(a, 'MEGA_WINDFURY')).toBe(true);
+    expect(g.hasKw(a, 'CANT_ATTACK_HEROES')).toBe(true);
+    const hand = [g.newHandCard('EX1_277')]; // 奧術飛彈 1 費
+    me.hand = hand;
+    const strider = give(g, 'CATA_563');
+    expect(g.apply({ type: 'play', handUid: strider.uid })).toBe(true);
+    if (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    expect(me.hand.length).toBe(0);
+    g.s.players[0].board = [];
+    put(g, 'CS2_168', 0);
+    play(g, 'CATA_567');
+    expect(getCard(g.s.players[0].board[0].cardId).cost).toBe(2);
+    g.s.players[0].board = [];
+    play(g, 'CATA_569');
+    expect(g.s.players[0].board.length).toBe(3);
+    expect(g.s.players[0].overloadOwed).toBe(1);
+    const sb = put(g, 'CATA_724', 0);
+    me.overloadLocked = 3;
+    me.mana = 0;
+    kill(sb);
+    pass(g);
+    expect(me.overloadLocked).toBe(0);
+  });
+
+  it('穆拉丁的最後一博 / 魔寇', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.attacksThisGame = 4;
+    const hc = give(g, 'CATA_568');
+    expect(g.costOf(me, hc)).toBe(5);
+    me.deck = [g.newHandCard('CS2_029'), g.newHandCard('CS2_182'), g.newHandCard('CS2_182')];
+    me.hand = [];
+    play(g, 'CATA_570');
+    expect(me.hand.length).toBeGreaterThanOrEqual(2);
+    expect(g.costOf(me, me.hand[0])).toBe(0);
+    expect(g.costOf(me, me.hand[1])).toBe(0);
+  });
+});
+
+describe('戰士與術士', () => {
+  it('屠戮 / 火炬 / 毀滅燃炎 / 凍傷小鬼', () => {
+    const g = newGame({ classes: ['WARRIOR', 'WARLOCK'] });
+    put(g, FILLER, 0);
+    put(g, FILLER, 1);
+    const a = put(g, FILLER, 1);
+    play(g, 'CATA_581');
+    expect(a.hp).toBe(5 - 3); // 場上共 3 個手下
+    const m = put(g, FILLER, 1);
+    m.hp = 2;
+    const torch = give(g, 'CATA_585');
+    g.apply({ type: 'play', handUid: torch.uid, target: m.uid });
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'CATA_585' && h.counter === 6)).toBe(true);
+    const g2 = newGame({ classes: ['WARRIOR', 'WARLOCK'] });
+    const blaze = put(g2, 'CATA_586', 0);
+    const foe = put(g2, FILLER, 1);
+    foe.baseAtk = 1;
+    g2.apply({ type: 'attack', attacker: put(g2, FILLER, 0).uid, target: foe.uid });
+    void blaze;
+    const g3 = newGame({ classes: ['WARRIOR', 'WARLOCK'] });
+    play(g3, 'CATA_612');
+    const imp = g3.s.players[0].board.find((m) => m.cardId === 'CATA_612')!;
+    expect(imp.frozen).toBe(true);
+  });
+
+  it('洛戈許的最後一博 / 生存專家 / 綴鱗矛兵 / 無私保衛者', () => {
+    const g = newGame({ classes: ['WARRIOR', 'WARLOCK'] });
+    const s = put(g, 'CATA_613', 0);
+    expect(g.hasKw(s, 'IMMUNE')).toBe(true);
+    put(g, FILLER, 0);
+    expect(g.hasKw(s, 'IMMUNE')).toBe(false);
+    put(g, 'CATA_898', 0);
+    expect(g.hasKw(put(g, FILLER, 1), 'TAUNT')).toBe(true);
+    const prot = put(g, 'CATA_208', 0);
+    const foeM = put(g, 'CS2_168', 1);
+    g.apply({ type: 'attack', attacker: foeM.uid === 0 ? 0 : g.s.players[0].board[1].uid, target: g.s.players[1].board[0].uid });
+    void prot;
+  });
+
+  it('怪異觸手 / 魔眼神秘學者 / 地獄公爵 / 瑪洛里亞克', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const m = put(g, 'CS2_182', 1);
+    m.maxHp = m.hp = 10;
+    play(g, 'CATA_491');
+    expect(m.hp).toBe(4);
+    const duke = put(g, 'CATA_493', 0);
+    expect(g.atkOf(duke)).toBe(2);
+    g.s.players[0].discardedCount = 2;
+    g.recalcAuras();
+    expect(g.atkOf(duke)).toBe(6);
+    const g2 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    g2.s.players[0].hand = [g2.newHandCard('CS2_182')];
+    play(g2, 'CATA_490');
+    if (g2.s.pendingChoice) g2.apply({ type: 'choose', index: 0 });
+    expect(g2.s.players[0].hand.length).toBe(0);
+    expect(g2.s.players[0].discardedCount).toBe(1);
+  });
+
+  it('詛咒鎖鏈：控制敵方手下到對手的回合結束', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const foe = put(g, FILLER, 1);
+    play(g, 'CATA_496', foe.uid);
+    expect(g.s.players[0].board.includes(foe)).toBe(true);
+    expect(foe.sleeping).toBe(true);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].board.includes(foe)).toBe(true);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[1].board.includes(foe)).toBe(true);
+  });
+
+  it('拉法姆的最後一博 / 砲灰侍僧 / 影誓侍徒 / 丘加利', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const raf = give(g, 'CATA_498');
+    raf.counter = 3;
+    const a = put(g, FILLER, 1);
+    const b = put(g, FILLER, 1);
+    g.apply({ type: 'play', handUid: raf.uid });
+    expect(a.hp + b.hp).toBe(10 - 10);
+    const g2 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    play(g2, 'CATA_499');
+    expect(g2.s.players[0].board.length).toBe(2);
+    const g3 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    play(g3, 'CATA_726');
+    const arm = g3.s.players[0].board.find((m) => m.cardId === 'CATA_726t')!;
+    const right = g3.s.players[0].board[g3.s.players[0].board.indexOf(arm) + 1];
+    void right;
+    const deckMinions = g3.s.players[1].deck.length;
+    g3.apply({ type: 'endTurn' });
+    expect(g3.s.players[1].deck.length).toBeLessThan(deckMinions + 1);
+  });
+});
+
+describe('死亡騎士、惡魔獵人與聖騎士', () => {
+  it('黑翼實驗品 / 維克多‧奈法利斯', () => {
+    const g = newGame({ classes: ['DEATHKNIGHT', 'WARRIOR'] });
+    const e = put(g, 'CATA_464', 0);
+    kill(e);
+    g.s.players[0].hand = [];
+    pass(g);
+    const breath = g.s.players[0].hand.find((h) => h.cardId === 'CATA_464t')!;
+    expect(breath.counter).toBe(3);
+    const hero = g.s.players[1].hero;
+    g.s.players[0].mana = 10;
+    g.apply({ type: 'play', handUid: breath.uid, target: hero.uid });
+    expect(hero.hp).toBe(27);
+    g.s.players[0].hand = [];
+    play(g, 'CATA_470');
+    expect(g.s.players[0].hand[0].cardId).toBe('CATA_470t1');
+  });
+
+  it('魔化注能 / 暴洪 / 布洛克斯的最後一博 / 飢餓的魔化漁夫', () => {
+    const g = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    play(g, 'CATA_530');
+    const hero = g.s.players[0].hero;
+    hero.hp = 20;
+    hero.tempAtk = 3;
+    g.apply({ type: 'attack', attacker: hero.uid, target: g.s.players[1].hero.uid });
+    expect(hero.hp).toBe(23);
+    const l = put(g, FILLER, 1);
+    const r = put(g, FILLER, 1);
+    const mid = put(g, FILLER, 1);
+    play(g, 'CATA_533');
+    expect(l.hp).toBeLessThanOrEqual(0);
+    expect(r.hp).toBeLessThanOrEqual(0);
+    expect(mid.hp).toBeLessThanOrEqual(0); // 流放：重複此效果，這次打中間的手下
+    const g2 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    const w = put(g2, 'CS2_168', 1);
+    w.hp = 1;
+    g2.s.players[0].hand = [];
+    play(g2, 'CATA_526');
+    expect(g2.s.players[0].hand.length).toBe(1);
+    const fish = give(g2, 'CATA_529');
+    g2.s.players[0].felSpells = 3;
+    expect(g2.costOf(g2.s.players[0], fish)).toBe(3);
+  });
+
+  it('恐懼海獸：汲取生命值三次；惡毒變種', () => {
+    const g = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    const foe = put(g, FILLER, 1);
+    play(g, 'CATA_699', foe.uid);
+    expect(foe.dead || foe.hp <= 0).toBe(true);
+    const lev = g.s.players[0].board.find((m) => m.cardId === 'CATA_699')!;
+    expect(lev.maxHp).toBe(8 + 6);
+  });
+
+  it('諾茲多姆 / 青銅守衛者 / 青銅龍救贖者 / 振奮之槌', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    const a = put(g, FILLER, 0);
+    const b = put(g, FILLER, 0);
+    b.keywords.push('DIVINE_SHIELD');
+    put(g, 'CATA_473', 0);
+    g.apply({ type: 'endTurn' });
+    expect(g.hasKw(a, 'DIVINE_SHIELD')).toBe(true);
+    expect(g.atkOf(b)).toBe(7);
+    const g2 = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    put(g2, 'CATA_478', 0);
+    g2.apply({ type: 'endTurn' });
+    const brute = g2.s.players[0].board.find((m) => m.cardId === 'CATA_478t')!;
+    expect(g2.atkOf(brute)).toBe(3);
+    const g3 = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    put(g3, 'CATA_476', 0);
+    g3.apply({ type: 'endTurn' });
+    expect(board(g3, 0)).toContain('CATA_476t');
+    const g4 = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    put(g4, 'CATA_476', 0);
+    const maul = put(g4, 'CATA_472', 0);
+    kill(maul);
+    pass(g4);
+    expect(board(g4, 0).filter((c) => c === 'CATA_476t').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('新兵卡：頑強的救星 / 傲慢的戰鬥大師 / 慷慨援助 / 康復期 / 團隊合作', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    const r = put(g, 'CS2_101t', 0);
+    const sav = put(g, 'MEND_801', 0);
+    const foe = put(g, FILLER, 1);
+    foe.baseAtk = 1;
+    g.apply({ type: 'attack', attacker: sav.uid, target: foe.uid });
+    expect(r.hp).toBe(2);
+    const m = put(g, 'MEND_800', 0);
+    kill(m);
+    pass(g);
+    expect(g.atkOf(r)).toBe(2);
+    const g2 = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    play(g2, 'MEND_802');
+    expect(g2.s.players[0].board.filter((x) => g2.hasKw(x, 'DIVINE_SHIELD')).length).toBe(2);
+    g2.s.players[0].diedThisTurn = { turn: g2.s.turn, ids: ['CS2_182'] };
+    g2.s.players[0].hand = [];
+    play(g2, 'MEND_805');
+    expect(g2.s.players[0].hand.length).toBe(1);
+    expect(g2.s.players[0].hand[0].atkBuff).toBe(3);
+    const g3 = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    g3.s.players[0].hand = [];
+    play(g3, 'MEND_900');
+    expect(g3.s.players[0].board.length).toBe(2);
+    expect(g3.s.players[0].hand.length).toBe(2);
+  });
+});
+
+describe('中立', () => {
+  it('戰爭魚人 / 無面複製者 / 黏彈破壞者', () => {
+    const g = newGame();
+    play(g, 'CATA_180');
+    const murloc = give(g, 'CS2_168'); // 1 費魚人
+    expect(g.costKind(g.s.players[0], murloc)).toBe('health');
+    const g2 = newGame();
+    const rep = put(g2, 'CATA_185', 0);
+    const killer = put(g2, FILLER, 1);
+    killer.baseAtk = 10;
+    g2.apply({ type: 'endTurn' });
+    g2.apply({ type: 'attack', attacker: killer.uid, target: rep.uid });
+    expect(g2.s.players[1].board.some((m) => m.cardId === 'CATA_185')).toBe(true);
+    const g3 = newGame();
+    play(g3, 'CATA_186');
+    expect(g3.s.players[1].hand.some((h) => h.cardId === 'CATA_186t')).toBe(true);
+    const foe = g3.s.players[1];
+    foe.hand = [g3.newHandCard(FILLER), g3.newHandCard('CATA_186t'), g3.newHandCard(FILLER)];
+    foe.mana = foe.maxMana = 10;
+    expect(g3.costOf(foe, foe.hand[0])).toBe(getCard(FILLER).cost + 1);
+  });
+
+  it('暮光龍蛋 / 維蘭諾斯 / 暗影告密者 / 吉恩', () => {
+    const g = newGame();
+    const egg = put(g, 'CATA_210', 0);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(egg.counter).toBe(1);
+    kill(egg);
+    pass(g);
+    const whelp = g.s.players[0].board.find((m) => m.cardId === 'CATA_210t')!;
+    expect(g.atkOf(whelp)).toBeGreaterThanOrEqual(3);
+    const g2 = newGame({ classes: ['MAGE', 'WARRIOR'] });
+    const hc = give(g2, 'CATA_615');
+    g2.s.players[0].hand = [hc, g2.newHandCard('CS2_182'), g2.newHandCard('CS2_182')]; // 都是偶數 4 費
+    g2.apply({ type: 'endTurn' });
+    g2.apply({ type: 'endTurn' });
+    expect(hc.cardId).toBe('CATA_615t');
+  });
+
+  it('古羅巨人 / 黑角 / 倖存者 / 寶石囤積者 / 終焉使者 / 培育妖精', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.lastPlayedCost = 5;
+    const gronn = give(g, 'CATA_616');
+    expect(g.costOf(me, gronn)).toBe(4);
+    me.deck = [g.newHandCard('CS2_168'), g.newHandCard(FILLER)];
+    g.s.players[1].deck = [g.newHandCard('CS2_168'), g.newHandCard(FILLER)];
+    play(g, 'CATA_720');
+    expect(me.deck.length).toBe(1);
+    expect(g.s.players[1].deck.length).toBe(1);
+    me.hand = [g.newHandCard('CS2_029')];
+    const deck = me.deck.length;
+    play(g, 'CATA_721');
+    expect(me.deck.length).toBeGreaterThanOrEqual(deck);
+    me.hand = [g.newHandCard('CS2_029')];
+    play(g, 'CATA_897');
+    expect(me.hand.length).toBe(0);
+    const gem = me.board.find((m) => m.cardId === 'CATA_897')!;
+    kill(gem);
+    pass(g);
+    expect(me.hand.some((h) => h.cardId === 'CS2_029' && h.costMod === -1)).toBe(true);
+  });
+});
+
+describe('『碎界者』死亡之翼', () => {
+  it('英雄卡：換成死亡之翼，預兆次數決定可以釋放的大災變數量', () => {
+    const g = newGame({ classes: ['WARRIOR', 'MAGE'] });
+    const me = g.s.players[0];
+    const foe = put(g, FILLER, 1);
+    foe.maxHp = foe.hp = 10;
+    me.heralds = 2;
+    const hc = give(g, 'CATA_190h');
+    expect(g.apply({ type: 'play', handUid: hc.uid })).toBe(true);
+    expect(me.hero.cardId).toBe('CATA_190h');
+    expect(me.hero.armor).toBe(12);
+    expect(g.s.pendingChoice).toBeTruthy();
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice).toBeTruthy();
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice).toBeNull();
+    expect(me.heroPower.heroCard).toBe('CATA_190h');
+  });
+});

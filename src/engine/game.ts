@@ -8224,6 +8224,35 @@ export class Game {
         if (!self.keywords.includes('DORMANT')) self.keywords.push('DORMANT');
         break;
       }
+      case 'deathwing': {
+        let opts = ['CATA_190t10', 'CATA_190t11', 'CATA_190t12', 'CATA_190t13'].filter((x) => hasCard(x));
+        for (let i = 0; i < power && opts.length; i++) {
+          const id = yield* this.choose(ctx, opts, '選擇要釋放的大災變');
+          opts = opts.filter((x) => x !== id);
+          for (const ab of getCard(id).abilities ?? []) if (ab.on.k === 'play') yield* this.runEffects(ab.effects, ctx);
+          yield* this.processDeaths();
+          if (this.over) return;
+        }
+        break;
+      }
+      case 'topple': {
+        const list = foe.board.filter((m) => this.alive(m));
+        const best = Math.max(...list.map((m) => m.hp));
+        const t = pick(s, list.filter((m) => m.hp === best));
+        if (t) t.dead = true;
+        break;
+      }
+      case 'enthrall': {
+        const pool = this.randomPool({ type: 'MINION', race: 'DRAGON', rarity: 'LEGENDARY' }, me.id, false);
+        for (let i = 0; i < 5; i++) {
+          const c = pick(s, pool);
+          if (!c) break;
+          const hc = this.newHandCard(c.id);
+          hc.costMod = 1 - c.cost;
+          this.shuffleInto(me, hc);
+        }
+        break;
+      }
       case 'heraldHeroAttack':
         me.hero.tempAtk += base * power;
         break;

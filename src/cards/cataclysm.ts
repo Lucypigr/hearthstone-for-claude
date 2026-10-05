@@ -503,4 +503,21 @@ export const CATACLYSM_OVERRIDES: Record<string, Override> = {
   MEND_100: { abilities: play({ e: 'addCard', card: 'MEND_100t', count: 1, who: 'self' }), tokens: ['MEND_100t'] },
   MEND_100t: { handGrow: true, abilities: play(fn('bloomingBulb')) },
 
+
+  // ============================================================== 英雄
+  // 『碎界者』死亡之翼：戰吼：選擇要釋放的大災變（預兆兩次可以釋放兩個，四次可以釋放全部四個）。英雄能力：本回合 +5 攻擊力
+  CATA_190h: {
+    heroPower: { effects: [{ e: 'heroAttack', amount: 5 }] },
+    abilities: play(fn('deathwing')),
+    tokens: ['CATA_190t10', 'CATA_190t11', 'CATA_190t12', 'CATA_190t13', 'CATA_190t14', 'CATA_780t', 'CATA_525t', 'CATA_158t', 'CATA_565t', 'CATA_725t', 'CATA_580t'],
+  },
+  // 龍之統御：召喚一隻 12/12 的龍
+  CATA_190t10: { abilities: play(summon('CATA_190t14')) },
+  CATA_190t14: {},
+  // 覆滅：摧毀生命值最高的敵方手下
+  CATA_190t11: { abilities: play(fn('topple')) },
+  // 抹滅：對全部敵方手下造成 4 點傷害
+  CATA_190t12: { abilities: play({ e: 'damage', target: allEnemyMinions, amount: 4 }) },
+  // 奴役：將五隻隨機傳說龍洗入你的牌堆，它們的消耗為 (1)
+  CATA_190t13: { abilities: play(fn('enthrall')) },
 };
