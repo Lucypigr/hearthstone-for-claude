@@ -66,6 +66,23 @@ export interface HandCard {
   trial?: string[];
   /** 預備中：這張卡已經被預備過（顯示用） */
   prepared?: boolean;
+  /** 這張牌在手中時，你花費的法力 */
+  spent?: number;
+  /** 碎裂的半張牌：成對的另一半的 uid，以及完整的卡牌 ID */
+  shatterPair?: number;
+  shatterOf?: string;
+  /** 被賦予的額外法術傷害 / 暫時效果 */
+  spellPower?: number;
+  /** 這個回合之前不能打出（暈眩） */
+  lockedUntil?: number;
+  /** 畸變怪物：目前的兩種加成效果 */
+  bonus?: Keyword[];
+  /** 雕刻進這張牌的法術（巴珊娜的樹人） */
+  carved?: string[];
+  /** 暗影告密者：目前的職業 */
+  cls?: CardClass;
+  /** 賦予這張手牌：其他變形（石爪打擊者等在手牌中打出龍會變大） */
+  grow?: number;
 }
 
 export interface Minion {
@@ -122,6 +139,18 @@ export interface Minion {
   spellsOn?: string[];
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
   dormantTurns?: number;
+  /** 巨型手下的附肢（附肢的 uid） */
+  limbs?: number[];
+  /** 這個附肢屬於哪個本體 */
+  limbOf?: number;
+  /** 還沒召喚出來的附肢數（熔喉） */
+  pendingLimbs?: string[];
+  /** 殺死這個手下的手下（無面複製者） */
+  killer?: number;
+  /** 被吞噬的對手手牌（伊索拉斯） */
+  devoured?: HandCard[];
+  /** 暫時控制：在這個回合結束時才還回去 */
+  returnTurn?: number;
 }
 
 export interface Hero {
@@ -325,6 +354,37 @@ export interface PlayerState {
   chefTurn?: number;
   /** 這回合結束後要結束回合（大卸八塊） */
   endTurnAfter?: boolean;
+  /** 本場對戰中你預兆的次數 */
+  heralds?: number;
+  /** 這個回合你的英雄具有生命竊取 */
+  heroLifestealTurn?: number;
+  /** 你的銀白之手新兵獲得的永久加成 */
+  recruitBuff?: { atk: number; hp: number };
+  /** 你上一張打出的卡的消耗 */
+  lastPlayedCost?: number;
+  /** 『生命守護者』雅立史卓莎：等你的英雄回復滿血 */
+  alexWaiting?: boolean;
+  /** 地脈：效果強化、額外觸發次數、消耗減少 */
+  leyline?: { bonus: number; extra: number; discount: number };
+  /** 動物夥伴被取代：消耗增加 / 額外召喚數 */
+  companion?: { cost: number; extra: number };
+  /** 你的治療效果額外恢復的生命值 */
+  healBonus?: number;
+  /** 本回合用法術造成的傷害（turn 記錄回合） */
+  spellDamageDealt?: { turn: number; amount: number };
+  /** 本場對戰中施放的邪能法術數 / 英雄與友方攻擊次數 */
+  felSpells?: number;
+  attacksThisGame?: number;
+  /** 本場對戰中打出的 1 費手下 */
+  oneCostMinions?: string[];
+  /** 最近一次打出手下的回合 */
+  minionPlayedTurn?: number;
+  /** 你的手下回合結束效果觸發兩次直到這個回合 */
+  doubleEotUntil?: number;
+  /** 指揮官迦頓：回合開始時改為從牌堆發現 */
+  geddon?: boolean;
+  /** 傑爾賓的凱旋等光環 */
+  rafaam?: number;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;

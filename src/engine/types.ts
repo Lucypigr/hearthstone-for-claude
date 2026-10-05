@@ -187,7 +187,21 @@ export type DynAmount =
   /** 本場對戰中你的英雄攻擊的次數 */
   | 'heroAttacksThisGame'
   /** 你目前剩餘的法力 */
-  | 'remainingMana';
+  | 'remainingMana'
+  /** 預兆的力量倍率：預兆 0~1 次 = 1，2~3 次 = 2，4 次以上 = 4 */
+  | 'heraldPower'
+  /** 你本場對戰中預兆的次數 */
+  | 'heralds'
+  /** 你本回合用法術造成的傷害 */
+  | 'spellDamageDealtThisTurn'
+  /** 你本場對戰中施放的邪能法術數 */
+  | 'felSpellsCast'
+  /** 你本場對戰中英雄 / 友方角色攻擊的次數 */
+  | 'attacksThisGame'
+  /** 場上（雙方）的手下數 */
+  | 'minionsOnBoardTotal'
+  /** 你上一張打出的卡的消耗 */
+  | 'lastCardCost';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -352,6 +366,26 @@ export type Condition =
   | { c: 'graveyardCount'; name: string; n: number }
   /** 你的牌堆在開始時沒有法術 */
   | { c: 'startedNoSpells' }
+  /** 這張牌在手中時，你花費了至少 n 點法力 */
+  | { c: 'heldSpent'; n: number }
+  /** 你上個回合沒有打出手下 */
+  | { c: 'noMinionLastTurn' }
+  /** 你本回合用法術造成過傷害 */
+  | { c: 'spellDamagedThisTurn' }
+  /** 你控制傳說卡牌（手下或奧秘） */
+  | { c: 'controlLegendary' }
+  /** 你手牌中有龍 */
+  | { c: 'holdingDragon' }
+  /** 你的手牌（除了這張）全是奇數 / 偶數消耗 */
+  | { c: 'handParity'; odd: boolean }
+  /** 你的手下全場已滿 */
+  | { c: 'boardFull' }
+  /** 你沒有其他手下 */
+  | { c: 'noOtherMinions' }
+  /** 「它」就是效果來源本身 */
+  | { c: 'itIsSelf' }
+  /** 你本場對戰中已經打出過另一張同名的卡 */
+  | { c: 'playedCopy' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -501,6 +535,12 @@ export type Trig =
   | { k: 'armorGained' }
   /** 你預備一張卡時（手牌中的能力；amount = 折扣） */
   | { k: 'prepare' }
+  /** 這個手下被召喚時（包含打出） */
+  | { k: 'summoned' }
+  /** 你花光最後一顆法力水晶時 */
+  | { k: 'lastMana' }
+  /** 你每回合第一次用法術造成傷害時 */
+  | { k: 'firstSpellDamage' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -538,7 +578,9 @@ export interface Aura {
    * friendlyHand：你手牌中的手下（例如「你手牌中的手下具有回音」）
    * firstSpellDiscount：你每回合的第一張法術消耗減少 cost
    */
-  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount';
+  scope: 'otherFriendly' | 'adjacent' | 'otherAll' | 'friendlyHero' | 'enemyMinions' | 'friendlyHand' | 'firstSpellDiscount' | 'self';
+  /** 隨某個數量變化的加成：atk / hp 乘以這個數量（例如「每棄掉一張牌 +2/+2」） */
+  dyn?: { amount: DynAmount; atk?: number; hp?: number };
   cost?: number;
   race?: Race;
   /** 只影響這個英文名稱的手下（例如白銀之手新兵） */
@@ -550,6 +592,8 @@ export interface Aura {
   atk?: number;
   hp?: number;
   keywords?: Keyword[];
+  /** 預兆：攻擊力 = heraldAtk × 預兆倍率（1 / 2 / 4） */
+  heraldAtk?: number;
 }
 
 /** 場上手下對手牌消耗的影響（例如「你的手下消耗為 (1)」、「有戰吼的手下消耗增加 (2)」） */
@@ -608,6 +652,8 @@ export interface PendingDiscount {
   health?: boolean;
   /** 只在本回合有效 */
   thisTurn?: boolean;
+  /** 只適用於消耗不超過這個值的牌 */
+  maxCost?: number;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -742,6 +788,14 @@ export interface CardDef {
   handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
   /** 磁力：打出在友方機械左邊時，吸附到那個機械上 */
   magnetic?: boolean;
+  /** 在手牌中時，相鄰的牌消耗增加（破壞！） */
+  adjacentCostUp?: number;
+  /** 每個回合在手牌中時累積計數（升級） */
+  handGrow?: boolean;
+  /** 巨型：打出時在兩側召喚附肢（limbs = 附肢卡牌 ID；leftFirst = 第一個附肢在左邊） */
+  colossal?: { limbs: string[]; leftFirst?: boolean };
+  /** 碎裂：抽到時分成兩張牌，分別在手牌的最左與最右；重新相鄰時合併 */
+  shatter?: [string, string];
   /** 預備：可以把這張卡拖進牌堆，花光剩餘法力，之後抽到時折扣（花費 + 1） */
   prepare?: boolean;
   /** 偽裝：可以在任一方的戰場打出 */
@@ -802,6 +856,11 @@ export interface CardDef {
  * pirateBonus：在你的回合，友方海盜造成的傷害提高 1 點
  * extraShot：你的砲手額外發射一次
  * livingPlague：此手下不會對英雄造成傷害，而是把等量的疫病洗入其牌堆
+ * extraDamage：此手下受到的傷害多 1 點
+ * heroWindfury：你的英雄具有風怒
+ * minionImmuneAlone：沒有其他手下時免疫
+ * enemyTaunt：所有敵方手下具有嘲諷
+ * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
   | 'noTurnDraw'
@@ -847,4 +906,13 @@ export type MinionFlag =
   | 'shuffleExtra'
   | 'pirateBonus'
   | 'extraShot'
-  | 'livingPlague';
+  | 'livingPlague'
+  | 'extraDamage'
+  | 'heroWindfury'
+  | 'minionImmuneAlone'
+  | 'enemyTaunt'
+  | 'endTurnTriggerDeathrattle'
+  | 'doubleOtherSpells'
+  | 'healthToMax'
+  | 'ashWorm'
+  | 'chogallDeck';
