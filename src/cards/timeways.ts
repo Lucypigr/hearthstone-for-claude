@@ -21,7 +21,6 @@ const enemyMinion: TargetReq = { filter: { type: 'minion', side: 'enemy' } };
 const friendlyMinion: TargetReq = { filter: { type: 'minion', side: 'friendly' } };
 const allFriendly = { t: 'all' as const, filter: { type: 'minion' as const, side: 'friendly' as const } };
 const allEnemyMinions = { t: 'all' as const, filter: { type: 'minion' as const, side: 'enemy' as const } };
-const allMinions = { t: 'all' as const, filter: { type: 'minion' as const, side: 'any' as const } };
 const randomEnemy = (count = 1) => ({ t: 'random' as const, filter: { type: 'character' as const, side: 'enemy' as const }, count });
 const randomEnemyMinion = (count = 1) => ({ t: 'random' as const, filter: { type: 'minion' as const, side: 'enemy' as const }, count });
 const RAFAAMS = ['TIME_005t1', 'TIME_005t2', 'TIME_005t3', 'TIME_005t4', 'TIME_005t5', 'TIME_005t6', 'TIME_005t7', 'TIME_005t8', 'TIME_005t9'];
@@ -35,7 +34,6 @@ const addCard = (card: string, count = 1): Effect => ({ e: 'addCard', card, coun
 const rewind = (n = 1): Override => ({ rewind: n, tokens: REWIND_TOKENS });
 const natureHeld: Ability[] = [{ on: { k: 'spellCast', side: 'friendly', school: 'NATURE' }, effects: [fn('counterInHand')] }];
 const heroHit = (effects: Effect[]): Ability[] => [{ on: { k: 'attack', subject: 'friendlyHero', after: true }, effects }];
-const optional = (t: TargetReq): TargetReq => ({ ...t, optional: true });
 const randomFriendly = { t: 'random' as const, filter: { type: 'minion' as const, side: 'friendly' as const }, count: 1 };
 const myHero = { t: 'hero' as const, side: 'friendly' as const };
 const theirHero = { t: 'hero' as const, side: 'enemy' as const };
