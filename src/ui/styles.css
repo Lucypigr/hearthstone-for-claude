@@ -3165,3 +3165,96 @@ body {
 .minion {
   touch-action: none;
 }
+
+/* 地點牌 */
+.location {
+  position: relative;
+  width: calc(var(--mw) * 0.95);
+  height: calc(var(--mw) * 1.15);
+  border: 2px solid #6b5a3a;
+  border-radius: 10px;
+  background: #2a2216;
+  overflow: visible;
+  cursor: default;
+  touch-action: none;
+}
+
+.location.ready {
+  border-color: #ffd34e;
+  box-shadow: 0 0 10px #ffd34e99;
+  cursor: pointer;
+}
+
+.location.selected {
+  box-shadow: 0 0 14px 3px #6ff;
+}
+
+.location.cooling {
+  filter: grayscale(0.7);
+}
+
+.location-portrait {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.location-dur {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3b6fd6;
+  color: #fff;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 2px solid #1a120b;
+}
+
+.location-cd {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  background: #000a;
+  color: #fff;
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 0 4px;
+}
+
+.location-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 11px;
+  text-align: center;
+  background: #000b;
+  color: #fff;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.card-hp.is-location {
+  background: #3b6fd6;
+}
+
+.hero-shield {
+  position: absolute;
+  inset: -4px;
+  border-radius: 14px;
+  border: 3px solid #ffe27a;
+  box-shadow: 0 0 12px #ffe27acc, inset 0 0 10px #ffe27a88;
+  pointer-events: none;
+}
+
+.secret.objective {
+  background: #d6a53b;
+  color: #1a120b;
+}

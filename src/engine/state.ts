@@ -20,6 +20,8 @@ export interface HandCard {
   taught?: string;
   /** 時間循環者托奇：這張法術屬於哪一組 */
   looping?: number;
+  /** 萊恩國王：已經躲進對手牌堆（不會再次躲藏） */
+  hidden?: boolean;
   cardId: string;
   /** 倒轉：剩餘可倒轉的次數（沒有設定 = 卡牌本身的倒轉次數） */
   rewinds?: number;

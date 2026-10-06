@@ -1217,8 +1217,10 @@ export class Game {
           break;
         case 'twHideLlane': {
           // 萊恩國王：躲進對手的牌堆（躲避加羅娜）
+          if (hc.hidden) break;
           const foeP = this.s.players[opp(p.id)];
           p.deck = p.deck.filter((h) => h !== hc);
+          hc.hidden = true;
           foeP.deck.push(hc);
           break;
         }
@@ -1573,7 +1575,22 @@ export class Game {
     this.recalcAuras();
     if (this.over) return;
     const idx = yield { player: pid, kind: 'discover', options: ['TIME_000ta', 'TIME_000tb'], title: `倒轉？（剩餘 ${left + 1} 次）保留這個時間線，或回到打出前重來` };
-    if (idx === 1) this.rewindReq = { snap, handUid, left };
+    if (idx !== 1) return;
+    // 莫奇：倒轉會保留兩種結果 —— 不還原，而是把效果再執行一次
+    if (this.flagOnBoard('keepBothRewinds', pid)) {
+      const def = getCard(hc.cardId);
+      const ctx: Ctx = { ...this.baseCtx(pid), sourceCardId: def.id, isSpell: def.type === 'SPELL', chosen: target ?? null };
+      const m = [...this.s.players[pid].board].reverse().find((x) => x.cardId === def.id);
+      if (m) ctx.sourceUid = m.uid;
+      this.log(pid, `${this.s.players[pid].name}保留了兩條時間線`);
+      for (const ab of def.abilities ?? []) {
+        if (ab.on.k !== 'play' || (ab.cond && !this.evalCond(ab.cond, ctx))) continue;
+        yield* this.runEffects(ab.effects, ctx);
+        if (this.over) return;
+      }
+      return;
+    }
+    this.rewindReq = { snap, handUid, left };
   }
 
   /** 地點牌可啟用的目標（沒有目標需求 = null） */

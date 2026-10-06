@@ -3,7 +3,7 @@ import { getCard, hasCard, HEROES } from '../../cards/registry';
 import { AiBrain, aiMulligan, chooseAction, EMOTE_NAMES, EMOTE_TEXT, type Emote } from '../../engine/ai';
 import { Game, isHero } from '../../engine/game';
 import { CLASS_NAMES } from '../../engine/heroes';
-import type { Action, Hero, Minion, PlayerId, PlayerState } from '../../engine/state';
+import type { Action, Hero, Location, Minion, PlayerId, PlayerState } from '../../engine/state';
 import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
 import { RUNE_NAMES } from '../../game/decks';
@@ -24,6 +24,7 @@ type Mode =
   | { k: 'attack'; attacker: number }
   | { k: 'heroPower'; option?: number }
   | { k: 'heroPower2' }
+  | { k: 'location'; uid: number }
   | { k: 'powerChoose' };
 
 const AI_DELAY = { slow: 1300, normal: 800, fast: 350 };
@@ -278,6 +279,10 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'attack') return new Set(g.attackTargets(mode.attacker));
     if (mode.k === 'heroPower') return new Set(g.heroPowerTargets(mode.option));
     if (mode.k === 'heroPower2') return new Set(g.secondPowerTargets());
+    if (mode.k === 'location') {
+      const req = g.locationTargetReq(mode.uid);
+      return req ? new Set(g.validTargets(req, ME, true)) : new Set<number>();
+    }
     if (mode.k === 'card' && mode.stage === 'target') {
       const req = g.playTargetReq(mode.handUid, mode.option);
       if (req) return new Set(g.validTargets(req, ME, g.cardIsSpell(mode.handUid)));
@@ -484,6 +489,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     let originEl: Element | null = null;
     if (mode.k === 'card') originEl = root.querySelector(`[data-hand-uid="${mode.handUid}"]`);
     else if (mode.k === 'attack') originEl = root.querySelector(`[data-uid="${mode.attacker}"]`);
+    else if (mode.k === 'location') originEl = root.querySelector(`[data-loc-uid="${mode.uid}"]`);
     else originEl = root.querySelector(`[data-hero="${ME}"]`);
     if (!originEl) return;
     const r = originEl.getBoundingClientRect();
@@ -564,6 +570,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'attack') act({ type: 'attack', attacker: mode.attacker, target: uid });
     else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid, option: mode.option });
     else if (mode.k === 'heroPower2') act({ type: 'heroPower2', target: uid });
+    else if (mode.k === 'location') act({ type: 'location', uid: mode.uid, target: uid });
     else if (mode.k === 'card') act({ type: 'play', handUid: mode.handUid, target: uid, option: mode.option, position: mode.position, side: mode.side });
   };
 
@@ -587,6 +594,24 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       return;
     }
     if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts || c.starship ? g.minionDef(c) : undefined });
+  };
+
+  const onLocationClick = (l: Location) => {
+    if (!myTurn || l.owner !== ME) return;
+    if (mode.k === 'location' && mode.uid === l.uid) {
+      setMode({ k: 'idle' });
+      return;
+    }
+    if (l.cooldown > 0) {
+      flash(`冷卻中（還要 ${l.cooldown} 個回合）`);
+      return;
+    }
+    const req = g.locationTargetReq(l.uid);
+    if (req && g.validTargets(req, ME, true).length) {
+      setInspect(null);
+      setMode({ k: 'location', uid: l.uid });
+    } else if (req && !req.optional) flash('沒有可選擇的目標');
+    else act({ type: 'location', uid: l.uid });
   };
 
   const onHeroPower = () => {
@@ -659,6 +684,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     }
     if (mode.k === 'attack') return '選擇攻擊目標（Esc 取消）';
     if (mode.k === 'heroPower' || mode.k === 'heroPower2') return '選擇英雄能力的目標';
+    if (mode.k === 'location') return '選擇地點的目標（Esc 取消）';
     return '';
   })();
 
@@ -767,6 +793,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             }
           }}
         >
+          {(foe.locations ?? []).map((l) => (
+            <span className="board-cell" key={l.uid}>
+              <LocationView l={l} className="" onClick={() => undefined} onHover={(on) => setInspect(on ? { cardId: l.cardId } : null)} />
+            </span>
+          ))}
           {foe.board.map((m) => (
             <span className="board-cell" key={m.uid}>
               {renderMinion(m)}
@@ -788,6 +819,16 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             }
           }}
         >
+          {(me.locations ?? []).map((l) => (
+            <span className="board-cell" key={l.uid}>
+              <LocationView
+                l={l}
+                className={`${mode.k === 'location' && mode.uid === l.uid ? 'selected' : ''} ${myTurn && l.cooldown === 0 ? 'ready' : ''}`}
+                onClick={() => onLocationClick(l)}
+                onHover={(on) => setInspect(on ? { cardId: l.cardId } : null)}
+              />
+            </span>
+          ))}
           {me.board.map((m) => (
             <span className="board-cell" key={m.uid}>
               {renderMinion(m)}
@@ -1164,6 +1205,13 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   if (def.castsWhenDrawn) lines.push('抽中時施放：抽到這張牌時會立即施放，然後再抽一張牌');
   if (def.prepare) lines.push('預備：把這張卡拖進牌堆，花光你剩餘的法力，之後抽到它時消耗減少（花費的法力 + 1）');
   if (def.disguised) lines.push('偽裝：可以打在任何一方的戰場上');
+  if (def.rewind) lines.push(`倒轉（${def.rewind}）：打出後可以選擇保留結果，或回到打出前重來（這張牌回到手牌，少一次倒轉，亂數結果會不同）`);
+  if (def.fabled) lines.push('傳說：對戰開始時，這張卡的組合卡會一起洗入你的牌堆');
+  if (def.objective) lines.push(`目標：打出後在接下來 ${def.objective} 個回合持續生效`);
+  if (def.type === 'LOCATION') lines.push('地點：放在戰場上，點擊啟用（耐久度 -1），之後要等一個回合才能再啟用。耐久度用完就消失；有些地點啟用後會前進到下一個形態');
+  if (def.quest?.kind === 'fillHand') lines.push('任務進度：先填滿你的手牌（10 張），再把手牌打光');
+  if (/灌注/.test(def.text)) lines.push('灌注：強化你的英雄能力（盜賊與死亡騎士有灌注後的英雄能力），多次灌注效果更強');
+  if (/同族/.test(def.text)) lines.push('同族：如果你上個回合打出過同種族（或同法術派系）的牌，會有額外效果');
   if (def.summonedWhenDrawn) lines.push('抽到時召喚：被抽到時為放進牌堆的玩家召喚');
   if (def.costsHealth) lines.push('消耗生命值而不是法力（生命值不夠就不能打出）');
   if (def.costsHealthIf) lines.push('條件成立時改為消耗生命值而不是法力');
@@ -1244,6 +1292,30 @@ function MinionView({
   );
 }
 
+function LocationView({ l, className, onClick, onHover }: { l: Location; className: string; onClick: () => void; onHover: (on: boolean) => void }) {
+  const def = getCard(l.cardId);
+  return (
+    <div
+      data-loc-uid={l.uid}
+      className={`location ${l.cooldown > 0 ? 'cooling' : ''} ${className}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      title={`${def.name}（耐久度 ${l.durability}）`}
+    >
+      <div className="location-portrait">
+        <Art cardId={l.cardId} label={def.name} color="#8a6a3a" />
+      </div>
+      <div className="location-dur">{l.durability}</div>
+      {l.cooldown > 0 && <div className="location-cd">⏳{l.cooldown}</div>}
+      <div className="location-name">{def.name}</div>
+    </div>
+  );
+}
+
 function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: PlayerState; g: Game; className: string; onClick: () => void; onPointerDown?: (e: React.PointerEvent) => void; children?: ReactNode }) {
   const h = p.hero;
   const atk = g.atkOf(h);
@@ -1262,8 +1334,15 @@ function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: Pl
       <div className="hero-portrait">
         <Art cardId={h.cardId} label={CLASS_NAMES[p.heroClass]} color={CLASS_COLORS[p.heroClass]} />
       </div>
-      {(p.secrets.length > 0 || p.quest) && (
+      {(p.secrets.length > 0 || p.quest || (p.eternal ?? []).some((e) => e.objective)) && (
         <div className="secrets">
+          {(p.eternal ?? [])
+            .filter((e, i, arr) => e.objective && arr.findIndex((x) => x.objective && x.sourceCardId === e.sourceCardId) === i)
+            .map((e) => (
+              <span key={e.sourceCardId} className="secret objective" title={`目標：${getCard(e.sourceCardId).name}`}>
+                ◆
+              </span>
+            ))}
           {p.quest && (
             <span className="secret quest" title={`任務：${getCard(p.quest.cardId).name}（${p.quest.progress}/${getCard(p.quest.cardId).quest?.goal ?? '?'}）`}>
               !
@@ -1276,6 +1355,7 @@ function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: Pl
           ))}
         </div>
       )}
+      {h.divineShield && <div className="hero-shield" title="聖盾：抵擋下一次傷害" />}
       {atk > 0 && <div className="hero-atk">{atk}</div>}
       <div className={`hero-hp ${h.hp < h.maxHp ? 'damaged' : ''}`}>{h.hp}</div>
       {h.armor > 0 && <div className="hero-armor">{h.armor}</div>}

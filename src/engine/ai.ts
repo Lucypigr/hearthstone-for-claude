@@ -45,6 +45,14 @@ export function legalActions(g: Game): Action[] {
     else out.push({ type: 'heroPower2' });
   }
   if (g.canLaunch().ok) out.push({ type: 'launch' });
+  // 啟用地點牌
+  for (const l of p.locations ?? []) {
+    const req = g.locationTargetReq(l.uid);
+    const targets = req ? g.validTargets(req, s.current, true) : [];
+    if (req && targets.length) {
+      for (const t of targets) if (g.check({ type: 'location', uid: l.uid, target: t }).ok) out.push({ type: 'location', uid: l.uid, target: t });
+    } else if (g.check({ type: 'location', uid: l.uid }).ok) out.push({ type: 'location', uid: l.uid });
+  }
   for (const c of [p.hero, ...p.board]) {
     if (!g.canAttack(c.uid)) continue;
     for (const t of g.attackTargets(c.uid)) out.push({ type: 'attack', attacker: c.uid, target: t });
@@ -112,6 +120,11 @@ export function evaluate(g: Game, me: PlayerId, w: EvalWeights = DEFAULT_WEIGHTS
   if (a.weapon) score += a.weapon.atk * Math.min(a.weapon.durability, 3) * 0.6;
   if (b.weapon) score -= b.weapon.atk * Math.min(b.weapon.durability, 3) * 0.6;
   score += a.secrets.length * 2 - b.secrets.length * 2;
+  // 地點牌與目標：場上的資源
+  score += (a.locations ?? []).reduce((x, l) => x + l.durability * 1.5, 0) - (b.locations ?? []).reduce((x, l) => x + l.durability * 1.5, 0) * 0.8;
+  score += (a.eternal ?? []).filter((e) => e.objective).length * 1.5;
+  if (a.hero.divineShield) score += 3;
+  if (b.hero.divineShield) score -= 3;
   // 正在建造的星艦（發射後會變成一個大手下）
   const ship = (p: typeof a) => (p.starship ?? []).reduce((x, c) => x + c.atk + c.hp, 0) * 0.5;
   score += ship(a) - ship(b) * 0.8;

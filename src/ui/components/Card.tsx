@@ -141,6 +141,7 @@ function DrawnCard(p: CardViewProps) {
         </div>
       )}
       {def.type === 'HERO' && !!def.armor && <div className="card-hp is-armor">{def.armor}</div>}
+      {def.type === 'LOCATION' && <div className="card-hp is-location">{def.health}</div>}
       {(def.type === 'MINION' || def.type === 'WEAPON') && (
         <>
           <div className={`card-atk ${def.type === 'WEAPON' ? 'is-weapon' : ''} ${attack !== undefined && def.attack !== undefined && attack > def.attack ? 'buffed' : ''}`}>{attack}</div>
