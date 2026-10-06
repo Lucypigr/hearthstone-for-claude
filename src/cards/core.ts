@@ -302,3 +302,305 @@ reg('MAW_032', { flags: ['secretsLocked'] });
 // 典獄長：戰吼：摧毀你的牌堆。此手下獲得免疫
 reg('MAW_034', { abilities: play(fn('coDestroyDeck'), { e: 'buff', target: { t: 'self' }, keywords: ['IMMUNE'] }) });
 
+
+// ============================================================== 第三批：機制較複雜的核心卡牌
+CORE_OVERRIDES['CORE_EDR_004'] = CORE_OVERRIDES['EDR_004_2026'];
+const destroyRandomEnemy: Effect = { e: 'destroy', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } };
+
+// 野性呼喚：召喚三隻動物夥伴
+reg('OG_211', { abilities: play(summon('NEW1_032'), summon('NEW1_033'), summon('NEW1_034')), tokens: ['NEW1_032', 'NEW1_033', 'NEW1_034'] });
+// 光明之怒拉格納羅斯：在你的回合結束時，為一個受傷的友方角色恢復 8 點生命值
+reg('OG_229', { abilities: atEndOfTurn(fn('coHealDamaged', { n: 8 })) });
+// 秘密吞噬者：戰吼：消滅所有敵方奧秘，每消滅一個獲得 +1/+1
+reg('OG_254', { abilities: play(fn('coEater')) });
+// 幽暗城商販：亡語：獲得一張隨機的對手職業的牌
+reg('OG_330', { abilities: dr(fn('coOppClassCard')) });
+// 范達爾‧鹿盔：你的二選一卡牌同時具有兩種效果
+reg('OG_044', { flags: ['fandral'] });
+// 月獸：二選一 恢復 8 點生命值；或造成 4 點傷害
+reg('ONY_018', {
+  chooseOne: [
+    { id: 'ONY_018a', name: '月光治療', text: '為你的英雄恢復8點生命值', abilities: play({ e: 'heal', target: { t: 'hero', side: 'friendly' }, amount: 8 }) },
+    { id: 'ONY_018b', name: '月光之怒', text: '造成4點傷害', target: anyChar, abilities: play(hit(4, false)) },
+  ],
+});
+// 來生侍者：沒有注入版本
+reg('MAW_031', { flags: ['infuseInDeck'], noInfuse: true });
+// 可疑的煉金師 / 領位員 / 海盜
+reg('REV_000', { abilities: play(fn('coSuspicious', { pool: { type: 'SPELL' } })) });
+reg('REV_002', { abilities: play(fn('coSuspicious', { pool: { type: 'MINION', rarity: 'LEGENDARY' } })) });
+reg('REV_006', { abilities: play(fn('coSuspicious', { pool: { type: 'WEAPON' } })) });
+// 嫉妒的收割者：在你打出一張從對手那裡複製來的牌後，偷走原本的那張
+reg('REV_011', { abilities: [{ on: { k: 'cardPlayed', side: 'friendly' }, cond: { c: 'itFromOpp' }, effects: [fn('coStealOriginal')] }] });
+// 紅鯡魚：嘲諷。你的非紅鯡魚手下具有潛行
+reg('REV_014', { keywords: ['TAUNT'], auras: [{ scope: 'otherFriendly', notNameEn: 'Red Herring', keywords: ['STEALTH'] }] });
+// 假面狂歡者：突襲。亡語：召喚牌堆中另一個手下的 2/2 複製
+reg('REV_015', { keywords: ['RUSH'], abilities: dr(fn('coMaskedReveler')) });
+// 狡猾的廚師：在你的回合結束時，若本回合你對敵方英雄造成 3 點以上傷害，抽一張牌
+reg('REV_016', { abilities: atEndOfTurn(fn('coCook')) });
+// 貪食的吞噬者：戰吼：吞噬一個敵方手下並獲得它的屬性值。注入：連同它兩側的手下
+reg('REV_017', { target: optional(enemyMinion), abilities: play(fn('coDevour')) });
+reg('REV_017t', { target: optional(enemyMinion), abilities: play(fn('coDevour', { neighbors: true })) });
+// 雷納薩爾親王：你的牌堆張數與起始生命值都是 40
+reg('REV_018', { startOfGame: 'renathal' });
+// 晚宴表演者：戰吼：從你的牌堆召喚一個你付得起的隨機手下
+reg('REV_020', { abilities: play(fn('coDinner')) });
+// 凱爾薩斯‧逐日者（罪行）：你每回合打出的第三個手下消耗為 (0)
+reg('REV_021', { costAuras: [{ side: 'friendly', type: 'MINION', everyThird: true, set: 0 }] });
+// 魚人福爾摩斯：戰吼：破解三條關於對手的線索，獲得對手牌的複製
+reg('REV_022', { abilities: play(fn('coHolmes')) });
+// 拆除修繕工：可交易。戰吼：摧毀一個敵方地點
+reg('REV_023', { keywords: ['TRADEABLE'], abilities: play(fn('coDestroyLocation')) });
+// 瘋狂公爵塞歐塔：戰吼：發現雙方各一張手牌，並交換它們
+reg('REV_238', { abilities: play(fn('coTheotar')) });
+// 窒息暗影：當你打出或棄掉此牌時，消滅一個隨機敵方手下
+reg('REV_239', { abilities: [...play(destroyRandomEnemy), { on: { k: 'discarded' }, effects: [destroyRandomEnemy] }] });
+// 篡改書卷：將你手牌的 1 費複製洗入你的牌堆，然後棄掉你的手牌
+reg('REV_240', { abilities: play(fn('coTome')) });
+// 慌張的圖書管理員：每有一個小鬼，+1 攻擊力
+reg('REV_242', { auras: [{ scope: 'self', dyn: { amount: 'friendlyImps', atk: 1 } }] });
+// 迫近的災厄：抽一張牌。你每控制一個小鬼，重複一次
+reg('REV_245', { abilities: play(draw(1), { e: 'repeat', times: { dyn: 'friendlyImps' }, effects: [draw(1)] }) });
+// 神秘訪客：戰吼：從對手複製來的牌消耗減少 (3)
+reg('REV_246', { abilities: play(fn('coVisitor')) });
+// 共犯：戰吼：在你的回合結束時，召喚一個此手下的複製
+reg('REV_247', { abilities: play({ e: 'atEndOfTurn', effects: [{ e: 'summonCopy', target: { t: 'self' }, count: 1 }] }) });
+// 昇華者的恩賜：使一個手下 +2 生命值。召喚一個與其屬性值相同、具有嘲諷的昇華基利恩
+reg('REV_248', { target: anyMinion, abilities: play({ e: 'buff', target: { t: 'chosen' }, hp: 2 }, fn('coBoon')), tokens: ['REV_248t'] });
+// 聖光灼燒！：對一個手下造成等同於其攻擊力的傷害
+reg('REV_249', { target: anyMinion, abilities: play(fn('coBurn')) });
+// 佩拉戈斯：在你對一個友方手下施放法術後，將其攻擊力與生命值設為兩者中較高的值
+reg('REV_250', { abilities: [{ on: { k: 'spellCast', side: 'friendly' }, effects: [fn('coPelagos')] }] });
+// 身分盜用：發現對手手牌與牌堆中一張牌的複製
+reg('REV_253', { abilities: play(fn('coDiscoverOpp', { hand: true, deck: true })) });
+// 死亡之花巨擊者：戰吼：抽一張亡語手下並獲得它的亡語
+reg('REV_310', { abilities: play(fn('coWhomper')) });
+// 夜影花苞：二選一 從牌堆發現一個手下並召喚；或發現一個法術並施放
+reg('REV_311', {
+  chooseOne: [
+    { id: 'REV_311a', name: '召喚手下', text: '從你的牌堆中發現一個手下並召喚', abilities: play(fn('coDeckPick', { kind: 'MINION' })) },
+    { id: 'REV_311b', name: '施放法術', text: '從你的牌堆中發現一個法術並施放', abilities: play(fn('coDeckPick', { kind: 'SPELL' })) },
+  ],
+});
+// 偽造證據：發現一個法術，本回合它的消耗減少 (2)
+reg('REV_313', { abilities: play(fn('coPlannedEvidence')) });
+// 灌木大師托庇歐：戰吼：本場對戰中，在你施放自然法術後，召喚一隻有突襲的 3/3 雛龍
+reg('REV_314', { abilities: play(fn('coTopior')), tokens: ['REV_314t'] });
+// 活體之刃雷莫妮雅：突襲。在此手下攻擊後，裝備它
+reg('REV_316', { keywords: ['RUSH'], abilities: [{ on: { k: 'attack', subject: 'self', after: true }, effects: [{ e: 'equip', card: 'REV_316t' }] }], tokens: ['REV_316t'] });
+reg('REV_316t', { abilities: heroHit([summon('REV_316'), { e: 'destroyWeapon', who: 'self' }]) });
+// 驕傲之重：召喚三個 1/3 的嘲諷看守者。若你的生命值不高於 20，使其 +1/+1
+reg('REV_334', { abilities: play(fn('coBurden')), tokens: ['REV_334t'] });
+// 罪惡陰謀：召喚兩個 2/2 樹人。注入：改為召喚兩個 5/5 古樹
+reg('REV_336', { abilities: play(summon('REV_336t2', 2)), infuse: { n: 5, into: 'REV_336t4' }, tokens: ['REV_336t2', 'REV_336t4'] });
+reg('REV_336t4', { abilities: play(summon('REV_336t3', 2)), tokens: ['REV_336t3'] });
+// 暴動！：本回合你的手下的生命值不會降到 1 以下。它們各自攻擊一個隨機敵方手下
+reg('REV_337', { abilities: play(fn('coRiot')) });
+// 挖掘者之杖：戰吼：使你手牌中的手下 +1 生命值
+reg('REV_338', { abilities: play({ e: 'handBuff', atk: 0, hp: 1, scope: 'all' }) });
+// 獵人阿爾提莫：戰吼：召喚一個加岡夥伴。注入：再召喚一個；再注入：全部召喚
+reg('REV_353', { abilities: play(fn('coGargon', { n: 1 })), tokens: ['REV_353t', 'REV_353t2', 'REV_353t3', 'REV_353t4', 'REV_353t5'] });
+reg('REV_353t', { abilities: play(fn('coGargon', { n: 2 })), infuse: { n: 4, into: 'REV_353t2' }, tokens: ['REV_353t2', 'REV_353t3', 'REV_353t4', 'REV_353t5'] });
+reg('REV_353t2', { abilities: play(fn('coGargon', { n: 3 })), tokens: ['REV_353t3', 'REV_353t4', 'REV_353t5'] });
+// 蝙蝠賓客：亡語：召喚一隻 2/1 的蝙蝠
+reg('REV_356', { abilities: dr(summon('CORE_T_BAT')) });
+// 野籽魂：精靈搜尋者 / 野性靈魂 / 艾拉隆 / 雄鹿衝鋒 / 召喚靈魂
+const seedTokens = ['REV_360t', 'REV_360t1', 'REV_360t2', 'REV_360t4'];
+reg('REV_360', { abilities: play(fn('coWildseed', { mode: 'random' })), tokens: seedTokens });
+reg('REV_361', { abilities: play(fn('coWildseed', { mode: 'two', sooner: true })), tokens: seedTokens });
+reg('REV_363', { abilities: play(fn('coWildseed', { mode: 'all' })), tokens: seedTokens });
+reg('REV_364', { target: anyChar, abilities: play(hit(3), fn('coWildseed', { mode: 'random' })), tokens: seedTokens });
+reg('REV_360t', { keywords: ['RUSH'] });
+reg('REV_360t1', { keywords: ['TAUNT'] });
+reg('REV_360t2', { flags: ['stagSpirit'] });
+// 召喚靈魂：施放 8 個隨機德魯伊法術（目標隨機）
+reg('REV_365', { abilities: play(fn('coConvoke')) });
+// 附帶傷害：對三個隨機敵方手下造成 $6 點傷害。多餘的傷害會打到敵方英雄
+reg('REV_369', { abilities: play(fn('coCollateral')) });
+// 不速之客：戰吼：選擇一個敵方手下，將你手牌中的一個隨機手下扔向它
+reg('REV_370', { target: optional(enemyMinion), abilities: play(fn('coCrasher')) });
+// 暗影華爾滋：召喚一個 3/5 的嘲諷暗影。若本回合有手下死亡，再召喚一個
+reg('REV_372', { abilities: play(summon('REV_372t'), cond({ c: 'anyDiedThisTurn' }, [summon('REV_372t')])), tokens: ['REV_372t'] });
+// 達克維恩夫人：戰吼：召喚兩個 2/1 的暗影，它們各獲得「亡語：施放你的上一個暗影法術」
+reg('REV_373', { abilities: play(fn('coDarkvein')), tokens: ['REV_373t'] });
+// 暗影之子：亡語：使你手牌中消耗最高的暗影法術的消耗減少 (3)
+reg('REV_374', { abilities: dr(fn('coShadowborn')) });
+// 邀請信使：每當有其他職業的卡加入你的手牌，複製它
+reg('REV_377', { flags: ['courier'] });
+// 鑑識除塵員：戰吼：你的對手的手下在下個回合消耗增加 (1)
+reg('REV_378', { abilities: play({ e: 'minionTax', amount: 1 }) });
+// 完美不在場證明：直到你的下個回合，你的英雄每次最多受到 1 點傷害
+reg('REV_504', { abilities: play(fn('coAlibi')) });
+// 罪惡烙印：烙印一個敵方手下。每當它受到傷害，對敵方英雄造成 1 點傷害
+reg('REV_506', { target: enemyMinion, abilities: play(fn('coBrand')) });
+// 銷毀證據：使你的英雄本回合 +3 攻擊力。從手牌中選 3 張洗入你的牌堆
+reg('REV_507', { abilities: play({ e: 'heroAttack', amount: 3 }, fn('coShuffleHand', { n: 3 })) });
+// 維度遺物 / 滅絕遺物 / 幻影遺物
+reg('REV_508', { abilities: play(fn('coRelic', { kind: 'dimensions' })) });
+reg('REV_834', { abilities: play(fn('coRelic', { kind: 'extinction' })) });
+reg('REV_943', { abilities: play(fn('coRelic', { kind: 'phantasms' })), tokens: ['REV_943t'] });
+// 放大鏡之刃：在你的英雄攻擊後，抽牌直到你有 3 張手牌
+reg('REV_509', { abilities: heroHit([fn('drawUntil', { n: 3 })]) });
+// 書蟲：戰吼：選擇手牌中的一張牌洗入你的牌堆
+reg('REV_511', { abilities: play(fn('coShuffleHand', { n: 1 })) });
+// 無可避免的科爾蘇加德：戰吼：復活你的不穩定骷髏。放不下的會立刻爆炸！
+reg('REV_514', { abilities: play(fn('coKelThuzad')), tokens: ['REV_845'] });
+// 莊園經理歐萊恩：在一個友方奧秘被揭露後，施放另一個法師奧秘並獲得 +2/+2
+reg('REV_515', { flags: ['orion'] });
+// 復仇之面：奧秘：在一個敵方手下攻擊你的英雄後，召喚它的複製來攻擊敵方英雄
+reg('REV_516', secretOn('afterMinionAttacksHero', fn('coVisage')));
+// 霜寒之觸：造成 $3 點傷害。注入：將一張霜寒之觸加入你的手牌
+reg('REV_601', { target: anyChar, abilities: play(hit(3)) });
+reg('REV_601t', { target: anyChar, abilities: play(hit(3), addCard('REV_601')) });
+// 雙重背叛：奧秘：在你的對手花光所有法力後，抽兩張牌
+reg('REV_825', secretOn('enemyAllMana', draw(2)));
+// 私家偵探：戰吼：從你的牌堆施放一個奧秘。連擊：改為施放 2 個
+reg('REV_826', { abilities: play(fn('coCastDeckSecret')) });
+// 黏呼呼的處境：奧秘：在你的對手施放法術後，召喚一隻具有潛行的 3/4 蜘蛛
+reg('REV_827', { ...secretOn('afterEnemySpell', summon('REV_827t')), tokens: ['REV_827t'] });
+// 綁架：奧秘：在你的對手打出一個手下後，把它塞進 0/4 的麻袋
+reg('REV_828', { ...secretOn('enemyPlaysMinion', fn('coKidnap')), tokens: ['REV_828t'] });
+reg('REV_828t', { abilities: dr(fn('coSackReturn')) });
+// 哈基亞：潛行。亡語：把哈基亞的靈魂存放進一個友方奧秘；奧秘觸發時重新召喚
+reg('REV_829', { keywords: ['STEALTH'], abilities: dr(fn('coHalkias')) });
+// 小鬼王拉法姆：戰吼：復活四個友方小鬼。注入：使你的小鬼 +2/+2
+reg('REV_835', { abilities: play(fn('coRafaam')), infuse: { n: 5, into: 'REV_835t' }, tokens: ['REV_835t'] });
+reg('REV_835t', { abilities: play(fn('coRafaam', { buff: true })) });
+// 汙泥水管工：所有手下的消耗增加 (2)
+reg('REV_837', { costAuras: [{ side: 'both', type: 'MINION', add: 2 }] });
+// 死亡所生：對所有手下造成 $2 點傷害。每消滅一個，召喚一個 2/2 不穩定骷髏
+reg('REV_840', { abilities: play(fn('coDeathborne')), tokens: ['REV_845'] });
+// 匿名線人：戰吼：你打出的下一個奧秘消耗為 (0)
+reg('REV_841', { abilities: play({ e: 'pendingDiscount', d: { set: 0, secret: true } }) });
+// 晉升：使一個白銀之手新兵 +3/+3 並獲得嘲諷
+reg('REV_842', { target: { filter: { type: 'minion', side: 'friendly', nameIncludes: 'Silver Hand Recruit' } }, abilities: play({ e: 'buff', target: { t: 'chosen' }, atk: 3, hp: 3, keywords: ['TAUNT'] }) });
+// 被剝奪的靈魂：戰吼：若你控制一個地點，發現你牌堆中一張牌的複製
+reg('REV_901', { abilities: play(fn('coDispossessed')) });
+// 德納修斯大帝：生命竊取。戰吼：對敵人造成 5 點傷害，分散到各處。注入：多造成 1 點
+reg('REV_906', { keywords: ['LIFESTEAL'], abilities: play({ e: 'splitDamage', filter: { side: 'enemy' }, amount: 5 }), infuse: { n: 2, into: 'REV_906t' }, tokens: ['REV_906t'] });
+reg('REV_906t', { noInfuse: true, keywords: ['LIFESTEAL'], abilities: play({ e: 'splitDamage', filter: { side: 'enemy' }, amount: 6 }) });
+// 詭異的畫像：在另一個手下死亡後，變成它的複製
+reg('REV_916', { abilities: [{ on: { k: 'minionDied', side: 'any' }, effects: [fn('coPainting')] }] });
+// 說服偽裝：將一個友方手下變成消耗多 (2) 的手下。注入：改為所有友方手下
+reg('REV_920', { target: friendlyMinion, abilities: play({ e: 'evolve', target: { t: 'chosen' }, amount: 2 }), infuse: { n: 4, into: 'REV_920t' }, tokens: ['REV_920t'] });
+reg('REV_920t', { abilities: play({ e: 'evolve', target: allFriendly, amount: 2 }) });
+// 石匠：戰吼：本場對戰中，你的圖騰 +2 攻擊力
+reg('REV_921', { abilities: play(fn('coStonewright')) });
+// 原初之浪：將敵方手下變成消耗少 (1) 的手下，友方手下變成消耗多 (1) 的手下
+reg('REV_924', { abilities: play({ e: 'evolve', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, amount: -1 }, { e: 'evolve', target: allFriendly, amount: 1 }) });
+// 瘋狂的可憐蟲：受傷時 +2 攻擊力並具有衝鋒
+reg('REV_930', { auras: [{ scope: 'self', atk: 2, keywords: ['CHARGE'], cond: { c: 'damaged' } }] });
+// 征服者戰旗：從雙方牌堆各揭露一張牌三次。抽你消耗較高的牌
+reg('REV_931', { abilities: play(fn('coBanner')) });
+// 灌注斧：在你的英雄攻擊後，使你受傷的手下 +1/+2。注入：+2/+2
+reg('REV_933', { abilities: heroHit([{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', damaged: true } }, atk: 1, hp: 2 }]), infuse: { n: 2, into: 'REV_933t' }, tokens: ['REV_933t'] });
+reg('REV_933t', { abilities: heroHit([{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly', damaged: true } }, atk: 2, hp: 2 }]) });
+// 滅絕者奧爾格拉：戰吼：每有一個受傷的手下 +1/+1，然後攻擊所有敵人
+reg('REV_934', { abilities: play(fn('coOlgra')) });
+// 派對賀禮圖騰：在你的回合結束時，召喚一個隨機基本圖騰。注入：改為兩個
+reg('REV_935', { abilities: atEndOfTurn(fn('coRandomTotem', { n: 1 })), infuse: { n: 2, into: 'REV_935t' }, tokens: ['REV_935t'] });
+reg('REV_935t', { abilities: atEndOfTurn(fn('coRandomTotem', { n: 2 })) });
+// 巧匠希瑪克斯：戰吼：發現並施放一個遺物。注入：改為全部施放
+reg('REV_937', { abilities: play(fn('coCastRelics')), infuse: { n: 5, into: 'REV_937t' }, tokens: ['REV_937t', 'REV_508', 'REV_834', 'REV_943'] });
+reg('REV_937t', { abilities: play(fn('coCastRelics', { all: true })), tokens: ['REV_508', 'REV_834', 'REV_943'] });
+// 暗影之門：抽一張法術牌。注入：將一張暫時的複製加入你的手牌
+reg('REV_938', { abilities: play(fn('coDoor')), infuse: { n: 2, into: 'REV_938t' }, tokens: ['REV_938t'] });
+reg('REV_938t', { abilities: play(fn('coDoor', { copy: true })) });
+// 鋸齒骨刺：對一個手下造成 $3 點傷害。若它死亡，本回合你的下一張牌消耗減少 (2)
+reg('REV_939', { target: anyMinion, abilities: play(fn('coBoneSpike')) });
+// 死靈領主德拉卡：戰吼：裝備一把 @/3 的匕首
+reg('REV_940', { abilities: play(fn('coDraka')), tokens: ['REV_940t'] });
+// 可疑的陌生人：戰吼：發現另一個職業的奧秘
+reg('REV_945', { abilities: play({ e: 'discover', pool: { type: 'SPELL', isSecret: true, otherClass: true } }) });
+// 蒸氣清潔機：戰吼：摧毀雙方牌堆中並非一開始就在牌堆中的牌
+reg('REV_946', { abilities: play(fn('coSteamcleaner')) });
+// 服務鈴：發現你牌堆中的一張職業牌，抽出它的所有複製
+reg('REV_948', { abilities: play(fn('coServiceBell')) });
+// 神聖通行費：向隨機手下射出 5 道射線：友方 +2/+2，敵方受到 $2 點傷害
+reg('REV_950', { abilities: play(fn('coDivineToll')) });
+// 傳說邀請函：發現另一個職業的傳說手下，它的消耗為 (0)
+reg('REV_951t', { abilities: play({ e: 'discover', pool: { type: 'MINION', rarity: 'LEGENDARY', otherClass: true }, then: [fn('coZeroIt')] }) });
+// 女伯爵：戰吼：若你的牌堆沒有中立牌，將 3 張傳說邀請函加入你的手牌
+reg('REV_951', { abilities: play(cond({ c: 'deckNoNeutral' }, [addCard('REV_951t', 3)])), tokens: ['REV_951t'] });
+// 管家史都華：亡語：使你召喚的下一個白銀之手新兵 +3/+3 並獲得此亡語
+reg('REV_955', { abilities: dr(fn('coStewart')) });
+// 可怕的掘墓人：戰吼：若你控制奧秘，選擇對手手牌的一張牌洗入他的牌堆
+reg('REV_959', { abilities: play(fn('coGravedigger')) });
+// 灰燼元素：戰吼：下個回合，每當你的對手抽牌，他受到 2 點傷害
+reg('REV_960', { abilities: play(fn('coAshen')) });
+// 勢利眼：戰吼：你手牌中每有一張聖騎士牌，隨機獲得聖盾、生命竊取、突襲或嘲諷
+reg('REV_961', { abilities: play(fn('coSnob')) });
+// 惡魔之影：每當你施放一個法術，變成它的複製
+reg('RLK_567', { flags: ['mirrorSpell'] });
+// 水晶雕刻教徒：戰吼：若你手牌中有暗影法術，獲得 +1/+1
+reg('RLK_814', { abilities: play(fn('coCultist')) });
+// 時光守衛安納克洛斯：戰吼：把所有其他手下送往兩個回合後的未來
+reg('RLK_919', { abilities: play(fn('coAnachronos')) });
+// 惡魔研習 / 伊利達瑞研習：發現一張牌，它的消耗減少 (1)
+reg('SCH_158', { abilities: play(fn('coStudies', { pool: { type: 'MINION', race: 'DEMON' } })) });
+reg('YOP_001', { abilities: play(fn('coStudies', { pool: { outcast: true } })) });
+// 魔杖製造者：戰吼：將一張你職業的 1 費法術加入你的手牌
+reg('SCH_160', { abilities: play({ e: 'addRandom', pool: { type: 'SPELL', cost: 1, cls: 'own' }, count: 1, who: 'self' }) });
+// 魔女威洛：戰吼：從你的手牌與牌堆各召喚一個隨機惡魔
+reg('SCH_181', { abilities: play(fn('coWillow')) });
+// 導覽員：戰吼：你的下一個英雄能力消耗為 (0)
+reg('SCH_312', { abilities: play({ e: 'heroPowerDiscount', amount: 10 }) });
+// 入會儀式：對一個手下造成 $4 點傷害。若它死亡，召喚一個新的複製
+reg('SCH_512', { target: anyMinion, abilities: play(fn('coInitiation')) });
+// 剽竊：奧秘：在你的對手的回合結束時，將他本回合打出的牌的複製加入你的手牌
+reg('SCH_706', secretOn('enemyTurnEnd', fn('coPlagiarize')));
+// 邪教新信徒：戰吼：你的對手的法術在下個回合消耗增加 (1)
+reg('SCH_713', { abilities: play({ e: 'spellTax', amount: 1 }) });
+// 鑰匙大師阿拉巴斯特：每當你的對手抽牌，將一張消耗為 (1) 的複製加入你的手牌
+reg('SCH_717', { abilities: [{ on: { k: 'draw', side: 'enemy' }, effects: [fn('coKeymaster')] }] });
+// 大領主弗塔根：聖盾。在一個友方手下失去聖盾後，使你手牌中的一個手下 +5/+5
+reg('SW_047', { keywords: ['DIVINE_SHIELD'], abilities: [{ on: { k: 'shieldLost', side: 'friendly' }, effects: [{ e: 'handBuff', atk: 5, hp: 5, scope: 'random' }] }] });
+// 科尼留斯‧羅姆：在每個玩家的回合開始與結束時，抽一張牌
+reg('SW_080', {
+  abilities: [
+    { on: { k: 'turnStart', whose: 'each' }, effects: [draw()] },
+    { on: { k: 'turnEnd', whose: 'each' }, effects: [draw()] },
+  ],
+});
+// 暗巷契約：召喚一個具有嘲諷、屬性值等同你手牌數的惡魔
+reg('SW_085', { abilities: play(fn('coFiend')), tokens: ['SW_085t'] });
+// 透支：可交易。解鎖你被超載的法力水晶，造成等量的傷害
+reg('SW_114', { keywords: ['TRADEABLE'], abilities: play(fn('coOverdraft')) });
+// 活力松鼠：亡語：將 4 顆橡實洗入你的牌堆。抽到時召喚一隻 2/1 松鼠
+reg('SW_439', { abilities: dr({ e: 'shuffle', card: 'SW_439t', count: 4 }), tokens: ['SW_439t', 'SW_439t2'] });
+reg('SW_439t', { castsWhenDrawn: true, abilities: play(summon('SW_439t2')), tokens: ['SW_439t2'] });
+// 黑暗主教本尼迪塔斯：開局時，若你牌堆中的法術全是暗影法術，進入暗影形態
+reg('SW_448', { startOfGame: 'benedictus' });
+// 大獎！：將兩張其他職業消耗 (5) 以上的隨機法術加入你的手牌
+reg('TID_931', { abilities: play({ e: 'addRandom', pool: { type: 'SPELL', otherClass: true, minCost: 5 }, count: 2, who: 'self' }) });
+// 格諾梅莉亞：突襲。同時傷害攻擊目標相鄰的手下。亡語：對所有敵人造成 2 點傷害
+reg('TOY_100', { keywords: ['RUSH', 'CLEAVE'], abilities: dr({ e: 'damage', target: { t: 'all', filter: { side: 'enemy' } }, amount: 2 }) });
+// 暗夜精靈女獵手：戰吼：對三個不同的敵人各造成 3 點傷害
+reg('TOY_101', { target: optional({ filter: { type: 'character', side: 'enemy' } }), abilities: play(fn('coHuntress')) });
+// 步兵：嘲諷。相鄰的手下在攻擊時免疫
+reg('TOY_102', { keywords: ['TAUNT'], flags: ['footman'] });
+// 戰歌步兵：突襲。在此手下攻擊並消滅一個手下後，可以再次攻擊
+reg('TOY_103', { keywords: ['RUSH'], abilities: [{ on: { k: 'attack', subject: 'self', after: true }, effects: [fn('coGrunt')] }] });
+// 化石之石：召喚 4/8、2/4 與 1/2 的嘲諷元素
+reg('TSC_076', { abilities: play(summon('TSC_076t3'), summon('TSC_076t2'), summon('TSC_076t')), tokens: ['TSC_076t', 'TSC_076t2', 'TSC_076t3'] });
+// 迷途的賢者：流放：使你手牌最左與最右的牌消耗減少 (1)
+reg('TSC_217', { abilities: play(cond({ c: 'outcast' }, [fn('coWayward')])) });
+// 鰭足朋友：二選一 召喚一隻 6/6 嘲諷虎鯨；或六隻具有突襲的 1/1 水獺
+reg('TSC_650', {
+  chooseOne: [
+    { id: 'TSC_650a', name: '指揮虎鯨', text: '召喚一隻具有<b>嘲諷</b>的6/6虎鯨', abilities: play(summon('TSC_650t')) },
+    { id: 'TSC_650d', name: '水獺嬉戲', text: '召喚六隻具有<b>突襲</b>的1/1水獺', abilities: play(summon('TSC_650t4', 6)) },
+  ],
+  tokens: ['TSC_650t', 'TSC_650t4'],
+});
+// 神話恐懼：生命竊取。在你的回合結束時，強迫所有敵方手下攻擊它
+reg('TTN_866', { keywords: ['LIFESTEAL'], abilities: atEndOfTurn(fn('coTerror')) });
+// 動物園馬克杯 / 水壺：戰吼：使 3 個不同種族的隨機友方手下 +1/+1（+2/+2）
+reg('WON_141', { abilities: play(fn('coMenagerie', { n: 1 })) });
+reg('WON_142', { abilities: play(fn('coMenagerie', { n: 2 })) });
+// 爐石化身：戰吼：開啟一包標準卡包，打出裡面的所有牌
+reg('WON_145', { abilities: play(fn('coAvatar')) });
+// 引爆魔像：嘲諷。戰吼：使你手牌中的嘲諷手下 +2/+2
+reg('WW_329', { keywords: ['TAUNT'], abilities: play(fn('coHandTaunt')) });
+// 護甲商人：戰吼：使每個英雄獲得 4 點護甲
+reg('YOP_032', { abilities: play({ e: 'armor', amount: 4 }, { e: 'armor', amount: 4, who: 'opponent' }) });

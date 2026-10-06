@@ -153,6 +153,10 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
+  brand?: PlayerId;
+  /** 在這個回合的生命值不會被降到 1 以下 */
+  undyingTurn?: number;
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
   dormantTurns?: number;
   /** 本回合的下一次攻擊 / 對手回合具有高於元素閃避 */
@@ -217,6 +221,8 @@ export interface Weapon {
 export interface SecretInst {
   uid: number;
   cardId: string;
+  /** 哈基亞：被存放在這個奧秘裡的靈魂（觸發時重新召喚） */
+  souls?: string[];
 }
 
 export interface PlayerState {
@@ -301,6 +307,10 @@ export interface PlayerState {
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
   /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」）；turn：只在這個回合有效；minSpells：施放的法術數達到這個值才觸發 */
   eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number; until?: number; /** 目標（Objective / Aura）：顯示在英雄旁邊 */ objective?: boolean }[];
+  /** 遺物已經打出的次數（遺物的數值 = 1 + 次數） */
+  relics?: number;
+  /** 不在不在場證明：直到這個回合結束前，英雄每次最多受到 1 點傷害 */
+  heroCapUntil?: number;
   /** 你的手下在這個回合消耗增加（對手的冰涼腳丫等） */
   minionTax?: { amount: number; turn: number };
   /** 本回合下一張法術的折扣 */

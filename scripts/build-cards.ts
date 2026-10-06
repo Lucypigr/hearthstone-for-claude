@@ -280,14 +280,16 @@ async function main() {
     // 注入：友方手下死亡累積足夠次數後，手牌中的這張卡變成「注入」版本
     if (r.tags.INFUSE) {
       const tokenId = `${r.id.replace(/^CORE_/, '')}t`;
-      if (!byId.get(tokenId) || !buildToken(tokenId)) {
+      // 覆寫可以自行指定注入版本（或沒有注入版本）
+      const manual = OVERRIDES[r.id] && ('infuse' in OVERRIDES[r.id] || OVERRIDES[r.id].noInfuse);
+      if (!manual && (!byId.get(tokenId) || !buildToken(tokenId))) {
         if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `注入版本 ${tokenId} 不支援` });
         return null;
       }
       const raceWord = /Infuse \(@ (?:\|\d+\()?(\w+)/.exec(r.strs.CARDTEXT?.enUS ?? '')?.[1]?.replace(/s$/, '').toUpperCase();
       const infuse: NonNullable<CardDef['infuse']> = { n: r.tags.TAG_SCRIPT_DATA_NUM_1 ?? 3, into: tokenId };
       if (raceWord && ['BEAST', 'TOTEM', 'MURLOC', 'DEMON', 'UNDEAD', 'MECH', 'ELEMENTAL', 'DRAGON', 'PIRATE'].includes(raceWord)) infuse.race = (raceWord === 'MECH' ? 'MECHANICAL' : raceWord) as Race;
-      def.infuse = infuse;
+      if (!manual) def.infuse = infuse;
     }
     const ov = OVERRIDES[r.id];
     if (ov) {
