@@ -3258,3 +3258,18 @@ body {
   background: #d6a53b;
   color: #1a120b;
 }
+
+.location-portrait img,
+.location-portrait .art-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.location .art-fallback {
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 2px;
+}
