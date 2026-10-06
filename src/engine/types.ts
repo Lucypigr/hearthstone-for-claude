@@ -20,7 +20,7 @@ export type CardClass =
 
 export type Rarity = 'FREE' | 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
-export type CardType = 'MINION' | 'SPELL' | 'WEAPON' | 'HERO';
+export type CardType = 'MINION' | 'SPELL' | 'WEAPON' | 'HERO' | 'LOCATION';
 
 export type Race =
   | 'BEAST'
@@ -94,6 +94,8 @@ export interface Filter {
   /** 屬於某個職業 / 不屬於某個職業的手下 */
   cardClass?: CardClass;
   notClass?: CardClass;
+  /** 生命值不高於這個數值 */
+  maxHp?: number;
 }
 
 export type TargetExpr =
@@ -170,6 +172,10 @@ export type DynAmount =
   | 'enemyHeroDamageThisTurn'
   /** 本場對戰中你花在法術上的法力 */
   | 'spellManaSpent'
+  | 'rafaamsPlayed'
+  | 'enemyHeroHitsThisTurn'
+  | 'turnsTaken'
+  | 'selfHealth'
   /** 本場對戰中死亡的友方樹人數 */
   | 'treantsDied'
   /** 本場對戰中加入你手牌的其他職業卡數 */
@@ -245,6 +251,10 @@ export interface Pool {
   /** 攻擊力為 attack / 至少為 minAttack 的手下 */
   attack?: number;
   minAttack?: number;
+  /** 「來自過去」：不屬於目前標準模式的系列 */
+  past?: boolean;
+  /** 有倒轉的卡 */
+  rewind?: boolean;
 }
 
 export type Condition =
@@ -320,6 +330,24 @@ export type Condition =
   /** 你的牌堆只有奇數（odd）/ 偶數消耗的卡 */
   | { c: 'deckParity'; odd: boolean }
   | { c: 'deckNoMinions' }
+  /** 同族：你上個回合打出過與這張牌同種族 / 法術派系的牌 */
+  | { c: 'kindred' }
+  /** 你的英雄這個回合受到過傷害 */
+  | { c: 'heroDamagedThisTurn' }
+  /** 你有進行中的目標（Aura） */
+  | { c: 'controlObjective' }
+  /** 你的英雄剛剛擊殺了一個手下 */
+  | { c: 'heroKilled' }
+  /** 場上有休眠中的手下 */
+  | { c: 'anyDormant' }
+  /** 這張牌打出時正好在手牌的正中央 */
+  | { c: 'handCenter' }
+  /** 觸發事件的手下是在上個回合被打出的（不合時宜的死亡） */
+  | { c: 'itPlayedLastTurn' }
+  /** 你控制某個（英文名稱符合的）地點 */
+  | { c: 'controlLocation'; nameEn: string }
+  /** 你裝備的武器（英文名稱符合） */
+  | { c: 'weaponNamed'; nameEn: string }
   /** 戰場上（雙方）剛好有 n 個手下 */
   | { c: 'boardCount'; n: number }
   /** 你至少有 n 點護甲值 */
@@ -537,6 +565,8 @@ export type Trig =
   | { k: 'prepare' }
   /** 這個手下被召喚時（包含打出） */
   | { k: 'summoned' }
+  /** 你碎裂了一張牌 */
+  | { k: 'shatter' }
   /** 你花光最後一顆法力水晶時 */
   | { k: 'lastMana' }
   /** 你每回合第一次用法術造成傷害時 */
@@ -634,7 +664,9 @@ export interface QuestDef {
     | 'tauntMinion'
     | 'deathrattleSummon'
     | 'murlocSummon'
-    | 'spellOnMinion';
+    | 'spellOnMinion'
+    /** 填滿手牌，然後清空手牌（穿越時間流） */
+    | 'fillHand';
   goal: number;
   /** 英雄能力（src/engine/heroes.ts 的 EXTRA_POWERS）或加入手牌的卡 */
   reward: string;
@@ -654,6 +686,8 @@ export interface PendingDiscount {
   thisTurn?: boolean;
   /** 只適用於消耗不超過這個值的牌 */
   maxCost?: number;
+  /** 只適用於英文名稱包含這段文字的牌 */
+  nameEn?: string;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -687,6 +721,8 @@ export interface HeroPowerSpec {
   chooseOne?: { id: string; name?: string; text?: string; effects: Effect[]; target?: TargetReq }[];
   /** 被動：無法主動使用 */
   passive?: boolean;
+  /** 倒轉：使用後可以選擇保留，或回到使用前重來（每回合一次） */
+  rewind?: boolean;
 }
 
 export interface HeroPowerDef extends HeroPowerSpec {
@@ -810,6 +846,14 @@ export interface CardDef {
   extraOnBuff?: { atk: number; hp: number };
   /** 任務 */
   quest?: QuestDef;
+  /** 倒轉：打出後可以選擇保留結果，或倒轉重來（數字 = 可倒轉的次數） */
+  rewind?: number;
+  /** 傳說：開局時，這張卡的組合卡會一起洗入牌堆 */
+  fabled?: string[];
+  /** 目標（Aura）：打出後持續這麼多個你的回合 */
+  objective?: number;
+  /** 地點牌：啟用後（耐久度 -1）變成這張卡（「前進到現在 / 未來」） */
+  advanceTo?: string;
 }
 
 /**
@@ -892,6 +936,15 @@ export type MinionFlag =
   | 'elusiveOnOppTurn'
   | 'immuneAttacking'
   | 'doubleBattlecries'
+  | 'keepBothRewinds'
+  | 'takesDoubleDamage'
+  | 'natureFeeds'
+  | 'natureSummons'
+  | 'heroPowerFreeSmallHand'
+  | 'sindragosaArcane'
+  | 'malygosArcane'
+  | 'doubleSpellPower'
+  | 'heroPowerEffectTwice'
   | 'doubleHealing'
   | 'spellDamage2Damaged'
   | 'bothSpellDamage2'

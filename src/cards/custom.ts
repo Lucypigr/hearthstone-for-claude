@@ -23,4 +23,23 @@
 // ============================================================================
 import type { CardDef } from '../engine/types';
 
-export const CUSTOM_CARDS: CardDef[] = [];
+export const CUSTOM_CARDS: CardDef[] = [
+  // 坦克工程師（穿越時間流）的 7/7 坦克：卡牌資料庫中沒有這張衍生卡
+  {
+    id: 'TIME_017t',
+    dbfId: 9000017,
+    name: '坦克',
+    nameEn: 'Tank',
+    text: '<b>聖盾</b>',
+    type: 'MINION',
+    cardClass: 'PALADIN',
+    rarity: 'FREE',
+    set: 1957,
+    cost: 7,
+    attack: 7,
+    health: 7,
+    races: ['MECHANICAL'],
+    keywords: ['DIVINE_SHIELD'],
+    collectible: false,
+  },
+];

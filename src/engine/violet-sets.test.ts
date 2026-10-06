@@ -979,7 +979,7 @@ describe('法師', () => {
     me.deck = me.deck.filter((h) => getCard(h.cardId).cardClass !== 'NEUTRAL');
     kill(g, bruiser);
     pass(g);
-    expect(me.hand.some((h) => getCard(h.cardId).cardClass === 'PALADIN')).toBe(true);
+    expect(me.hand.some((h) => (getCard(h.cardId).classes ?? [getCard(h.cardId).cardClass]).includes('PALADIN'))).toBe(true);
     const g2 = newGame();
     play(g2, 'JAIL_507');
     expect(g2.s.players[0].board.some((m) => g2.hasKw(m, 'TAUNT') && getCard(m.cardId).cost === 6)).toBe(true);

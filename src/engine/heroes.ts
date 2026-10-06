@@ -82,6 +82,9 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   UNG_917t1: { effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 3, hp: 3 }], target: { filter: { type: 'minion', side: 'any', race: 'BEAST' } } },
   // 血腥醫生薩蕾娜的第二個英雄能力：吸血鬼之吻（消耗 3 具屍體）：賦予一個手下 +3 攻擊力
   JAIL_446hp: { effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 3 }], target: { filter: { type: 'minion', side: 'any' } } },
+  // 灌注後的英雄能力（穿越時間流）：青銅龍的祝福（盜賊）/ 無盡的祝福（死亡騎士）
+  END_000p: { effects: [{ e: 'custom', fn: 'bronzeBlessing' }], rewind: true },
+  END_003p: { effects: [], passive: true },
   // 瑪格的魔法 / 吉的力量：被動英雄能力（效果在引擎中處理）
   JAIL_800hp1: { effects: [], passive: true },
   JAIL_800hp2: { effects: [], passive: true },
