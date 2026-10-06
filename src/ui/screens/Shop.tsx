@@ -29,7 +29,7 @@ export function Shop({ go }: { go: (s: Screen) => void }) {
     <div className="shop">
       <div className="shop-head">
         <h2>🛒 卡包商店</h2>
-        <p className="muted">每包 5 張卡，至少 1 張稀有以上；連續 30 包沒開到傳說必定保底。「傳說卡池」🪙2000 一包 5 張全是傳說。</p>
+        <p className="muted">每包 5 張卡，至少 1 張稀有以上；連續 30 包沒開到傳說必定保底。「開放傳說卡池」與「標準傳說卡池」🪙10000 一包，5 張全是傳說。</p>
         {msg && <div className="message">{msg}</div>}
       </div>
       <div className="shop-grid">

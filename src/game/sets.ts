@@ -78,11 +78,20 @@ export const PACKS: PackType[] = [
   },
   {
     id: 'legendary',
-    name: '傳說卡池',
+    name: '開放傳說卡池',
     description: '每包 5 張傳說（不重複），從所有系列的傳說卡中抽出',
     sets: [],
-    price: 2000,
+    price: 10000,
     color: '#e0a526',
+    legendaryOnly: true,
+  },
+  {
+    id: 'legendary_std',
+    name: '標準傳說卡池',
+    description: '每包 5 張傳說（不重複），只從標準模式系列的傳說卡中抽出',
+    sets: [1810, 1637, 1946, 1952, 1957, 1980, 1988],
+    price: 10000,
+    color: '#2a7fd1',
     legendaryOnly: true,
   },
   {
