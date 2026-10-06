@@ -17,7 +17,7 @@ export function Settings() {
       return;
     }
     setProfile(r.profile);
-    setCodeMsg(`兌換成功！獲得 ${r.gold.toLocaleString()} 金幣`);
+    setCodeMsg(`兌換成功！獲得 ${[r.gold ? `${r.gold.toLocaleString()} 金幣` : '', r.dust ? `${r.dust.toLocaleString()} 奧術塵` : ''].filter(Boolean).join('、')}`);
     setCode('');
   };
 

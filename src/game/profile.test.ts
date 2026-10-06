@@ -151,3 +151,13 @@ describe('標準卡包與傳說卡池', () => {
     }
   });
 });
+
+describe('獎勵碼 evon', () => {
+  it('獲得 5000 奧術塵', () => {
+    const p = newProfile();
+    const r = redeemCode(p, 'Evon');
+    expect(r.ok).toBe(true);
+    expect(r.profile.dust).toBe(p.dust + 5000);
+    expect(r.profile.gold).toBe(p.gold);
+  });
+});

@@ -288,10 +288,12 @@ export function deleteDeck(p: Profile, deckId: string): Profile {
 }
 
 /** 獎勵碼（不分大小寫，可以重複使用）→ 獲得的金幣 */
-export const REWARD_CODES: Record<string, number> = { yiho: 50000 };
+export const REWARD_CODES: Record<string, { gold?: number; dust?: number }> = { yiho: { gold: 50000 }, evon: { dust: 5000 } };
 
-export function redeemCode(p: Profile, code: string): { ok: boolean; profile: Profile; gold: number } {
-  const gold = REWARD_CODES[code.trim().toLowerCase()];
-  if (!gold) return { ok: false, profile: p, gold: 0 };
-  return { ok: true, profile: { ...p, gold: p.gold + gold }, gold };
+export function redeemCode(p: Profile, code: string): { ok: boolean; profile: Profile; gold: number; dust: number } {
+  const r = REWARD_CODES[code.trim().toLowerCase()];
+  if (!r) return { ok: false, profile: p, gold: 0, dust: 0 };
+  const gold = r.gold ?? 0;
+  const dust = r.dust ?? 0;
+  return { ok: true, profile: { ...p, gold: p.gold + gold, dust: p.dust + dust }, gold, dust };
 }
