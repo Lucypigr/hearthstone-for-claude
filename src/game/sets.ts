@@ -109,10 +109,18 @@ export const PACKS: PackType[] = [
   {
     id: 'latest',
     name: '最新擴充卡包',
-    description: '決戰荒蕪之地到安戈洛失落之城的卡牌',
-    sets: [1892, 1897, 1898, 1905, 1935, 1946, 1952],
+    description: '決戰荒蕪之地到翡翠夢境的卡牌',
+    sets: [1892, 1897, 1898, 1905, 1935, 1946],
     price: 100,
     color: '#3fa3a0',
+  },
+  {
+    id: 'ungoro',
+    name: '安戈洛失落之城卡包',
+    description: '只包含安戈洛失落之城的卡牌：血緣、任務、地圖、額外效果',
+    sets: [1952],
+    price: 100,
+    color: '#4f9a3c',
   },
   {
     id: 'timeways',

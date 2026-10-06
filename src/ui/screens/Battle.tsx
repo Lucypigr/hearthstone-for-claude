@@ -1212,6 +1212,9 @@ function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null
   if (def.quest?.kind === 'fillHand') lines.push('任務進度：先填滿你的手牌（10 張），再把手牌打光');
   if (/灌注/.test(def.text)) lines.push('灌注：強化你的英雄能力（盜賊與死亡騎士有灌注後的英雄能力），多次灌注效果更強');
   if (/同族/.test(def.text)) lines.push('同族：如果你上個回合打出過同種族（或同法術派系）的牌，會有額外效果');
+  if (/地圖/.test(def.name)) lines.push('地圖：發現一張牌；如果你在本回合打出它，還可以從其他選項中再選一張');
+  if (/額外效果/.test(def.text)) lines.push('額外效果：隨機獲得一種關鍵字（嘲諷、聖盾、突襲、生命竊取、劇毒、風怒、復生、潛行）');
+  if (def.quest?.repeatable) lines.push('可重複任務：完成後獲得永久獎勵，然後任務重新開始');
   if (def.summonedWhenDrawn) lines.push('抽到時召喚：被抽到時為放進牌堆的玩家召喚');
   if (def.costsHealth) lines.push('消耗生命值而不是法力（生命值不夠就不能打出）');
   if (def.costsHealthIf) lines.push('條件成立時改為消耗生命值而不是法力');

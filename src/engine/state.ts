@@ -24,6 +24,9 @@ export interface HandCard {
   taught?: string;
   /** 時間循環者托奇：這張法術屬於哪一組 */
   looping?: number;
+  /** 地圖：本回合打出這張牌後，也可以從這些選項中再選一張 */
+  mapOthers?: string[];
+  mapTurn?: number;
   /** 萊恩國王：已經躲進對手牌堆（不會再次躲藏） */
   hidden?: boolean;
   cardId: string;
@@ -155,6 +158,8 @@ export interface Minion {
   spellsOn?: string[];
   /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
   brand?: PlayerId;
+  /** 到這個回合為止攻擊時免疫（飢餓猛禽） */
+  immuneAttackTurn?: number;
   /** 在這個回合的生命值不會被降到 1 以下 */
   undyingTurn?: number;
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
@@ -307,6 +312,29 @@ export interface PlayerState {
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
   /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」）；turn：只在這個回合有效；minSpells：施放的法術數達到這個值才觸發 */
   eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number; until?: number; /** 目標（Objective / Aura）：顯示在英雄旁邊 */ objective?: boolean }[];
+  /** 本回合發現過的回合 / 發現次數 */
+  discoveredTurn?: number;
+  /** 發現後、牌被加入手牌前的標記 */
+  discoverPending?: boolean;
+  /** 本場對戰中把牌洗入牌堆的次數 / 打出非一開始就在牌堆的牌數 */
+  shuffleCount?: number;
+  nonStartingPlayed?: number;
+  /** 下一個血緣會觸發兩次 */
+  kindredTwice?: boolean;
+  /** 對手無法治療你的英雄，直到這個回合 */
+  noHealUntil?: number;
+  /** 洛：你的手下消耗固定為這個值 */
+  minionCostSet?: number;
+  /** 重複任務獎勵：你召喚的魚人額外 +n/+n */
+  murlocBuff?: number;
+  /** 加洛什巨像：你對敵人造成剛好 2 點傷害時，額外造成 2 點 */
+  gorishi?: boolean;
+  /** 阿夏隆：你打出的手下獲得這些適應 */
+  adapts?: string[];
+  /** 本回合施放過的法術派系 */
+  schoolsThisTurn?: { turn: number; schools: string[] };
+  /** 紀念石碑：本回合施放的神聖法術 */
+  holySpellsThisTurn?: { turn: number; ids: string[] };
   /** 遺物已經打出的次數（遺物的數值 = 1 + 次數） */
   relics?: number;
   /** 不在不在場證明：直到這個回合結束前，英雄每次最多受到 1 點傷害 */

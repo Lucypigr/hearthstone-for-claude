@@ -94,6 +94,8 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   // 瑪格的魔法 / 吉的力量：被動英雄能力（效果在引擎中處理）
   JAIL_800hp1: { effects: [], passive: true },
   JAIL_800hp2: { effects: [], passive: true },
+  // 蘇拉斯的故事：對一個隨機敵人造成 8 點傷害（用兩次後換回）
+  TLC_632t: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
 };
 

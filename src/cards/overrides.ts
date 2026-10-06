@@ -6,6 +6,7 @@
 import { KAZAKUS_TOKENS } from './kazakus';
 import { CATACLYSM_OVERRIDES } from './cataclysm';
 import { CORE_OVERRIDES } from './core';
+import { UNGORO_OVERRIDES } from './ungoro';
 import { TIMEWAYS_OVERRIDES } from './timeways';
 import { VIOLET_OVERRIDES } from './violet';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
@@ -2881,3 +2882,4 @@ Object.assign(OVERRIDES, TIMEWAYS_OVERRIDES);
 
 // 核心系列
 Object.assign(OVERRIDES, CORE_OVERRIDES);
+Object.assign(OVERRIDES, UNGORO_OVERRIDES);

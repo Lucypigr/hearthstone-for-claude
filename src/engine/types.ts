@@ -96,6 +96,8 @@ export interface Filter {
   notClass?: CardClass;
   /** 生命值不高於這個數值 */
   maxHp?: number;
+  /** 有種族的手下 */
+  hasRace?: boolean;
 }
 
 export type TargetExpr =
@@ -209,7 +211,11 @@ export type DynAmount =
   /** 你上一張打出的卡的消耗 */
   | 'lastCardCost'
   /** 你控制的小鬼數 */
-  | 'friendlyImps';
+  | 'friendlyImps'
+  /** 本場對戰中你打出的、並非一開始就在牌堆中的牌數 */
+  | 'nonStartingPlayed'
+  /** 本場對戰中你把牌洗入牌堆的次數 */
+  | 'shuffleCount';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -259,6 +265,8 @@ export interface Pool {
   rewind?: boolean;
   /** 有流放的卡 */
   outcast?: boolean;
+  /** 有多個種族的手下 */
+  multiRace?: boolean;
 }
 
 export type Condition =
@@ -430,6 +438,11 @@ export type Condition =
   | { c: 'itIsSelf' }
   /** 你本場對戰中已經打出過另一張同名的卡 */
   | { c: 'playedCopy' }
+  | { c: 'discoveredThisTurn' }
+  | { c: 'itFireSpell' }
+  | { c: 'castHolyAndShadow' }
+  | { c: 'deckTenCosts' }
+  | { c: 'deckSameType' }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -690,8 +703,21 @@ export interface QuestDef {
     | 'murlocSummon'
     | 'spellOnMinion'
     /** 填滿手牌，然後清空手牌（穿越時間流） */
-    | 'fillHand';
+    | 'fillHand'
+    /** 安戈洛失落之城：不同種族的手下、在三個回合填滿戰場、花費屍體、洗牌、存活、剛好 2 點傷害、神聖/暗影法術、不同攻擊力的野獸、發現、暫時的卡 */
+    | 'uniqueTypes'
+    | 'fillBoardTurns'
+    | 'corpsesSpent'
+    | 'shuffle'
+    | 'surviveTurns'
+    | 'exactDamage'
+    | 'schoolSpells'
+    | 'beastAttacks'
+    | 'discover'
+    | 'temporaryPlayed';
   goal: number;
+  /** 可重複：完成後獲得獎勵並重新開始 */
+  repeatable?: boolean;
   /** 英雄能力（src/engine/heroes.ts 的 EXTRA_POWERS）或加入手牌的卡 */
   reward: string;
 }
@@ -714,6 +740,8 @@ export interface PendingDiscount {
   nameEn?: string;
   /** 只適用於有連擊的牌 */
   combo?: boolean;
+  /** 只適用於暫時的牌 */
+  temporary?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -1008,6 +1036,17 @@ export type MinionFlag =
   | 'footman'
   | 'stagSpirit'
   | 'orion'
+  | 'bralma'
+  | 'vaultBreaker'
+  | 'petrified'
+  | 'niri'
+  | 'archaios'
+  | 'tarTyrant'
+  | 'grazing'
+  | 'dracorex'
+  | 'wiltedShadow'
+  | 'sabretooth'
+  | 'noHealFoe'
   | 'courier'
   | 'fandral'
   | 'mirrorSpell';
