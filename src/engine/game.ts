@@ -754,12 +754,15 @@ export class Game {
           if (a.hasDeathrattle && !def.abilities?.some((ab) => ab.on.k === 'deathrattle')) continue;
           if (a.race && !(def.races?.includes(a.race) || def.races?.includes('ALL'))) continue;
           if (a.firstCard && (p.id !== this.s.current || p.cardsPlayedThisTurn > 0)) continue;
+          if (a.firstOfRace && a.race && (p.id !== this.s.current || (p.playedThisTurn?.turn === this.s.turn && p.playedThisTurn.ids.some((id) => getCard(id).races?.includes(a.race!))))) continue;
           if (a.everyThird && (p.id !== this.s.current || (p.playedThisTurn?.turn === this.s.turn ? p.playedThisTurn.ids.filter((id) => getCard(id).type === 'MINION').length : 0) % 3 !== 2)) continue;
           if (a.add) cost = a.floor !== undefined ? Math.max(Math.min(cost, a.floor), cost + a.add) : cost + a.add;
           if (a.set !== undefined) set(a.set);
         }
       }
     }
+    // 艾維娜：滿月升起後，你的牌消耗為 (1)
+    if (p.fullMoon) set(1);
     // 洛：你的手下消耗固定為這個值
     if (def.type === 'MINION' && p.minionCostSet !== undefined) set(p.minionCostSet);
     if (setTo !== undefined) cost = setTo;
@@ -794,8 +797,9 @@ export class Game {
   }
 
   /** 這張卡用什麼支付：法力、生命值或屍體 */
-  costKind(p: PlayerState, hc: HandCard): 'mana' | 'health' | 'corpses' {
+  costKind(p: PlayerState, hc: HandCard): 'mana' | 'health' | 'corpses' | 'oppHealth' {
     const def = this.handDef(hc);
+    if (this.activeDiscounts(p, def, hc).some((d) => d.oppHealth)) return 'oppHealth';
     if (def.costsCorpses || (p.nextCardCorpsesTurn === this.s.turn && p.id === this.s.current)) return 'corpses';
     if (def.costsHealth || (hc.healthCostUntil ?? -1) >= this.s.turn) return 'health';
     if (this.activeDiscounts(p, def).some((d) => d.health)) return 'health';
@@ -811,6 +815,8 @@ export class Game {
         return cost < p.hero.hp;
       case 'corpses':
         return cost <= (p.corpses ?? 0);
+      case 'oppHealth':
+        return true;
       default:
         return cost <= p.mana;
     }
@@ -1195,6 +1201,30 @@ export class Game {
   /** 開局效果（例如莫克札王子：把 5 張額外的傳說手下加入你的牌堆） */
   private courierBusy = false;
 
+  /** 灌注英雄能力：累積灌注次數，並換成該職業灌注後的英雄能力 */
+  private doImbue(me: PlayerState, times = 1) {
+    me.imbued = (me.imbued ?? 0) + times;
+    const id = ({ ROGUE: 'END_000p', DEATHKNIGHT: 'END_003p', DRUID: 'EDR_847p', HUNTER: 'EDR_850p', MAGE: 'EDR_851p', PALADIN: 'EDR_445p', PRIEST: 'EDR_449p', SHAMAN: 'EDR_448p' } as Record<string, string>)[me.heroClass] ?? null;
+    if (id && me.heroPower.id !== id && !me.heroPower.heroCard) {
+      const used = me.heroPower.used;
+      this.setHeroPower(me, id);
+      me.heroPower.used = used;
+    }
+    this.log(me.id, `${me.name}灌注了英雄能力（${me.imbued}）`);
+  }
+
+
+  /** 休眠的手下甦醒時的效果 */
+  private *awakenEffects(m: Minion): Gen {
+    const ef = getCard(m.cardId).awaken;
+    if (!ef) return;
+    yield* this.runEffects(ef, { ...this.baseCtx(m.owner), sourceUid: m.uid, sourceCardId: m.cardId });
+  }
+
+  manaCap(p: PlayerState): number {
+    return MAX_MANA + (p.manaCapBonus ?? 0);
+  }
+
   /** 泰坦繪圖師歐斯克：在手牌中隨機獲得一個泰坦能力 */
   private oskRoll(hc: HandCard) {
     if (!getCard(hc.cardId).flags?.includes('osk')) return;
@@ -1282,6 +1312,18 @@ export class Game {
           }
           break;
         }
+        case 'ysera':
+          // 伊瑟拉：雙方玩家的法力水晶上限都增加 5
+          for (const pl of this.s.players) pl.manaCapBonus = (pl.manaCapBonus ?? 0) + 5;
+          break;
+        case 'hamuul':
+          // 哈穆爾：牌堆中的法術全是自然法術時灌注你的英雄能力
+          if (p.deck.filter((h) => getCard(h.cardId).type === 'SPELL').every((h) => getCard(h.cardId).spellSchool === 'NATURE')) {
+            p.imbued = (p.imbued ?? 0) + 1;
+            p.heroPower = { id: 'EDR_847p', used: false, cost: POWER_INFO['EDR_847p']?.cost ?? 2 };
+          }
+          p.hamuulRepeat = true;
+          break;
         case 'renathal':
           // 雷納薩爾親王：牌堆張數與起始生命值都是 40
           p.hero.hp = 40;
@@ -1336,7 +1378,7 @@ export class Game {
       return;
     }
     const p = s.players[pid];
-    p.maxMana = Math.min(MAX_MANA, p.maxMana + 1);
+    p.maxMana = Math.min(this.manaCap(p), p.maxMana + 1);
     p.overloadLocked = p.overloadOwed;
     p.mana = Math.max(0, p.maxMana - p.overloadOwed);
     p.overloadOwed = 0;
@@ -1387,6 +1429,7 @@ export class Game {
       m.keywords = m.keywords.filter((k) => k !== 'DORMANT');
       this.log(pid, `${this.name(m.cardId)}甦醒了！`);
       if (getCard(m.cardId).flags?.includes('stagSpirit')) yield* this.equip(pid, 'REV_360t4');
+      yield* this.awakenEffects(m);
     }
     // 同族：記住你上個回合打出的牌
     p.prevPlayed = p.playedThisTurn && p.playedThisTurn.turn < s.turn ? p.playedThisTurn.ids : [];
@@ -1456,7 +1499,7 @@ export class Game {
     for (const hc of p.hand) {
       const d0 = getCard(hc.origin ?? hc.cardId);
       // 每個回合在手牌中時升級（拉法姆的最後一博、綻放球莖）
-      if (d0.handGrow) hc.counter = (hc.counter ?? 0) + 1;
+      if (d0.handGrow || d0.immolate) hc.counter = (hc.counter ?? 0) + 1;
       // 畸變怪物：每個回合在手牌中時，隨機換兩種加成效果
       if (d0.nameEn === 'Twisted Monstrosity') hc.bonus = shuffle(this.s, ['RUSH', 'WINDFURY', 'DIVINE_SHIELD', 'POISONOUS', 'LIFESTEAL', 'REBORN', 'CHARGE', 'STEALTH'] as Keyword[]).slice(0, 2);
       // 暗影告密者：每個回合換一個職業
@@ -1552,6 +1595,14 @@ export class Game {
       // 時間彼端的鰭：換回原本的手牌
       p.hand = p.stashedHand;
       p.stashedHand = undefined;
+    }
+    // 燃燒：持有滿期限的回合結束時棄掉
+    for (const h of [...p.hand]) {
+      const im = getCard(h.cardId).immolate;
+      if (im !== undefined && (h.counter ?? 0) + 1 >= im) {
+        p.hand = p.hand.filter((x) => x !== h);
+        yield* this.discarded(p, h);
+      }
     }
     p.hand = p.hand.filter((h) => !h.echo && !h.temporary && h.doomTurn !== s.turn);
     if (p.mana > 0) this.questProgress(p, 'unspentTurn');
@@ -1772,6 +1823,7 @@ export class Game {
     const fromOpp = !!hc.fromOpp;
     if (kind === 'health') this.payHealth(p, cost);
     else if (kind === 'corpses') this.spendCorpses(p, cost);
+    else if (kind === 'oppHealth') this.payHealth(s.players[opp(p.id)], Math.min(10, cost));
     else p.mana -= cost;
     // 用掉「你的下一張…」的消耗變化
     const used = this.activeDiscounts(p, def, hc);
@@ -1923,13 +1975,18 @@ export class Game {
       // 低語元素 / 維爾納之心 / 布萊恩‧銅鬚：戰吼觸發兩次
       const once = p.doubleBattlecry?.turn === s.turn && playAbilities.length > 0;
       if (once && !p.doubleBattlecry!.all) p.doubleBattlecry = undefined;
-      const twice = once || (playAbilities.length > 0 && this.flagOnBoard('doubleBattlecries', p.id));
+      const twice = once || (playAbilities.length > 0 && (this.flagOnBoard('doubleBattlecries', p.id) || !!hc.twiceBC));
       for (let i = 0; i < (twice ? 2 : 1); i++) {
         for (const ab of playAbilities) {
           if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
           yield* this.runEffects(ab.effects, ctx);
           if (this.over) return;
         }
+      }
+      // 活生生的噩夢：打出時召喚一個 2/2 的複製
+      if (hc.livingCopy && bo.board.length < MAX_BOARD) {
+        const c = yield* this.summon(bo.id, m.cardId);
+        if (c) this.setStats(c, 2, 2);
       }
       if (playAbilities.length) this.questProgress(p, 'battlecry');
       if (m.keywords.includes('REBORN')) this.questProgress(p, 'reborn');
@@ -1958,7 +2015,12 @@ export class Game {
           const sinestra = this.isOtherClass(p, def.id) && this.flagOnBoard('doubleOtherSpells', p.id);
           const malygos = def.spellSchool === 'ARCANE' && this.dragonLord(p, 'malygosArcane');
           const niri = def.cost === 1 && this.flagOnBoard('niri', p.id);
-          const times = p.doubleSpellTurn === s.turn || hc.castTwice || sinestra || malygos || niri ? 2 : 1;
+          let times = p.doubleSpellTurn === s.turn || hc.castTwice || sinestra || malygos || niri ? 2 : 1;
+          // 泰蘭德：接下來的幾個法術施放兩次
+          if (times === 1 && (p.doubleSpellsLeft ?? 0) > 0) {
+            times = 2;
+            p.doubleSpellsLeft!--;
+          }
           // 戰地轟擊手 / 大法師卡雷克：手牌中的法術獲得的法術傷害
           if (hc.spellPower) p.nextSpellPower = { turn: s.turn, amount: (p.nextSpellPower?.turn === s.turn ? p.nextSpellPower.amount : 0) + hc.spellPower };
           p.doubleSpellTurn = undefined;
@@ -1989,6 +2051,11 @@ export class Game {
       }
       p.spellsCastThisGame++;
       p.spellsThisTurn = (p.spellsThisTurn ?? 0) + 1;
+      // 哈穆爾：每施放 3 個法術，灌注你的英雄能力
+      if (p.hamuulRepeat && !this.spellCountered) {
+        p.hamuulCount = (p.hamuulCount ?? 0) + 1;
+        if (p.hamuulCount % 3 === 0) this.doImbue(p);
+      }
       // 熔化黃金等：在手牌中時，每施放一張法術就累積計數，達標後變成手下
       for (const h of p.hand) {
         // 惡魔之影：每當你施放一個法術，變成它的複製
@@ -2177,6 +2244,14 @@ export class Game {
     if (tm && (tm.hp <= 0 || tm.dead) && this.flagOnBoard('heroPowerKillDraw', p.id)) yield* this.draw(p, this.flagCount('heroPowerKillDraw', p.id));
     yield* this.emit({ k: 'heroPower', player: p.id });
     yield* this.checkSecrets(opp(p.id), 'enemyHeroPower', {});
+    // 沉睡的精靈：你使用英雄能力後甦醒
+    for (const m of [...p.board]) {
+      if (m.keywords.includes('DORMANT') && m.dormantTurns === undefined && getCard(m.cardId).flags?.includes('awakenOnPower')) {
+        m.keywords = m.keywords.filter((k) => k !== 'DORMANT');
+        this.log(p.id, `${this.name(m.cardId)}甦醒了！`);
+        yield* this.awakenEffects(m);
+      }
+    }
     // 蘇拉斯的故事：用兩次後換回原本的英雄能力
     if (p.heroPower.id === 'TLC_632t' && p.powerSwap) {
       p.powerSwap.uses--;
@@ -2306,6 +2381,8 @@ export class Game {
     const dealerM = src.uid !== null ? this.minion(src.uid) : null;
     // 無私保衛者：受到的傷害多 1 點
     if (!isHero(t) && !t.silenced && getCard(t.cardId).flags?.includes('extraDamage')) amount += 1;
+    // 炎魔：免疫火焰法術
+    if (!isHero(t) && !t.silenced && getCard(t.cardId).flags?.includes('fireImmune') && src.cardId && getCard(src.cardId).type === 'SPELL' && getCard(src.cardId).spellSchool === 'FIRE') return 0;
     // 量子不穩定者：受到的傷害加倍
     if (!isHero(t) && !t.silenced && getCard(t.cardId).flags?.includes('takesDoubleDamage')) amount *= 2;
     // 熔流亡魂 / 風暴巨鴉：你要用自然法術傷害它時，改為獲得體質 / 召喚手下
@@ -2325,6 +2402,8 @@ export class Game {
       }
     }
     if (dealerM && !dealerM.silenced) {
+      // 戈林：友方野獸造成雙倍傷害
+      if (this.isRace(dealerM.cardId, 'BEAST') && this.flagOnBoard('goldrinn', dealerM.owner)) amount *= 2;
       // 布拉瑪：你的元素造成的傷害多 1 點
       if (this.isRace(dealerM.cardId, 'ELEMENTAL')) amount += this.flagCount('bralma', dealerM.owner);
       // 爆破火藥工程師：在你的回合，友方海盜造成的傷害提高 1 點
@@ -2391,6 +2470,14 @@ export class Game {
       if (shell) return yield* this.damage(src, shell.uid, amount);
       if (this.hasKw(t, 'IMMUNE') || this.hasKw(t, 'DORMANT')) return 0;
       if (this.hasKw(t, 'DIVINE_SHIELD')) {
+        // 托雷斯 / 夢魘鱗片：聖盾要被打破好幾次
+        const need = t.shieldHits ?? (this.flagOnBoard('toreth', t.owner) ? 3 : 1);
+        if (need > 1) {
+          t.shieldHits = need - 1;
+          this.fx({ kind: 'shield', uid: t.uid });
+          return 0;
+        }
+        t.shieldHits = undefined;
         t.keywords = t.keywords.filter((k) => k !== 'DIVINE_SHIELD');
         t.tempKeywords = t.tempKeywords.filter((k) => k !== 'DIVINE_SHIELD');
         t.nextTurnKeywords = t.nextTurnKeywords.filter((k) => k !== 'DIVINE_SHIELD');
@@ -2401,6 +2488,7 @@ export class Game {
       }
       // 滅殺：在自己的回合造成超過消滅手下所需的傷害
       if (amount > t.hp && this.s.current === src.owner) overkill = true;
+      if (t.stash === 'illusion') t.dead = true;
       t.hp = t.undyingTurn === this.s.turn ? Math.max(Math.min(t.hp, 1), t.hp - amount) : t.hp - amount;
       if (src.poisonous) t.dead = true;
       if ((t.hp <= 0 || t.dead) && src.uid !== null) t.killer = src.uid;
@@ -2780,6 +2868,7 @@ export class Game {
       tempKeywords: [],
       nextTurnKeywords: [],
       auraKeywords: [],
+      ...(hand?.shieldHits ? { shieldHits: hand.shieldHits } : {}),
       abilities: [...(def.abilities ?? []), ...(hand?.grant ?? [])],
       auras: def.auras ?? [],
       spellDamage: def.spellDamage ?? 0,
@@ -3191,7 +3280,7 @@ export class Game {
         }
         this.infuseTick(m);
         this.accusationFire('murder', opp(m.owner), m.uid);
-        yield* this.emit({ k: 'minionDied', player: m.owner, subject: m.uid, races: getCard(m.cardId).races, cardId: m.cardId });
+        yield* this.emit({ k: 'minionDied', player: m.owner, subject: m.uid, races: getCard(m.cardId).races, cardId: m.cardId, amount: this.atkOf(m) });
         yield* this.checkSecrets(m.owner, 'friendlyMinionDies', { it: { kind: 'char', uid: m.uid }, itCardId: m.cardId, summonedTurn: m.summonedTurn });
       }
     }
@@ -3910,6 +3999,22 @@ export class Game {
         return !p.deck.some((h) => getCard(h.cardId).cost === c.n);
       case 'deckParity':
         return p.deck.every((h) => getCard(h.cardId).cost % 2 === (c.odd ? 1 : 0));
+      case 'selfDormant': {
+        const m = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
+        return !!m && m.keywords.includes('DORMANT');
+      }
+      case 'holdingGift':
+        return p.hand.some((h) => h.gifted && h.uid !== ctx.playedCard?.uid);
+      case 'imbued':
+        return (p.imbued ?? 0) >= c.n;
+      case 'handAllDifferentCosts': {
+        const costs = p.hand.filter((h) => h.uid !== ctx.playedCard?.uid).map((h) => this.costOf(p, h));
+        return new Set(costs).size === costs.length;
+      }
+      case 'heroPowerUsed':
+        return p.heroPower.used;
+      case 'handHasCostAtLeast':
+        return p.hand.some((h) => h.uid !== ctx.playedCard?.uid && getCard(h.cardId).cost >= c.n);
       case 'itFireSpell':
         return !!ctx.itCardId && getCard(ctx.itCardId).spellSchool === 'FIRE';
       case 'discoveredThisTurn':
@@ -4306,6 +4411,13 @@ export class Game {
           if (hc && e.costChange) hc.costMod += e.costChange;
           if (hc && owner.id === ctx.controller) ctx.it = { kind: 'hand', uid: hc.uid };
           this.recalcAuras();
+          // 枯萎的先驅：從戰場回到手牌時，召喚兩個隨機的 2 費手下
+          if (!m.silenced && getCard(m.cardId).flags?.includes('harbinger')) {
+            for (let i = 0; i < 2; i++) {
+              const c = pick(s, this.randomPool({ type: 'MINION', cost: 2, anyClass: true }, owner.id, false));
+              if (c) yield* this.doSummon({ ...ctx, controller: owner.id }, owner.id, c.id);
+            }
+          }
         }
         break;
       case 'transform':
@@ -4342,11 +4454,11 @@ export class Game {
         const p = e.who === 'opponent' ? foe : me;
         switch (e.kind) {
           case 'empty':
-            p.maxMana = Math.min(MAX_MANA, p.maxMana + e.amount);
+            p.maxMana = Math.min(this.manaCap(p), p.maxMana + e.amount);
             break;
           case 'full':
-            p.maxMana = Math.min(MAX_MANA, p.maxMana + e.amount);
-            p.mana = Math.min(MAX_MANA, p.mana + e.amount);
+            p.maxMana = Math.min(this.manaCap(p), p.maxMana + e.amount);
+            p.mana = Math.min(this.manaCap(p), p.mana + e.amount);
             break;
           case 'temp':
             p.mana = Math.min(MAX_MANA, p.mana + e.amount);
@@ -4756,6 +4868,11 @@ export class Game {
   private transform(uid: number, cardId: string) {
     const old = this.minion(uid);
     if (!old) return;
+    // 笨拙的小精靈：變形為手下時，改為變成消耗多 (2) 的手下
+    if (!old.silenced && getCard(old.cardId).flags?.includes('podling') && getCard(cardId).type === 'MINION') {
+      const c = pick(this.s, this.randomPool({ type: 'MINION', cost: Math.min(10, getCard(cardId).cost + 2), anyClass: true }, old.owner, false));
+      if (c) cardId = c.id;
+    }
     const p = this.s.players[old.owner];
     const idx = p.board.indexOf(old);
     const m = this.makeMinion(old.owner, cardId);
@@ -9534,7 +9651,7 @@ export class Game {
   }
 
   /** 黑暗禮物 / 額外效果 */
-  private giftList(): { name: string; atk?: number; hp?: number; kw?: Keyword[]; cost?: number; dr?: Effect[] }[] {
+  private giftList(): { name: string; atk?: number; hp?: number; kw?: Keyword[]; cost?: number; dr?: Effect[]; living?: boolean; twice?: boolean; top?: boolean; hits?: number }[] {
     return [
       { name: '覺醒的恐懼', atk: 3, kw: ['LIFESTEAL'] },
       { name: '睡飽了', atk: 2, hp: 2, kw: ['ELUSIVE'] },
@@ -9544,23 +9661,53 @@ export class Game {
       { name: '鷹身女妖之爪', kw: ['DIVINE_SHIELD', 'WINDFURY'] },
       { name: '持續的恐懼', kw: ['REBORN'] },
       { name: '內心的惡魔', dr: [{ e: 'draw', count: 2, who: 'self' }] },
+      { name: '活生生的噩夢', living: true },
+      { name: '魯莽的覺醒', twice: true },
+      { name: '甜蜜的夢', atk: 4, hp: 5, top: true },
+      { name: '夢魘鱗片', hits: 3 },
     ];
   }
 
-  private giftHand(hc: HandCard, g: ReturnType<Game['giftList']>[number]) {
+  private giftHand(hc: HandCard, g: ReturnType<Game['giftList']>[number], pid?: PlayerId) {
     hc.atkBuff += g.atk ?? 0;
     hc.hpBuff += g.hp ?? 0;
     hc.costMod += g.cost ?? 0;
     for (const k of g.kw ?? []) (hc.bonus ??= []).includes(k) || hc.bonus.push(k);
     if (g.dr) (hc.grant ??= []).push({ on: { k: 'deathrattle' }, effects: g.dr });
+    hc.gifted = true;
+    // 沼澤惡魔瓦洛：在手牌或牌堆中時，獲得每一個賦予你的手下的黑暗禮物
+    if (pid !== undefined) this.wallowGain(pid, g, hc);
+    if (g.living) hc.livingCopy = true;
+    if (g.twice) hc.twiceBC = true;
+    if (g.hits) hc.shieldHits = g.hits;
+    // 甜蜜的夢：把這張牌放到你牌堆的頂端
+    if (g.top) {
+      for (const p of this.s.players) {
+        if (p.hand.includes(hc)) {
+          p.hand = p.hand.filter((h) => h !== hc);
+          p.deck.push(hc);
+        }
+      }
+    }
+  }
+
+  private wallowGain(pid: PlayerId, g: ReturnType<Game['giftList']>[number], except?: HandCard) {
+    const p = this.s.players[pid];
+    for (const h of [...p.hand, ...p.deck]) {
+      if (h.cardId !== 'EDR_487' || h === except || (h.wallow ?? []).length > 30) continue;
+      (h.wallow ??= []).push(g.name);
+      this.giftHand(h, g);
+    }
   }
 
   private giftMinion(m: Minion, g: ReturnType<Game['giftList']>[number]) {
+    this.wallowGain(m.owner, g);
     m.atkBuff += g.atk ?? 0;
     m.maxHp += g.hp ?? 0;
     m.hp += g.hp ?? 0;
     for (const k of g.kw ?? []) if (!m.keywords.includes(k)) m.keywords.push(k);
     if (g.dr) m.abilities.push({ on: { k: 'deathrattle' }, effects: g.dr });
+    if (g.hits) m.shieldHits = g.hits;
   }
 
   /** 從牌堆中找一張符合條件的牌放進手牌 */
@@ -9610,17 +9757,9 @@ export class Game {
         break;
       }
       // ------------------------------------------------------------ 灌注
-      case 'imbue': {
-        me.imbued = (me.imbued ?? 0) + ((args.times as number) ?? 1);
-        const id = me.heroClass === 'ROGUE' ? 'END_000p' : me.heroClass === 'DEATHKNIGHT' ? 'END_003p' : null;
-        if (id && me.heroPower.id !== id && !me.heroPower.heroCard) {
-          const used = me.heroPower.used;
-          this.setHeroPower(me, id);
-          me.heroPower.used = used;
-        }
-        this.log(me.id, `${me.name}灌注了英雄能力（${me.imbued}）`);
+      case 'imbue':
+        this.doImbue(me, (args.times as number) ?? 1);
         break;
-      }
       case 'bronzeBlessing':
         yield* this.customViolet('addRandomDiscount', { pool: { type: 'MINION', otherClass: true }, count: 1, discount: me.imbued ?? 1 }, ctx);
         break;
@@ -9668,7 +9807,7 @@ export class Game {
         const gift = gifts[opts.indexOf(id) % gifts.length];
         const hc = this.addToHand(me, id);
         if (hc) {
-          this.giftHand(hc, gift);
+          this.giftHand(hc, gift, me.id);
           this.log(me.id, `${this.name(id)}帶有黑暗禮物：${gift.name}`);
           if (args.kindred && this.evalCond({ c: 'kindred' }, ctx)) hc.costMod -= 1;
         }
@@ -11905,7 +12044,7 @@ export class Game {
         break;
       }
       case 'coBonus': {
-        const targets: Minion[] = args.target === 'chosen' ? (chosenM ? [chosenM] : []) : args.target === 'random' ? ([pick(s, me.board.filter((m) => this.alive(m)))].filter(Boolean) as Minion[]) : [];
+        const targets: Minion[] = args.target === 'it' ? ([ctx.it?.kind === 'char' ? this.minion(ctx.it.uid) : null].filter(Boolean) as Minion[]) : args.target === 'chosen' ? (chosenM ? [chosenM] : []) : args.target === 'random' ? ([pick(s, me.board.filter((m) => this.alive(m)))].filter(Boolean) as Minion[]) : [];
         for (const m of targets) for (let i = 0; i < ((args.n as number) ?? 1); i++) this.bonusEffect(m);
         break;
       }
@@ -11985,7 +12124,7 @@ export class Game {
         break;
       }
       case 'coTender':
-        me.maxMana = Math.min(MAX_MANA, Math.max(me.maxMana, foe.maxMana));
+        me.maxMana = Math.min(this.manaCap(me), Math.max(me.maxMana, foe.maxMana));
         break;
       case 'coLoh':
         me.minionCostSet = 5;
@@ -12536,6 +12675,693 @@ export class Game {
       case 'coNether2':
         for (const m of allMinions()) if (m.uid !== ctx.sourceUid) m.dead = true;
         break;
+      case 'coImbued': {
+        const n = me.imbued ?? 1;
+        switch (args.kind as string) {
+          case 'golem': {
+            const m = yield* this.doSummon(ctx, me.id, 'EDR_847pt2');
+            if (m) this.setStats(m, n, n);
+            break;
+          }
+          case 'wolf': {
+            const hc = pick(s, me.hand.filter((h) => getCard(h.cardId).type === 'MINION' && this.isRace(h.cardId, 'BEAST')));
+            if (hc) {
+              hc.atkBuff += n;
+              hc.costMod -= n;
+            }
+            break;
+          }
+          case 'wisp':
+            for (let i = 0; i < n; i++) yield* this.doSummon(ctx, me.id, 'EDR_851t');
+            for (let i = 0; i < n; i++) {
+              const t = randomEnemyTarget();
+              if (t) yield* this.damage({ owner: me.id, uid: null, cardId: 'EDR_851p' }, t.uid, 1);
+            }
+            break;
+          case 'dragon':
+            for (let i = 0; i < 2; i++) {
+              const hc = this.newHandCard('EDR_445pt3');
+              hc.counter = n;
+              this.shuffleInto(me, hc);
+            }
+            break;
+          case 'moon': {
+            const pool = this.randomPool({ cls: 'PRIEST' }, me.id, false).filter((c) => (c.type === 'MINION' || c.type === 'SPELL') && c.collectible);
+            const opts = this.discoverOptions(undefined, me.id, pool);
+            if (!opts.length) break;
+            const id = yield* this.choose(ctx, opts, '選擇一張牧師牌（暫時）');
+            const hc = this.addToHand(me, id);
+            if (hc) {
+              hc.costMod -= n;
+              hc.temporary = true;
+            }
+            break;
+          }
+          case 'wind':
+            if (chosenM) {
+              const cost = getCard(chosenM.cardId).cost + n;
+              const c = pick(s, this.randomPool({ type: 'MINION', cost: Math.min(cost, 10), anyClass: true }, me.id, false));
+              if (c) this.transform(chosenM.uid, c.id);
+            }
+            break;
+        }
+        break;
+      }
+      case 'coPortal': {
+        const n = ctx.drawnCard?.counter ?? 1;
+        let c: CardDef | undefined;
+        for (let d = 0; d <= 10 && !c; d++) {
+          for (const cost of d === 0 ? [n] : [n + d, n - d]) {
+            c = pick(s, this.randomPool({ type: 'MINION', race: 'DRAGON', cost, anyClass: true }, me.id, false));
+            if (c) break;
+          }
+        }
+        if (c) yield* this.doSummon(ctx, me.id, c.id);
+        break;
+      }
+      case 'coGiftPick': {
+        // 發現一個帶有黑暗禮物的手下：三個選項各自帶著一個隨機的禮物
+        let cards = args.pool ? this.randomPool(args.pool as Pool, me.id, !(args.pool as Pool).anyClass && !(args.pool as Pool).cls) : this.randomPool({ type: 'MINION', anyClass: true }, me.id, false);
+        if (args.filter === 'comboBcStealth') {
+          cards = cards.filter((c) => c.keywords?.includes('STEALTH') || !!c.abilities?.some((a) => a.on.k === 'play') || JSON.stringify(c.abilities ?? []).includes('"c":"combo"'));
+        } else if (args.filter === 'deck') {
+          cards = me.deck.map((h) => getCard(h.cardId)).filter((c) => c.type === 'MINION');
+        } else if (args.filter === 'undead') cards = cards.filter((c) => this.isRace(c.id, 'UNDEAD'));
+        const opts = pickDistinct(cards, 3);
+        if (!opts.length) break;
+        const gifts = shuffle(s, this.giftList()).slice(0, opts.length);
+        const title = `發現一個帶有黑暗禮物的手下（${gifts.map((g) => g.name).join('／')}）`;
+        const id = yield* this.choose(ctx, opts, title);
+        const gift = gifts[opts.indexOf(id)];
+        const hc = this.addToHand(me, id);
+        if (hc) {
+          this.giftHand(hc, gift, me.id);
+          if (args.reduce) hc.costMod -= args.reduce as number;
+          if (args.copy) {
+            const c2 = this.addToHand(me, id);
+            if (c2) this.giftHand(c2, gift, me.id);
+          }
+          this.log(me.id, `${this.name(id)}帶有黑暗禮物：${gift.name}`);
+        }
+        if (args.shuffle) for (const o of opts.filter((x) => x !== id)) this.shuffleInto(me, this.newHandCard(o));
+        break;
+      }
+      case 'coDream':
+        this.addToHand(me, pick(s, ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'])!);
+        break;
+      case 'coSaber': {
+        const pc = ctx.playedCard;
+        const cost = pc ? Math.max(0, getCard(pc.cardId).cost + pc.costMod) : 99;
+        if (cost > 3 || !self) break;
+        for (const t of shuffle(s, foe.board.filter((m) => this.alive(m) && !this.hasKw(m, 'STEALTH'))).slice(0, 2)) if (this.alive(self) && this.alive(t)) yield* this.forceAttack(self, t);
+        break;
+      }
+      case 'coOhnahra':
+        for (let i = 0; i < 3 && !this.over; i++) {
+          const hc = me.deck[me.deck.length - 1];
+          if (!hc) break;
+          me.deck = me.deck.slice(0, -1);
+          yield* this.replay(me.id, hc.cardId);
+        }
+        break;
+      case 'coThrice': {
+        for (let i = 0; i < 3; i++) {
+          const id = yield* this.choose(ctx, ['EDR_209a', 'EDR_209b'], `選擇一個效果（${i + 1}/3）`);
+          if (id === 'EDR_209a') {
+            for (const m of me.board) if (m.uid !== ctx.sourceUid && this.alive(m)) {
+              m.atkBuff += 1;
+              m.maxHp += 3;
+              m.hp += 3;
+            }
+          } else yield* this.doSummon(ctx, me.id, 'EDR_209t5');
+        }
+        break;
+      }
+      case 'coTopMinions': {
+        let n = 0;
+        for (let i = me.deck.length - 1; i >= 0 && n < 3; i--) {
+          if (getCard(me.deck[i].cardId).type !== 'MINION') continue;
+          me.deck[i].atkBuff += 4;
+          me.deck[i].hpBuff += 4;
+          n++;
+        }
+        break;
+      }
+      case 'coTyphoon': {
+        for (const m of allMinions()) {
+          const owner = s.players[m.owner];
+          owner.board = owner.board.filter((x) => x !== m);
+          const target = s.players[randomInt(s, 2)];
+          this.shuffleInto(target, this.newHandCard(m.cardId));
+        }
+        break;
+      }
+      case 'coMerithra': {
+        const seen = new Set<string>();
+        for (const id of me.graveyard) {
+          const d = getCard(id);
+          if (d.type !== 'MINION' || d.cost < 8 || seen.has(d.name)) continue;
+          seen.add(d.name);
+          if (me.board.length < MAX_BOARD) yield* this.doSummon(ctx, me.id, id);
+        }
+        break;
+      }
+      case 'coMark':
+        if (chosenM) this.setStats(chosenM, chosenM.owner === me.id ? 3 : 1, chosenM.owner === me.id ? 3 : 1);
+        break;
+      case 'coLowest':
+        for (let i = 0; i < (args.times as number); i++) {
+          const t = ([...foe.board, foe.hero] as Char[]).filter((c) => this.alive(c) && (isHero(c) || !this.hasKw(c, 'STEALTH'))).sort((a, b) => a.hp - b.hp)[0];
+          if (t) yield* this.damage(this.dmgSource(ctx), t.uid, (args.n as number) + this.spellDamage(me.id));
+        }
+        break;
+      case 'coDreamwarden': {
+        const hc = pick(s, me.deck.filter((h) => !h.starting));
+        if (hc && self) {
+          yield* this.takeIntoHand(me, hc);
+          self.atkBuff += 2;
+          self.maxHp += 2;
+          self.hp += 2;
+        }
+        break;
+      }
+      case 'coUrsol': {
+        const spells = me.hand.filter((h) => getCard(h.cardId).type === 'SPELL' && !getCard(h.cardId).secret && h.uid !== ctx.playedCard?.uid);
+        spells.sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost);
+        const hc = spells[0];
+        if (!hc) break;
+        me.hand = me.hand.filter((h) => h !== hc);
+        (me.eternal ??= []).push({
+          ability: { on: { k: 'turnEnd', whose: 'mine' }, effects: [{ e: 'custom', fn: 'coCastStored', args: { id: hc.cardId } }] },
+          sourceCardId: 'EDR_259',
+          until: s.turn + 2 * 2,
+        });
+        break;
+      }
+      case 'coCastStored':
+        yield* this.castRandomly(me.id, args.id as string);
+        break;
+      case 'coAmphibian':
+        if (chosenM) {
+          chosenM.abilities.push({ on: { k: 'deathrattle' }, effects: [{ e: 'custom', fn: 'coAmphibianDr' }] });
+        }
+        break;
+      case 'coAmphibianDr': {
+        const t = pick(s, me.board.filter((m) => this.alive(m) && m.uid !== ctx.sourceSnapshot?.uid));
+        if (t) {
+          t.atkBuff += 2;
+          t.maxHp += 2;
+          t.hp += 2;
+          t.abilities.push({ on: { k: 'deathrattle' }, effects: [{ e: 'custom', fn: 'coAmphibianDr' }] });
+        }
+        break;
+      }
+      case 'coSpiritBond':
+        if (chosenM) {
+          yield* this.damage(this.dmgSource(ctx), chosenM.uid, 3 + this.spellDamage(me.id));
+          if (chosenM.hp <= 0 || chosenM.dead) yield* this.doSummon(ctx, me.id, 'EDR_T_WOLF32');
+        }
+        break;
+      case 'coGroveShaper': {
+        if (!ctx.itCardId) break;
+        const m = yield* this.doSummon(ctx, me.id, 'EDR_271t');
+        if (m) m.stash = ctx.itCardId;
+        break;
+      }
+      case 'coGetStash': {
+        const sn = ctx.sourceSnapshot ?? self;
+        if (sn?.stash) this.addToHand(me, sn.stash);
+        break;
+      }
+      case 'coSheep': {
+        const m = yield* this.doSummon(ctx, me.id, 'EDR_416t');
+        if (m) this.goDormantFor(m, 2);
+        break;
+      }
+      case 'coOmenGrow':
+        if (self) self.counter = (self.counter ?? 0) + 1;
+        break;
+      case 'coOmenDr': {
+        const sn = ctx.sourceSnapshot ?? self;
+        const n = 1 + (sn?.counter ?? 0);
+        for (const c of [...foe.board, foe.hero] as Char[]) if (this.alive(c)) yield* this.damage({ owner: me.id, uid: null, cardId: 'EDR_421' }, c.uid, n);
+        break;
+      }
+      case 'coAessina': {
+        const dead = me.graveyard.filter((id) => getCard(id).type === 'MINION').length;
+        if (dead < 20) break;
+        for (let i = 0; i < 20; i++) {
+          const t = randomEnemyTarget();
+          if (t) yield* this.damage(this.dmgSource(ctx), t.uid, 1);
+        }
+        break;
+      }
+      case 'coBriarspawn': {
+        if (!self || !this.alive(self)) break;
+        const t = pick(s, foe.board.filter((m) => this.alive(m) && !this.hasKw(m, 'STEALTH') && !this.hasKw(m, 'DORMANT')));
+        if (!t) break;
+        const excess = Math.max(0, this.atkOf(self) - t.hp);
+        yield* this.forceAttack(self, t);
+        if (excess > 0 && (t.hp <= 0 || t.dead)) yield* this.damage(this.charSource(self), foe.hero.uid, excess);
+        break;
+      }
+      case 'coResummonDiscover': {
+        const pool = [...new Set(me.graveyard.filter((id) => getCard(id).type === 'MINION' && this.isRace(id, args.race as Race)))];
+        const opts = shuffle(s, pool).slice(0, 3);
+        if (!opts.length) break;
+        const id = yield* this.choose(ctx, opts, '發現一隻死亡的友方龍並復活它');
+        yield* this.doSummon(ctx, me.id, id);
+        break;
+      }
+      case 'coBounty': {
+        const drawn = yield* this.draw(me, 2);
+        for (const h of drawn) h.lockedUntil = s.turn + 2;
+        break;
+      }
+      case 'coDrawStarting': {
+        const want = !!args.starting;
+        yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'SPELL' && !!h.starting === want);
+        break;
+      }
+      case 'coGainAtkCost': {
+        if (!self || !ctx.itCardId) break;
+        self.atkBuff += getCard(ctx.itCardId).cost;
+        break;
+      }
+      case 'coSummonTaunt': {
+        const c = pick(s, this.randomPool({ type: 'MINION', cost: args.cost as number, anyClass: true }, me.id, false));
+        if (c) {
+          const m = yield* this.doSummon(ctx, me.id, c.id);
+          if (m && !m.keywords.includes('TAUNT')) m.keywords.push('TAUNT');
+        }
+        break;
+      }
+      case 'coTyrande':
+        me.doubleSpellsLeft = (me.doubleSpellsLeft ?? 0) + 3;
+        break;
+      case 'coYsondre': {
+        const n = Math.max(1, me.graveyard.filter((id) => id === 'EDR_465').length);
+        for (let i = 0; i < n; i++) {
+          const c = pick(s, this.randomPool({ type: 'MINION', race: 'DRAGON', anyClass: true }, me.id, false));
+          if (c) yield* this.doSummon(ctx, me.id, c.id);
+        }
+        break;
+      }
+      case 'coGainDeadAttack': {
+        if (!self || !ctx.itCardId || ctx.it?.uid === self.uid) break;
+        self.atkBuff += ctx.eventAmount;
+        break;
+      }
+      case 'coArchdruid': {
+        if (!self) break;
+        const ids = me.diedThisTurn?.turn === s.turn ? me.diedThisTurn.ids : [];
+        for (const id of ids) for (const ab of getCard(id).abilities ?? []) if (ab.on.k === 'deathrattle') self.abilities.push(structuredClone(ab));
+        break;
+      }
+      case 'coAlarashi': {
+        for (const hc of me.hand) {
+          const d = getCard(hc.cardId);
+          if (d.type !== 'MINION' || hc.uid === ctx.playedCard?.uid) continue;
+          const c = pick(s, this.randomPool({ type: 'MINION', race: 'DEMON', anyClass: true }, me.id, false));
+          if (!c) break;
+          const atk = (d.attack ?? 0) + hc.atkBuff;
+          const hp = (d.health ?? 0) + hc.hpBuff;
+          const cost = d.cost + hc.costMod;
+          hc.cardId = c.id;
+          hc.atkBuff = atk - (c.attack ?? 0);
+          hc.hpBuff = hp - (c.health ?? 0);
+          hc.costMod = cost - c.cost;
+        }
+        break;
+      }
+      case 'coEatDeck': {
+        if (!self) break;
+        const hc = pick(s, me.deck.filter((h) => getCard(h.cardId).type === 'MINION'));
+        if (!hc) break;
+        me.deck = me.deck.filter((h) => h !== hc);
+        const d = getCard(hc.cardId);
+        self.atkBuff += (d.attack ?? 0) + hc.atkBuff;
+        self.maxHp += (d.health ?? 0) + hc.hpBuff;
+        self.hp += (d.health ?? 0) + hc.hpBuff;
+        (self.devoured ??= []).push(hc);
+        break;
+      }
+      case 'coRegurgitate': {
+        const sn = ctx.sourceSnapshot ?? self;
+        for (const hc of sn?.devoured ?? []) this.addToHand(me, hc.cardId);
+        break;
+      }
+      case 'coTwistedTreant':
+        for (const pl of s.players) {
+          const hc = pick(s, pl.hand.filter((h) => getCard(h.cardId).type === 'MINION'));
+          if (hc) hc.atkBuff -= 2;
+        }
+        break;
+      case 'coQonzu': {
+        const opts = this.discoverOptions({ type: 'SPELL' }, me.id);
+        if (!opts.length) break;
+        const id = yield* this.choose(ctx, opts, '發現一個法術');
+        const keep = yield* this.choose(ctx, ['EDR_517A', 'EDR_517B'], '保留它，或放到你對手的牌堆頂');
+        if (keep === 'EDR_517A') this.addToHand(me, id);
+        else foe.deck.push(this.newHandCard(id));
+        break;
+      }
+      case 'coHandCostOne': {
+        const hc = pick(s, me.hand.filter((h) => getCard(h.cardId).type === 'MINION' && h.uid !== ctx.playedCard?.uid));
+        if (hc) hc.costMod -= 1;
+        break;
+      }
+      case 'coWisprider': {
+        this.doImbue(me);
+        const spec = this.powerDef(me);
+        const t = spec.target ? pick(s, me.board.filter((m) => this.alive(m))) : undefined;
+        if (spec.target && !t) break;
+        yield* this.runEffects(spec.effects, { ...ctx, isHeroPower: true, chosen: t ? t.uid : null });
+        break;
+      }
+      case 'coSatyr': {
+        const list = [...foe.hand].sort((a, b) => getCard(a.cardId).cost - getCard(b.cardId).cost);
+        if (list[0]) this.addToHand(me, list[0].cardId);
+        break;
+      }
+      case 'coMimicry': {
+        const drawn = yield* this.draw(foe, 2);
+        for (const h of drawn) this.addToHand(me, h.cardId);
+        break;
+      }
+      case 'coAssailant': {
+        for (const h of me.hand) {
+          if (h.uid === ctx.playedCard?.uid) continue;
+          const match = foe.hand.find((x) => x.cardId === h.cardId);
+          if (match) {
+            foe.hand = foe.hand.filter((x) => x !== match);
+            this.shuffleInto(foe, match);
+            break;
+          }
+        }
+        break;
+      }
+      case 'coThornPoison': {
+        if (!me.weapon) break;
+        if (!me.weapon.keywords.includes('POISONOUS')) me.weapon.keywords.push('POISONOUS');
+        (me.endOfTurnEffects ??= []).push({ effects: [{ e: 'custom', fn: 'coThornEnd' }], sourceCardId: ctx.sourceCardId });
+        break;
+      }
+      case 'coThornEnd':
+        if (me.weapon) me.weapon.keywords = me.weapon.keywords.filter((k) => k !== 'POISONOUS');
+        break;
+      case 'coThornDr':
+        me.weapon?.abilities.push({ on: { k: 'deathrattle' }, effects: [{ e: 'damage', target: { t: 'all', filter: { type: 'character', side: 'enemy' } }, amount: 2 }] });
+        break;
+      case 'coRenferal': {
+        const n = 1 + (me.renferalPlayed ?? 0);
+        me.renferalPlayed = (me.renferalPlayed ?? 0) + 1;
+        for (const h of shuffle(s, [...foe.hand]).slice(0, n)) h.lockedUntil = s.turn + 1;
+        break;
+      }
+      case 'coAshamane': {
+        while (me.hand.length < MAX_HAND && foe.deck.length) {
+          const h = pick(s, foe.deck)!;
+          const hc = this.addToHand(me, h.cardId);
+          if (!hc) break;
+          hc.costMod -= 3;
+        }
+        break;
+      }
+      case 'coFuel': {
+        const opts: string[] = [];
+        for (const h of shuffle(s, [...foe.deck])) if (opts.length < 3 && getCard(h.cardId).type === 'MINION' && !opts.includes(h.cardId)) opts.push(h.cardId);
+        if (!opts.length) break;
+        const id = yield* this.choose(ctx, opts, '發現對手牌堆中的一個手下');
+        const hc = this.addToHand(me, id);
+        if (hc && ctx.combo) {
+          const g = pick(s, this.giftList())!;
+          this.giftHand(hc, g, me.id);
+        }
+        break;
+      }
+      case 'coWebweaver': {
+        if (!ctx.itCardId) break;
+        if ((me.playedCards ?? []).filter((id) => id === ctx.itCardId).length >= 2) yield* this.draw(me, 1);
+        break;
+      }
+      case 'coDreadwing':
+        for (let i = 0; i < 2; i++) {
+          const hc = yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'MINION' && this.isRace(h.cardId, 'DRAGON'));
+          if (hc) hc.costMod -= 1;
+        }
+        break;
+      case 'coGiftedCost':
+        for (const h of me.hand) if (h.gifted && getCard(h.cardId).type === 'MINION') h.costMod -= args.n as number;
+        break;
+      case 'coIllusionist': {
+        if (!self) break;
+        const copy = yield* this.doSummon(ctx, me.id, self.cardId);
+        const pickM = pick(s, [self, ...(copy ? [copy] : [])]);
+        if (pickM) pickM.stash = 'illusion';
+        break;
+      }
+      case 'coLeech': {
+        if (!self) break;
+        const n = 1 + this.flagCount('leechBoost', me.id);
+        const t = ([...foe.board, foe.hero] as Char[]).filter((c) => this.alive(c) && (isHero(c) || !this.hasKw(c, 'STEALTH'))).sort((a, b) => a.hp - b.hp)[0];
+        if (t) {
+          const dealt = yield* this.damage(this.charSource(self), t.uid, n);
+          if (dealt > 0) yield* this.heal(me.hero.uid, dealt);
+        }
+        break;
+      }
+      case 'coRite': {
+        const opts = this.discoverOptions({ type: 'MINION', race: 'UNDEAD' }, me.id);
+        if (!opts.length) break;
+        const id = yield* this.choose(ctx, opts, '發現一個不死族');
+        const hc = this.addToHand(me, id);
+        if (hc && this.spendCorpses(me, 2)) this.giftHand(hc, pick(s, this.giftList())!, me.id);
+        break;
+      }
+      case 'coRuneblade': {
+        const prev = me.playedCards?.[me.playedCards.length - 2];
+        const d = prev ? getCard(prev) : null;
+        if (!d || !me.weapon) break;
+        if (d.runes?.unholy) me.weapon.atk += 1;
+        if (d.runes?.blood) me.weapon.durability += 1;
+        break;
+      }
+      case 'coBeetles': {
+        if (!self) break;
+        const beetles = me.board.filter((m) => this.alive(m) && m.cardId === 'EDR_818t');
+        if (beetles[0] !== self) break;
+        const n = beetles.length;
+        me.board = me.board.filter((m) => !beetles.includes(m));
+        const m = yield* this.doSummon(ctx, me.id, 'EDR_818');
+        if (m) this.setStats(m, 7, n);
+        break;
+      }
+      case 'coSeeds': {
+        const defs: [string, number][] = [['EDR_840t', 2], ['EDR_840t1', 1], ['EDR_840t2', 3]];
+        for (let i = 0; i < (args.n as number); i++) {
+          const [id, t] = pick(s, defs)!;
+          const m = yield* this.doSummon(ctx, me.id, id);
+          if (m) this.goDormantFor(m, t);
+        }
+        break;
+      }
+      case 'coSpear': {
+        const lastDef = this.lastAttack?.defender;
+        if (lastDef === undefined) break;
+        const t = pick(s, ([foe.hero, ...foe.board] as Char[]).filter((c) => this.alive(c) && c.uid !== lastDef && (isHero(c) || !this.hasKw(c, 'STEALTH'))));
+        if (t) yield* this.damage(this.charSource(me.hero), t.uid, this.atkOf(me.hero));
+        break;
+      }
+      case 'coCorruptShal': {
+        const hc = ctx.handSource !== undefined ? me.hand.find((h) => h.uid === ctx.handSource) : undefined;
+        if (hc && hc.cardId === 'EDR_846' && ctx.itCardId && getCard(ctx.itCardId).cost > getCard('EDR_846').cost) hc.corrupted = true;
+        break;
+      }
+      case 'coShaladrassil': {
+        const corrupted = !!ctx.playedCard?.corrupted;
+        const normal = ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'];
+        const bad = ['EDR_846t3', 'EDR_846t4', 'EDR_846t5', 'EDR_846t2', 'EDR_846t1'];
+        for (const id of corrupted ? bad : normal) this.addToHand(me, id);
+        break;
+      }
+      case 'coShuffleMinion':
+        if (chosenM) {
+          const owner = s.players[chosenM.owner];
+          owner.board = owner.board.filter((m) => m !== chosenM);
+          this.shuffleInto(owner, this.newHandCard(chosenM.cardId));
+        }
+        break;
+      case 'coBroll': {
+        const id = pick(s, ['NEW1_032', 'NEW1_033', 'NEW1_034'])!;
+        yield* this.doSummon(ctx, me.id, id);
+        break;
+      }
+      case 'coEnvoy': {
+        const pool = this.randomPool({ cls: 'DRUID' }, me.id, false).filter((c) => c.collectible && c.type !== 'HERO');
+        for (const h of me.deck) {
+          if (getCard(h.cardId).cardClass !== 'NEUTRAL') continue;
+          const c = pick(s, pool);
+          if (c) h.cardId = c.id;
+        }
+        break;
+      }
+      case 'coStellar':
+        for (const id of ['CS2_008', 'EX1_173']) {
+          const hc = this.addToHand(me, id);
+          if (hc) hc.spellPower = (hc.spellPower ?? 0) + 1;
+        }
+        break;
+      case 'coMalorne': {
+        const gods = ["Goldrinn", "Ursol", "Aviana", "Aessina", "Ohn'ahra", 'Omen', 'Tortolla', 'Malorne'];
+        const pool = this.randomPool({ type: 'MINION', rarity: 'LEGENDARY', anyClass: true }, me.id, false).filter((c) => gods.some((g) => c.nameEn.includes(g)));
+        const opts = this.discoverOptions(undefined, me.id, pool);
+        if (!opts.length) break;
+        const id = yield* this.choose(ctx, opts, '發現一個傳說野神');
+        const hc = this.addToHand(me, id);
+        if (hc && (me.imbued ?? 0) >= 4) hc.costMod = 1 - getCard(id).cost;
+        break;
+      }
+      case 'coRightmostCost': {
+        const hc = me.hand[me.hand.length - 1];
+        if (hc) hc.costMod -= args.n as number;
+        break;
+      }
+      case 'coFelhunter': {
+        const sn = ctx.sourceSnapshot ?? self;
+        const list = me.graveyard.filter((id) => {
+          const d = getCard(id);
+          if (d.type !== 'MINION' || !d.abilities?.some((a) => a.on.k === 'deathrattle')) return false;
+          if (args.max !== undefined && d.cost > (args.max as number)) return false;
+          if (args.min !== undefined && d.cost < (args.min as number)) return false;
+          if (args.different && sn && id === sn.cardId) return false;
+          return true;
+        });
+        const id = pick(s, list);
+        if (!id) break;
+        yield* this.doSummon(ctx, me.id, id);
+        yield* this.doSummon(ctx, me.id, id);
+        break;
+      }
+      case 'coFullMoon':
+        me.fullMoon = true;
+        break;
+      case 'coMoonkin': {
+        const n = 1 + me.board.filter((m) => this.alive(m) && getCard(m.cardId).nameEn.includes('Wisp')).length;
+        yield* this.runEffect({ e: 'armor', amount: n }, ctx);
+        break;
+      }
+      case 'coStarsurge':
+        if (chosenM) {
+          const dead = me.graveyard.filter((id) => getCard(id).type === 'MINION').length;
+          yield* this.damage(this.dmgSource(ctx), chosenM.uid, 1 + dead + this.spellDamage(me.id));
+        }
+        break;
+      case 'coStrider': {
+        const hc = this.newHandCard('EDR_978');
+        hc.costMod = 1 - getCard('EDR_978').cost;
+        me.deck.unshift(hc);
+        break;
+      }
+      case 'coDormantFor':
+        if (self) this.goDormantFor(self, args.turns as number);
+        break;
+      case 'coOverheat': {
+        for (const m of me.board) if (this.alive(m)) {
+          m.atkBuff += 1;
+          m.maxHp += 1;
+          m.hp += 1;
+        }
+        const hc = pick(s, me.hand.filter((h) => getCard(h.cardId).type === 'SPELL' && getCard(h.cardId).spellSchool === 'NATURE'));
+        if (hc) {
+          me.hand = me.hand.filter((h) => h !== hc);
+          yield* this.discarded(me, hc);
+          for (const m of me.board) if (this.alive(m)) {
+            m.atkBuff += 1;
+            m.maxHp += 1;
+            m.hp += 1;
+          }
+        }
+        break;
+      }
+      case 'coScorching': {
+        if (ctx.chosen === null) break;
+        yield* this.damage(this.dmgSource(ctx), ctx.chosen, 3 + this.spellDamage(me.id));
+        const hc = pick(s, me.hand.filter((h) => getCard(h.cardId).type === 'SPELL' && getCard(h.cardId).spellSchool === 'FIRE'));
+        if (hc) {
+          me.hand = me.hand.filter((h) => h !== hc);
+          yield* this.discarded(me, hc);
+          if (this.char(ctx.chosen)) yield* this.damage(this.dmgSource(ctx), ctx.chosen, 3 + this.spellDamage(me.id));
+        }
+        break;
+      }
+      case 'coInferno': {
+        const c = pick(s, this.randomPool({ type: 'MINION', race: 'ELEMENTAL', anyClass: true }, me.id, false));
+        if (c) {
+          const hc = this.addToHand(me, c.id);
+          if (hc) hc.costMod -= 3;
+        }
+        break;
+      }
+      case 'coPhoenix':
+        (me.endOfTurnCards ??= []).push('FIR_919');
+        break;
+      case 'coKeeper':
+        for (const h of me.hand) if (getCard(h.cardId).type === 'MINION' && h.uid !== ctx.playedCard?.uid) {
+          h.atkBuff += 3;
+          h.hpBuff += 3;
+          h.doomTurn = s.turn + 4;
+        }
+        break;
+      case 'coHandCostAll':
+        for (const h of me.hand) if (h.uid !== ctx.playedCard?.uid) h.costMod -= args.n as number;
+        break;
+      case 'coReflection': {
+        const hc = yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'MINION');
+        if (!hc) break;
+        const m = yield* this.doSummon(ctx, me.id, hc.cardId);
+        if (m) {
+          this.setStats(m, 8, 8);
+          if (!m.keywords.includes('DIVINE_SHIELD')) m.keywords.push('DIVINE_SHIELD');
+        }
+        break;
+      }
+      case 'coFelCost':
+        for (const h of me.hand) if (getCard(h.cardId).type === 'SPELL' && getCard(h.cardId).spellSchool === 'FEL') h.costMod -= 1;
+        break;
+      case 'coMagmaHound': {
+        if (!self || !this.alive(self) || !this.lastAttack || this.lastAttack.defenderIsHero || this.lastAttack.attacker !== self.uid) break;
+        const atk = this.atkOf(self);
+        for (let i = 0; i < atk; i++) {
+          const t = randomEnemyTarget();
+          if (t) yield* this.damage(this.charSource(self), t.uid, 1);
+        }
+        break;
+      }
+      case 'coConflagrate':
+        if (chosenM) {
+          const owner = s.players[chosenM.owner];
+          yield* this.damage(this.dmgSource(ctx), chosenM.uid, 5 + this.spellDamage(me.id));
+          yield* this.draw(owner, 1);
+        }
+        break;
+      case 'coFyrakk': {
+        let budget = 15;
+        const fires = this.randomPool({ type: 'SPELL', spellSchool: 'FIRE', anyClass: true }, me.id, false).filter((c) => c.collectible && !c.secret);
+        for (let i = 0; i < 40 && budget > 0 && !this.over; i++) {
+          const opts = fires.filter((c) => c.cost <= budget);
+          const c = pick(s, opts);
+          if (!c) break;
+          budget -= Math.max(1, c.cost);
+          yield* this.castRandomly(me.id, c.id, true);
+        }
+        break;
+      }
+      case 'coDragonkin': {
+        const beasts = me.hand.filter((h) => getCard(h.cardId).type === 'MINION' && this.isRace(h.cardId, 'BEAST') && h.uid !== ctx.playedCard?.uid).sort((a, b) => getCard(a.cardId).cost - getCard(b.cardId).cost);
+        if (beasts[0]) this.addToHand(me, beasts[0].cardId);
+        break;
+      }
       default:
         throw new Error(`未知的自訂效果：${fn}`);
     }

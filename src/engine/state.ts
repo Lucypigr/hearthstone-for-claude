@@ -24,6 +24,16 @@ export interface HandCard {
   taught?: string;
   /** 時間循環者托奇：這張法術屬於哪一組 */
   looping?: number;
+  /** 黑暗禮物：打出時召喚 2/2 的複製（活生生的噩夢） / 戰吼觸發兩次（魯莽的覺醒） / 聖盾要被打破幾次（夢魘鱗片） */
+  /** 帶有黑暗禮物 */
+  gifted?: boolean;
+  /** 沙拉德拉希爾：已被腐化 */
+  corrupted?: boolean;
+  /** 沼澤惡魔瓦洛已獲得的黑暗禮物 */
+  wallow?: string[];
+  livingCopy?: boolean;
+  twiceBC?: boolean;
+  shieldHits?: number;
   /** 地圖：本回合打出這張牌後，也可以從這些選項中再選一張 */
   mapOthers?: string[];
   mapTurn?: number;
@@ -160,6 +170,8 @@ export interface Minion {
   brand?: PlayerId;
   /** 到這個回合為止攻擊時免疫（飢餓猛禽） */
   immuneAttackTurn?: number;
+  /** 聖盾還要被打破幾次（托雷斯、夢魘鱗片） */
+  shieldHits?: number;
   /** 在這個回合的生命值不會被降到 1 以下 */
   undyingTurn?: number;
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
@@ -338,6 +350,17 @@ export interface PlayerState {
   schoolsThisTurn?: { turn: number; schools: string[] };
   /** 紀念石碑：本回合施放的神聖法術 */
   holySpellsThisTurn?: { turn: number; ids: string[] };
+  /** 艾維娜：滿月已經升起（你的牌消耗為 1） */
+  fullMoon?: boolean;
+  /** 雷費拉爾已打出的次數 */
+  renferalPlayed?: number;
+  /** 泰蘭德：接下來還有幾個法術會施放兩次 */
+  doubleSpellsLeft?: number;
+  /** 哈穆爾：每施放 3 個法術就灌注英雄能力 */
+  hamuulRepeat?: boolean;
+  hamuulCount?: number;
+  /** 這位玩家的法力水晶上限額外增加（伊瑟拉：+5） */
+  manaCapBonus?: number;
   /** 遺物已經打出的次數（遺物的數值 = 1 + 次數） */
   relics?: number;
   /** 不在不在場證明：直到這個回合結束前，英雄每次最多受到 1 點傷害 */
