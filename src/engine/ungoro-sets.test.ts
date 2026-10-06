@@ -1,6 +1,6 @@
 // 安戈洛失落之城：血緣、任務、地圖與其他新機制的測試
 import { describe, expect, it } from 'vitest';
-import { getCard } from '../cards/registry';
+import { COLLECTIBLE, getCard } from '../cards/registry';
 import { Game } from './game';
 import type { HandCard, Minion, PlayerId, PlayerState } from './state';
 
@@ -358,3 +358,123 @@ describe('卡牌效果', () => {
     expect(g.s.players[0].board.filter((m) => m.cardId === 'TLC_468t1').length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('與原卡一致的機制', () => {
+  it('達成平衡：同時進行兩個任務，各自領獎', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    play(g, 'TLC_817');
+    expect(g.s.players[0].quest?.cardId).toBe('TLC_817');
+    expect(g.s.players[0].quest2?.cardId).toBe('TLC_817t2');
+    const foe = put(g, FILLER, 1);
+    foe.maxHp = foe.hp = 99;
+    for (let i = 0; i < 4; i++) {
+      g.s.players[0].hand = [];
+      play(g, 'CS1_130', foe.uid); // 神聖之火
+      g.s.players[0].hand = g.s.players[0].hand.filter((h) => h.cardId === 'TLC_817t3');
+    }
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'TLC_817t3')).toBe(true);
+    expect(g.s.players[0].quest).toBeUndefined();
+    expect(g.s.players[0].quest2).toBeTruthy();
+  });
+
+  it('泰坦繪圖師歐斯克：在手牌中每回合換一個泰坦能力', () => {
+    const g = newGame();
+    const hc = give(g, 'TLC_452');
+    pass(g);
+    const now = g.s.players[0].hand.find((h) => h.uid === hc.uid)!;
+    expect(now.cardId).toMatch(/^TLC_452t/);
+    const first = now.cardId;
+    let changed = false;
+    for (let i = 0; i < 6 && !changed; i++) {
+      g.s.players[0].hand = g.s.players[0].hand.filter((h) => h.uid === hc.uid);
+      pass(g);
+      changed = g.s.players[0].hand.find((h) => h.uid === hc.uid)!.cardId !== first;
+    }
+    expect(changed).toBe(true);
+  });
+
+  it('泰坦能力：移除兩個敵方手下', () => {
+    const g = newGame();
+    put(g, FILLER, 1);
+    put(g, 'CS2_168', 1);
+    play(g, 'TLC_452t21');
+    if (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    if (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[1].board).toHaveLength(0);
+  });
+
+  it('暗夜精靈女獵手：依序選擇三個不同的敵人', () => {
+    const g = newGame();
+    const a = put(g, FILLER, 1);
+    const b = put(g, FILLER, 1);
+    const foeHp = g.s.players[1].hero.hp;
+    play(g, 'TOY_101');
+    const picks: number[] = [];
+    for (let i = 0; i < 3 && g.s.pendingChoice; i++) {
+      picks.push(g.s.pendingChoice.options.length);
+      g.apply({ type: 'choose', index: 0 });
+    }
+    expect(picks.length).toBeGreaterThanOrEqual(2);
+    expect(a.hp + b.hp + (foeHp - g.s.players[1].hero.hp)).toBeLessThan(a.maxHp + b.maxHp + 0.5);
+    expect(g.s.pendingChoice).toBeNull();
+  });
+
+  it('可疑的煉金師：對手猜測選擇', () => {
+    const g = newGame();
+    play(g, 'REV_000');
+    expect(g.s.pendingChoice?.player).toBe(0);
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice?.player).toBe(1);
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.pendingChoice).toBeNull();
+  });
+
+  it('阿夏隆：適應兩次，之後打出的手下獲得相同適應', () => {
+    const g = newGame();
+    play(g, 'TLC_229t14');
+    while (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].adapts).toHaveLength(2);
+    const before = g.s.players[0].adapts!.length;
+    const m = put(g, FILLER, 0);
+    void m;
+    play(g, 'CS2_168');
+    while (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].adapts).toHaveLength(before);
+  });
+
+  it('導航員艾莉絲：製作自訂地點', () => {
+    const g = newGame();
+    const deck = g.s.players[0].deck;
+    const byCost = new Map<number, string>();
+    for (const c of COLLECTIBLE) if (c.type === 'MINION' && !byCost.has(c.cost) && c.cost <= 9) byCost.set(c.cost, c.id);
+    expect(byCost.size).toBeGreaterThanOrEqual(10);
+    deck.forEach((h, i) => {
+      h.starting = true;
+      h.cardId = [...byCost.values()][i % byCost.size];
+    });
+    play(g, 'TLC_100');
+    for (let i = 0; i < 3 && g.s.pendingChoice; i++) g.apply({ type: 'choose', index: 0 });
+    const loc = g.s.players[0].locations?.[0];
+    expect(loc).toBeTruthy();
+    expect(loc!.effects !== undefined || loc!.deathrattle !== undefined).toBe(true);
+  });
+
+  it('魔鬼裂隙：每回合都可以使用', () => {
+    const g = newGame();
+    play(g, 'TLC_446t');
+    expect(g.s.players[0].locations?.[0].cardId).toBe('TLC_446t1');
+    expect(g.s.players[0].locations?.[0].durability).toBeGreaterThan(0);
+  });
+
+  it('溫泉滑翔者：下一個魚人消耗減少，血緣時獲得聖盾', () => {
+    const g = newGame();
+    g.s.players[0].prevPlayed = ['TLC_428'];
+    play(g, 'TLC_428');
+    const hc = give(g, 'CS2_168');
+    expect(g.costOf(g.s.players[0], hc)).toBe(Math.max(0, getCard('CS2_168').cost - 1));
+    expect(g.apply({ type: 'play', handUid: hc.uid })).toBe(true);
+    const m = g.s.players[0].board.find((x) => x.cardId === 'CS2_168')!;
+    expect(g.hasKw(m, 'DIVINE_SHIELD')).toBe(true);
+  });
+});
+

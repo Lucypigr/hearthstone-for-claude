@@ -576,7 +576,7 @@ reg('TID_931', { abilities: play({ e: 'addRandom', pool: { type: 'SPELL', otherC
 // 格諾梅莉亞：突襲。同時傷害攻擊目標相鄰的手下。亡語：對所有敵人造成 2 點傷害
 reg('TOY_100', { keywords: ['RUSH', 'CLEAVE'], abilities: dr({ e: 'damage', target: { t: 'all', filter: { side: 'enemy' } }, amount: 2 }) });
 // 暗夜精靈女獵手：戰吼：對三個不同的敵人各造成 3 點傷害
-reg('TOY_101', { target: optional({ filter: { type: 'character', side: 'enemy' } }), abilities: play(fn('coHuntress')) });
+reg('TOY_101', { abilities: play(fn('coHuntress')) });
 // 步兵：嘲諷。相鄰的手下在攻擊時免疫
 reg('TOY_102', { keywords: ['TAUNT'], flags: ['footman'] });
 // 戰歌步兵：突襲。在此手下攻擊並消滅一個手下後，可以再次攻擊

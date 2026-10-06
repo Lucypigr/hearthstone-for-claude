@@ -205,6 +205,9 @@ export interface Location {
   durability: number;
   /** 還要等幾個你的回合才能再啟用（0 = 可以啟用） */
   cooldown: number;
+  /** 自訂地點（導航員艾莉絲製作）：啟用時的效果與耐久度用完時的亡語 */
+  effects?: Effect[];
+  deathrattle?: Effect[];
 }
 
 export interface Weapon {
@@ -329,7 +332,7 @@ export interface PlayerState {
   murlocBuff?: number;
   /** 加洛什巨像：你對敵人造成剛好 2 點傷害時，額外造成 2 點 */
   gorishi?: boolean;
-  /** 阿夏隆：你打出的手下獲得這些適應 */
+  /** 阿夏隆：你打出的手下獲得這些適應（適應卡的 id） */
   adapts?: string[];
   /** 本回合施放過的法術派系 */
   schoolsThisTurn?: { turn: number; schools: string[] };
@@ -388,6 +391,9 @@ export interface PlayerState {
   destroyedWeapons?: string[];
   /** 進行中的任務 */
   quest?: { cardId: string; progress: number; names?: Record<string, number> };
+  /** 第二個進行中的任務（達成平衡） */
+  quest2?: { cardId: string; progress: number; names?: Record<string, number> };
+
   questPlayed?: boolean;
   /** 你的英雄 / 對手的英雄本回合受到的傷害 */
   heroDamageTaken?: { turn: number; amount: number };

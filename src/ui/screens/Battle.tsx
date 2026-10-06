@@ -1337,7 +1337,7 @@ function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: Pl
       <div className="hero-portrait">
         <Art cardId={h.cardId} label={CLASS_NAMES[p.heroClass]} color={CLASS_COLORS[p.heroClass]} />
       </div>
-      {(p.secrets.length > 0 || p.quest || (p.eternal ?? []).some((e) => e.objective)) && (
+      {(p.secrets.length > 0 || p.quest || p.quest2 || (p.eternal ?? []).some((e) => e.objective)) && (
         <div className="secrets">
           {(p.eternal ?? [])
             .filter((e, i, arr) => e.objective && arr.findIndex((x) => x.objective && x.sourceCardId === e.sourceCardId) === i)
@@ -1348,6 +1348,11 @@ function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: Pl
             ))}
           {p.quest && (
             <span className="secret quest" title={`任務：${getCard(p.quest.cardId).name}（${p.quest.progress}/${getCard(p.quest.cardId).quest?.goal ?? '?'}）`}>
+              !
+            </span>
+          )}
+          {p.quest2 && (
+            <span className="secret quest" title={`任務：${getCard(p.quest2.cardId).name}（${p.quest2.progress}/${getCard(p.quest2.cardId).quest?.goal ?? '?'}）`}>
               !
             </span>
           )}
