@@ -54,8 +54,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   END_002: { keywords: ['REBORN'], abilities: dr(fn('blightspawn')) },
   // 終結：抽一張死靈牌。灌注兩次
   END_003: { abilities: play(fn('drawRace', { race: 'UNDEAD' }), fn('imbue', { times: 2 })) },
-  // 怒火殘影：本回合每死亡一個手下，消耗減少 (1)。戰吼：抽 2 張牌
-  END_004: { costRule: { per: 'deathsThisTurn', amount: 1 }, abilities: play(draw(2)) },
   // 往日回聲：召喚一個隨機 4 費手下。花費 4 具屍體，再召喚一個。流放：再一個
   END_005: {
     abilities: play(
@@ -72,28 +70,15 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
       { e: 'delayed', turns: 2, effects: [{ e: 'heroAttack', amount: 3 }] },
     ),
   },
-  // 乘勝追擊：造成 1 點傷害。英雄本回合 +1 攻擊力。抽一張牌。獲得 1 點護甲值
-  END_007: { target: anyChar, abilities: play(hit(1), { e: 'heroAttack', amount: 1 }, draw(), { e: 'armor', amount: 1 }) },
-  // 持久的蟑螂：在你使用英雄能力後，補充 2 顆法力水晶
-  END_008: { abilities: [{ on: { k: 'heroPower', side: 'friendly' }, effects: [{ e: 'mana', kind: 'refresh', amount: 2 }] }] },
   // 碎裂的現實：召喚兩隻 2/2 樹人，每有一隻死亡的友方樹人，它們 +1/+1
   END_009: { abilities: play(fn('splinteredReality')), tokens: ['END_009t'] },
   END_009t: {},
-  // 暮光時光收割者：二選一 - 將全部其他手下的攻擊力改為 1；或生命值改為 1
-  END_010: {
-    chooseOne: [
-      { id: 'END_010a', name: '有限意志', text: '將全部其他手下的攻擊力改為1', abilities: play(fn('finiteWill', { stat: 'atk' })) },
-      { id: 'END_010b', name: '有限決心', text: '將全部其他手下的生命值改為1', abilities: play(fn('finiteWill', { stat: 'hp' })) },
-    ],
-  },
   // 加速光環：在你的回合開始時，獲得一顆暫時的法力水晶。持續 3 個回合
   END_011: { objective: 3, abilities: [...play(fn('objective')), ...atStartOfTurn({ e: 'mana', kind: 'temp', amount: 1 })] },
   // 無限之刃：無法攻擊英雄。戰吼：將這把武器的攻擊力設為無限（本回合）
   END_012: { keywords: ['CANT_ATTACK_HEROES'], abilities: play(fn('infinityWeapon')) },
   // 粗野的終末之口：戰吼：發現一個消耗 (1) 且有黑暗禮物的手下
   END_013: { abilities: play(fn('discoverGift', { pool: { type: 'MINION', cost: 1, anyClass: true } })) },
-  // 同步火花：對一個敵人造成 3 點傷害。若它死亡，使一個隨機友方手下獲得 +3/+3
-  END_014: { target: enemyChar, abilities: play(hit(3), cond({ c: 'itDied' }, [{ e: 'buff', target: randomFriendly, atk: 3, hp: 3 }])) },
   // 三年霸王龍：同族與亡語：獲得一張隨機的亡語手下牌，它的消耗減少 (2)
   END_015: {
     abilities: [
@@ -110,11 +95,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   END_018: { abilities: [...play(fn('acolyteInfinite')), ...dr(fn('acolyteRestore'))] },
   // 終結時刻的倖存者：嘲諷。戰吼：若你的英雄本回合受過傷害，獲得 +3/+3
   END_019: { keywords: ['TAUNT'], abilities: play(cond({ c: 'heroDamagedThisTurn' }, [{ e: 'buff', target: { t: 'self' }, atk: 3, hp: 3 }])) },
-  // 永恆的勞役：對一個手下造成 1 點傷害。若它存活，抽一張牌；若它死亡，召喚一個隨機 1 費手下
-  END_020: {
-    target: anyMinion,
-    abilities: play(hit(1), cond({ c: 'itDied' }, [summonRandom({ type: 'MINION', cost: 1 })], [draw()])),
-  },
   // 次元武器匠：戰吼：使你手牌中所有的手下與武器 +2 攻擊力
   END_021: { abilities: play(fn('buffHandAtk', { amount: 2 })) },
   // 扭曲時間的先知：受傷時具有法術傷害 +2
@@ -133,14 +113,8 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   END_026: { abilities: [{ on: { k: 'spellCast', side: 'friendly' }, cond: { c: 'itIsMinion' }, effects: [draw()] }] },
   // 永恆之翼：發現一條來自過去、有黑暗禮物的龍
   END_027: { abilities: play(fn('discoverGift', { pool: { type: 'MINION', race: 'DRAGON', past: true, anyClass: true } })) },
-  // 亙古不變：消滅所有攻擊力 4 以下的手下。超載：(2)
-  END_028: { overload: 2, abilities: play(fn('destroyMaxAtk', { atk: 4 })) },
-  // 巫毒圖騰：在你的回合結束時，獲得一張隨機暗影法術牌
-  END_029: { abilities: atEndOfTurn({ e: 'addRandom', pool: { type: 'SPELL', spellSchool: 'SHADOW', anyClass: true }, count: 1, who: 'self' }) },
   // 故障的豬頭怪：高於元素閃避，嘲諷。你每超載過一顆法力水晶，消耗減少 (1)
   END_030: { keywords: ['ELUSIVE', 'TAUNT'], costRule: { per: 'overloadedThisGame', amount: 1 } },
-  // 終焉暗影：潛行，法術傷害 +1
-  END_031: { keywords: ['STEALTH'], spellDamage: 1 },
   // 長翼畸變體：衝刺。連擊：超載 (2)，本回合免疫並獲得風怒
   END_032: {
     keywords: ['RUSH'],
@@ -184,6 +158,8 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_005t8: { abilities: play(fn('twMurlocRafaam')) },
   TIME_005t9: { abilities: play(fn('twArchmageRafaam')) },
   TIME_005t9t: {},
+  // 硬光守護者：聖盾。戰吼：為你的英雄恢復 3 點生命值並給予聖盾
+  TIME_015: { keywords: ['DIVINE_SHIELD'], abilities: play({ e: 'heal', target: myHero, amount: 3 }, fn('twHeroShield')) },
   // 鏡像空間：召喚一個 0/4 嘲諷手下。若你的手牌中有龍，再召喚一個
   TIME_006: { abilities: play(summon('TIME_006t1'), cond({ c: 'holding', race: 'DRAGON' }, [summon('TIME_006t1')])), tokens: ['TIME_006t1'] },
   TIME_006t1: { keywords: ['TAUNT'] },
@@ -208,8 +184,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   },
   // 瞬間多元宇宙：倒轉。召喚總值 12 點法力的隨機手下。超載：(3)
   TIME_014: { ...rewind(), overload: 3, abilities: play(fn('twSummonManaWorth', { mana: 12 })) },
-  // 硬光守護者：聖盾。戰吼：為你的英雄恢復 3 點生命值並給予聖盾
-  TIME_015: { keywords: ['DIVINE_SHIELD'], abilities: play({ e: 'heal', target: myHero, amount: 3 }, fn('twHeroShield')) },
   // 霓虹創新：發現一個來自過去的聖騎士機械，使其 +5/+5
   TIME_016: {
     abilities: play({ e: 'discover', pool: { type: 'MINION', race: 'MECHANICAL', cls: 'PALADIN', past: true }, then: [fn('twBuffDiscovered', { atk: 5, hp: 5 })] }),
@@ -378,10 +352,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_213: { handAbilities: natureHeld, abilities: play(cond({ c: 'handCounter', n: 1 }, [{ e: 'buff', target: { t: 'self' }, atk: 1, hp: 1 }, draw()])) },
   // 熔流亡魂：嘲諷。每當你要用自然法術傷害此手下，改為使其 +2/+1
   TIME_214: { keywords: ['TAUNT'], flags: ['natureFeeds'] },
-  // 雷震：對所有手下造成 $1 點傷害。獲得一張靜電震擊
-  TIME_215: { abilities: play({ e: 'damage', target: allMinions, amount: 1, spell: true }, addCard('TIME_218')), tokens: ['TIME_218'] },
-  // 初生雷霆：對一個手下造成 $5 點傷害。若它存活，抽 2 張牌
-  TIME_216: { target: anyMinion, abilities: play(hit(5), cond({ c: 'itAlive' }, [draw(2)])) },
   // 風暴巨鴉：每當你要用自然法術傷害此手下，改為召喚一個隨機 5 費手下
   TIME_217: { flags: ['natureSummons'] },
   // 靜電震擊：對一個手下造成 $1 點傷害。使你的英雄本回合 +1 攻擊力
@@ -438,10 +408,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_601: { abilities: play(fn('twDrawUntil', { n: 3 })) },
   // 蟲洞：倒轉。召喚一隻隨機 3 費野獸，它會攻擊一個隨機敵人
   TIME_602: { ...rewind(), abilities: play(fn('twWormhole')) },
-  // 滴答作響的定時炸彈：亡語：消滅一個隨機敵方手下
-  TIME_603: { abilities: dr({ e: 'destroy', target: randomEnemyMinion() }) },
-  // 時代潛行者：衝刺，高於元素閃避。戰吼：召喚一個此手下的複製
-  TIME_605: { keywords: ['RUSH', 'ELUSIVE'], abilities: play({ e: 'summonCopy', target: { t: 'self' }, count: 1 }) },
   // 奎爾多雷弓箭手：當你的手牌只有 3 張以下時，你的英雄能力消耗為 (0)
   TIME_606: { flags: ['heroPowerFreeSmallHand'] },
   // 遊俠將軍希瓦娜斯（傳說）：戰吼：對所有敵人造成 2 點傷害。若你打出過奧蕾莉亞或維蕾薩，各重複一次
@@ -455,20 +421,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   // 昨日之影：倒轉。召喚四個 3/2 暗影，它們各獲得兩個隨機的額外效果
   TIME_610: { ...rewind(), abilities: play(fn('twShadowsOfYesterday')), tokens: ['TIME_610t2'] },
   TIME_610t2: {},
-  // 時間靜止：造成 $3 點傷害。凍結兩個隨機敵方手下
-  TIME_611: { target: anyChar, abilities: play(hit(3), { e: 'freeze', target: randomEnemyMinion(2) }) },
-  // 血之抽取：發現一張法術牌。它消耗生命值而不是法力
-  TIME_612: { abilities: play({ e: 'discover', pool: { type: 'SPELL' }, then: [fn('twHealthCost')] }) },
-  // 低溫冰凍的冠軍：亡語：獲得一個隨機傳說手下，消耗減少 (1)
-  TIME_613: { abilities: dr(fn('addRandomDiscount', { pool: { type: 'MINION', rarity: 'LEGENDARY', anyClass: true }, count: 1, discount: 1 })) },
-  // 撕裂者：戰吼：若你的英雄本回合生命值變化過，對一個敵方手下造成 6 點傷害
-  TIME_614: { target: optional(enemyMinion), abilities: play(cond({ c: 'heroHealthChanged' }, [{ e: 'damage', target: { t: 'chosen' }, amount: 6 }])) },
-  // 被遺忘的千年：用隨機死靈填滿你的手牌。本回合它們消耗生命值而不是法力
-  TIME_615: { abilities: play(fn('fillHandHealthCost')) },
-  // 回憶顯化：召喚本場對戰中死亡、消耗最高的友方死靈
-  TIME_616: { abilities: play(fn('summonBestFromGraveyard')) },
-  // 冷霜凝視者：你在回合開始時不再抽牌
-  TIME_617: { flags: ['noTurnDraw'] },
   // 殭屍收割者胡斯克：戰吼：使你的英雄獲得「亡語：花費最多 20 具屍體，以等量生命值復活」
   TIME_618: { abilities: play(fn('twEternalLife')) },
   // 墳墓的坦吉（傳說）：戰吼：抽取伯昂撒姆（若他已死亡則使其復活）。選擇一個恩澤賜予他
@@ -509,19 +461,13 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_706: { abilities: play(fn('twFinsBeyondTime')) },
   // 另一個現實：將你的手牌與牌堆換成來自過去的隨機二選一卡牌，它們的消耗減少 (1)
   TIME_707: { abilities: play(fn('twAlternateReality')) },
-  // 麻煩的分身：潛行。連擊：召喚一個此手下的複製
-  TIME_710: { keywords: ['STEALTH'], abilities: play(cond({ c: 'combo' }, [{ e: 'summonCopy', target: { t: 'self' }, count: 1 }])) },
   // 回溯：召喚兩個來自過去的隨機 1 費手下。連擊：使它們 +1 攻擊力
   TIME_711: { abilities: play(fn('twFlashback')) },
-  // 廢黜：消滅一個手下。連擊：召喚一個隨機 8 費手下
-  TIME_712: { target: anyMinion, abilities: play({ e: 'destroy', target: { t: 'chosen' } }, cond({ c: 'combo' }, [summonRandom({ type: 'MINION', cost: 8, anyClass: true })])) },
   // 時間海軍上將鉤尾：戰吼：為你的對手召喚一個 0/8 的箱子。裡面全是金幣！
   TIME_713: { abilities: play({ e: 'summon', card: 'TIME_713t', count: 1, who: 'opponent' }), tokens: ['TIME_713t'] },
   TIME_713t: { abilities: dr(fn('twFillHandCoins')) },
   // 時光領主艾波克：戰吼：消滅你的對手上回合打出的所有手下
   TIME_714: { abilities: play(fn('twEpoch')) },
-  // 為了榮耀！：抽 2 張牌。你的對手每控制一個手下，消耗減少 (1)
-  TIME_715: { costRule: { per: 'enemyMinions', amount: 1 }, abilities: play(draw(2)) },
   // 緩慢動作：你的對手下個回合的卡牌消耗增加 (1)
   TIME_716: { abilities: play(fn('twSlowMotion')) },
   // 卡多雷培育者：戰吼：發現 2 隻野獸。將它們放到你牌堆的底部，並使其 +5/+5
@@ -577,8 +523,6 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_871: { keywords: ['TAUNT'], abilities: play({ e: 'buff', target: { t: 'self' }, atk: { dyn: 'damagedMinions', mult: 2 }, hp: { dyn: 'damagedMinions', mult: 2 } }) },
   // 不敗冠軍：衝刺。戰吼：用隨機 1 費手下填滿你對手的戰場
   TIME_872: { keywords: ['RUSH'], abilities: play(fn('twFillOppBoard', { cost: 1 })) },
-  // 釋放鱷魚：獲得 10 點護甲值。為你的對手召喚兩隻 2/3 野獸
-  TIME_873: { abilities: play({ e: 'armor', amount: 10 }, { e: 'summon', card: 'TIME_873t', count: 2, who: 'opponent' }), tokens: ['TIME_873t'] },
   TIME_873t: {},
   // 加羅娜‧半獸人（傳說）：戰吼：若你的對手手牌中有萊恩國王，消滅他並將對手的生命值減半
   TIME_875: { fabled: ['TIME_875t', 'TIME_875t1'], abilities: play(fn('twGarona')), tokens: ['TIME_875t', 'TIME_875t1'] },
