@@ -105,3 +105,35 @@ describe('獎勵碼', () => {
     expect(bad.profile).toBe(p);
   });
 });
+
+describe('標準卡包與傳說卡池', () => {
+  it('標準卡包：只會抽到標準模式系列的卡', () => {
+    const pack = packById('standard')!;
+    const std = new Set(pack.sets);
+    const rand = seeded(7);
+    for (let i = 0; i < 30; i++) for (const id of rollPack(pack, 0, rand)) expect(std.has(getCard(id).set)).toBe(true);
+  });
+
+  it('傳說卡池：2000 金幣，每包 5 張不重複的傳說', () => {
+    const pack = packById('legendary')!;
+    expect(pack.price).toBe(2000);
+    const rand = seeded(11);
+    for (let i = 0; i < 20; i++) {
+      const cards = rollPack(pack, 0, rand);
+      expect(cards).toHaveLength(5);
+      expect(new Set(cards).size).toBe(5);
+      for (const id of cards) expect(getCard(id).rarity).toBe('LEGENDARY');
+    }
+  });
+
+  it('傳說卡池：購買扣 2000 金幣，開包後獲得 5 張傳說', () => {
+    let p = { ...newProfile(), gold: 2500 };
+    const b = buyPacks(p, 'legendary', 1);
+    expect(b.ok).toBe(true);
+    p = b.profile;
+    expect(p.gold).toBe(500);
+    const r = openPack(p, 'legendary', seeded(3));
+    expect(r.cards).toHaveLength(5);
+    expect(buyPacks({ ...newProfile(), gold: 1999 }, 'legendary', 1).ok).toBe(false);
+  });
+});

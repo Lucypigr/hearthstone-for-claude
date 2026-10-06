@@ -134,6 +134,13 @@ export function rollPack(pack: PackType, pity: number, rand: Rand): string[] {
   const pool = packPool(pack);
   const byRarity: Record<string, string[]> = {};
   for (const c of pool) (byRarity[c.rarity] ??= []).push(c.id);
+  // 傳說卡池：5 張都是不重複的傳說
+  if (pack.legendaryOnly) {
+    const legends = [...(byRarity.LEGENDARY ?? [])];
+    const picked: string[] = [];
+    while (picked.length < CARDS_PER_PACK && legends.length) picked.push(legends.splice(Math.floor(rand() * legends.length), 1)[0]);
+    return picked;
+  }
   const rarities: Rarity[] = [];
   for (let i = 0; i < CARDS_PER_PACK; i++) {
     const r = rand();
