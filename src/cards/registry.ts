@@ -103,6 +103,7 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.minCost !== undefined && c.cost < pool.minCost) return false;
     if (pool.past && STANDARD_SETS.has(c.set)) return false;
     if (pool.rewind && !c.rewind) return false;
+    if (pool.multiRace && (c.races?.length ?? 0) < 2) return false;
     if (pool.outcast && c.outcastCost === undefined && !JSON.stringify(c.abilities ?? []).includes('"c":"outcast"')) return false;
     if (pool.attack !== undefined && (c.type !== 'MINION' || c.attack !== pool.attack)) return false;
     if (pool.minAttack !== undefined && (c.type !== 'MINION' || (c.attack ?? 0) < pool.minAttack)) return false;

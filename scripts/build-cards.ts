@@ -214,7 +214,7 @@ async function main() {
 
   function buildDef(r: RawCard, collectible: boolean): CardDef | null {
     // 英雄卡只收錄有手動定義（overrides）的
-    const type: CardType | undefined = typeOf(r) ?? (r.tags.CARDTYPE === 3 && collectible && OVERRIDES[r.id] ? 'HERO' : undefined);
+    const type: CardType | undefined = typeOf(r) ?? (r.tags.CARDTYPE === 3 && OVERRIDES[r.id] ? 'HERO' : undefined);
     if (!type) return null;
     const cls = CLASS_MAP[r.tags.CLASS ?? 12] ?? (collectible ? undefined : 'NEUTRAL');
     if (!cls) return null;
