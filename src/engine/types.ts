@@ -20,7 +20,7 @@ export type CardClass =
 
 export type Rarity = 'FREE' | 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
-export type CardType = 'MINION' | 'SPELL' | 'WEAPON' | 'HERO';
+export type CardType = 'MINION' | 'SPELL' | 'WEAPON' | 'HERO' | 'LOCATION';
 
 export type Race =
   | 'BEAST'
@@ -687,6 +687,8 @@ export interface HeroPowerSpec {
   chooseOne?: { id: string; name?: string; text?: string; effects: Effect[]; target?: TargetReq }[];
   /** 被動：無法主動使用 */
   passive?: boolean;
+  /** 倒轉：使用後可以選擇保留，或回到使用前重來（每回合一次） */
+  rewind?: boolean;
 }
 
 export interface HeroPowerDef extends HeroPowerSpec {
@@ -810,6 +812,14 @@ export interface CardDef {
   extraOnBuff?: { atk: number; hp: number };
   /** 任務 */
   quest?: QuestDef;
+  /** 倒轉：打出後可以選擇保留結果，或倒轉重來（數字 = 可倒轉的次數） */
+  rewind?: number;
+  /** 傳說：開局時，這張卡的組合卡會一起洗入牌堆 */
+  fabled?: string[];
+  /** 目標（Aura）：打出後持續這麼多個你的回合 */
+  objective?: number;
+  /** 地點牌：啟用後（耐久度 -1）變成這張卡（「前進到現在 / 未來」） */
+  advanceTo?: string;
 }
 
 /**

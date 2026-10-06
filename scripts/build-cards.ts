@@ -136,7 +136,8 @@ async function main() {
     byName.get(en)!.push(r);
   }
 
-  const typeOf = (r: RawCard) => TYPE_MAP[r.tags.CARDTYPE];
+  // 地點牌只收錄有手動定義（overrides）的
+  const typeOf = (r: RawCard): CardType | undefined => TYPE_MAP[r.tags.CARDTYPE] ?? (r.tags.CARDTYPE === 39 && OVERRIDES[r.id] ? 'LOCATION' : undefined);
   const hasKw = (r: RawCard, k: Keyword) => KEYWORD_TAGS.some(([tag, kw]) => kw === k && r.tags[tag]);
 
   // ------------------------------------------------------------------ 衍生卡

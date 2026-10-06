@@ -26,6 +26,7 @@ import {
   type GameState,
   type HandCard,
   type Hero,
+  type Location,
   type Minion,
   type PlayerId,
   type PlayerState,
@@ -211,6 +212,8 @@ export class Game {
   private lastAttack: { attacker: number; defender: number; defenderIsHero: boolean; killed: boolean } | null = null;
   private emitDepth = 0;
   private steps = 0;
+  /** 倒轉：玩家選擇倒轉時，記錄倒轉前的狀態（等這次動作結束後還原） */
+  private rewindReq: { snap: GameState; handUid?: number; left: number } | null = null;
 
   constructor(state: GameState, opts: { chooser?: Chooser; autoAll?: boolean } = {}) {
     this.s = state;
@@ -269,7 +272,8 @@ export class Game {
         maxMana: 0,
         overloadOwed: 0,
         overloadLocked: 0,
-        deck: o.decks[id].map((cardId) => ({ ...game.newHandCard(cardId), starting: true })),
+        // 傳說：組合卡一起洗入牌堆
+        deck: o.decks[id].flatMap((cardId) => [cardId, ...(getCard(cardId).fabled ?? [])]).map((cardId) => ({ ...game.newHandCard(cardId), starting: true })),
         hand: [],
         board: [],
         secrets: [],
@@ -343,7 +347,9 @@ export class Game {
           const req = this.playTargetReq(action.handUid, action.option);
           if (req) target = pick(this.s, this.validTargets(req, this.s.current, this.cardIsSpell(action.handUid))) ?? target;
         }
-        this.drive(this.wrap(this.playCard(action.handUid, target, action.position, action.option, action.side)));
+        const hc = this.s.players[this.s.current].hand.find((h) => h.uid === action.handUid);
+        if (hc && !this.autoAll && this.rewindsOf(hc) > 0) this.drive(this.wrap(this.playRewindable(action.handUid, target, action.position, action.option, action.side)));
+        else this.drive(this.wrap(this.playCard(action.handUid, target, action.position, action.option, action.side)));
         return true;
       }
       case 'attack':
@@ -352,7 +358,9 @@ export class Game {
       case 'heroPower': {
         let target = action.target;
         if (target !== undefined && this.flagOnBoard('randomTargets')) target = pick(this.s, this.heroPowerTargets(action.option)) ?? target;
-        this.drive(this.wrap(this.useHeroPower(target, action.option)));
+        const hp = this.me;
+        if (!this.autoAll && this.powerDef(hp).rewind && hp.heroPower.rewoundTurn !== this.s.turn) this.drive(this.wrap(this.powerRewindable(target, action.option)));
+        else this.drive(this.wrap(this.useHeroPower(target, action.option)));
         return true;
       }
       case 'heroPower2':
@@ -360,6 +368,9 @@ export class Game {
         return true;
       case 'trade':
         this.drive(this.wrap(this.trade(action.handUid)));
+        return true;
+      case 'location':
+        this.drive(this.wrap(this.activateLocation(action.uid, action.target)));
         return true;
       case 'launch':
         this.drive(this.wrap(this.doLaunch()));
@@ -430,6 +441,19 @@ export class Game {
         if (!hc) return { ok: false };
         if (!this.handDef(hc).keywords?.includes('TRADEABLE')) return { ok: false, reason: '不可交易' };
         if (p.mana < 1 || !p.deck.length) return { ok: false, reason: '法力不足' };
+        return { ok: true };
+      }
+      case 'location': {
+        const loc = p.locations?.find((l) => l.uid === action.uid);
+        if (!loc) return { ok: false, reason: '找不到地點' };
+        if (loc.cooldown > 0) return { ok: false, reason: `冷卻中（還要 ${loc.cooldown} 個回合）` };
+        const req = getCard(loc.cardId).target;
+        if (req) {
+          const valid = this.validTargets(req, s.current, true);
+          if (valid.length) {
+            if (action.target === undefined || !valid.includes(action.target)) return { ok: false, reason: '請選擇目標' };
+          } else if (!req.optional) return { ok: false, reason: '沒有可選擇的目標' };
+        }
         return { ok: true };
       }
       case 'launch':
@@ -774,6 +798,7 @@ export class Game {
       return { ok: false, reason: kind === 'health' ? '生命值不足' : kind === 'corpses' ? '屍體不足' : '法力不足' };
     }
     if (def.type === 'MINION' && side !== 'enemy' && p.board.length >= MAX_BOARD) return { ok: false, reason: '場上已滿' };
+    if (def.type === 'LOCATION' && p.board.length + (p.locations?.length ?? 0) >= MAX_BOARD) return { ok: false, reason: '場上已滿' };
     if (def.quest && p.quest) return { ok: false, reason: '已經有進行中的任務' };
     if (def.secret) {
       if (p.secrets.some((x) => x.cardId === def.id)) return { ok: false, reason: '已有相同的奧秘' };
@@ -808,6 +833,7 @@ export class Game {
     const idx = p.hand.findIndex((h) => h.uid === handUid);
     if (idx < 0) return null;
     const def = this.handDef(p.hand[idx]);
+    if (def.type === 'LOCATION') return null;
     const req = def.chooseOne ? (option === undefined ? undefined : def.chooseOne[option]?.target) : def.target;
     if (!req) return null;
     if (req.when) {
@@ -1052,7 +1078,10 @@ export class Game {
     let input = first;
     for (;;) {
       const r = gen.next(input as number);
-      if (r.done) return;
+      if (r.done) {
+        if (this.rewindReq) this.applyRewind();
+        return;
+      }
       const req = r.value;
       if (this.autoAll || this.s.players[req.player].ai) {
         input = this.chooser(this.s, req);
@@ -1255,6 +1284,8 @@ export class Game {
       m.keywords = m.keywords.filter((k) => k !== 'DORMANT');
       this.log(pid, `${this.name(m.cardId)}甦醒了！`);
     }
+    // 地點牌的冷卻
+    for (const l of p.locations ?? []) if (l.cooldown > 0) l.cooldown--;
     // 奈絲芮克大廚：五回合後把法力改為 10 點
     if (p.chefTurn !== undefined && --p.chefTurn <= 0) {
       p.chefTurn = undefined;
@@ -1481,6 +1512,88 @@ export class Game {
     yield* this.emit({ k: 'prepare', player: p.id, amount: discount });
   }
 
+  /** 這張牌還能倒轉幾次 */
+  rewindsOf(hc: HandCard): number {
+    return hc.rewinds ?? getCard(hc.cardId).rewind ?? 0;
+  }
+
+  /** 倒轉：打出後讓玩家選擇保留結果，或回到打出前（這張牌回到手牌，少一次倒轉） */
+  private *playRewindable(handUid: number, target: number | undefined, position: number | undefined, option: number | undefined, side?: 'enemy'): Gen {
+    const pid = this.s.current;
+    const hc = this.s.players[pid].hand.find((h) => h.uid === handUid)!;
+    const left = this.rewindsOf(hc) - 1;
+    const snap = structuredClone(this.s);
+    yield* this.playCard(handUid, target, position, option, side);
+    if (this.over) return;
+    yield* this.processDeaths();
+    this.recalcAuras();
+    if (this.over) return;
+    const idx = yield { player: pid, kind: 'discover', options: ['TIME_000ta', 'TIME_000tb'], title: `倒轉？（剩餘 ${left + 1} 次）保留這個時間線，或回到打出前重來` };
+    if (idx === 1) this.rewindReq = { snap, handUid, left };
+  }
+
+  /** 地點牌可啟用的目標（沒有目標需求 = null） */
+  locationTargetReq(uid: number): TargetReq | null {
+    const loc = this.s.players[this.s.current].locations?.find((l) => l.uid === uid);
+    return loc ? getCard(loc.cardId).target ?? null : null;
+  }
+
+  /** 啟用地點牌：耐久度 -1、進入冷卻、執行效果，耐久度用完就消失（或前進到下一個形態） */
+  private *activateLocation(uid: number, target: number | undefined): Gen {
+    const p = this.s.players[this.s.current];
+    const loc = p.locations!.find((l) => l.uid === uid)!;
+    const def = getCard(loc.cardId);
+    loc.durability--;
+    loc.cooldown = 2;
+    this.log(p.id, `${p.name}啟用了${this.name(def.id)}`);
+    this.fx({ kind: 'play', cardId: def.id, player: p.id, target });
+    const ctx: Ctx = { ...this.baseCtx(p.id), sourceUid: loc.uid, sourceCardId: def.id, isSpell: false, chosen: target ?? null };
+    for (const ab of def.abilities ?? []) {
+      if (ab.on.k !== 'play' || (ab.cond && !this.evalCond(ab.cond, ctx))) continue;
+      yield* this.runEffects(ab.effects, ctx);
+      if (this.over) return;
+    }
+    // 前進到下一個形態（重新開始計算耐久度與冷卻）
+    if (def.advanceTo && hasCard(def.advanceTo)) {
+      const next = getCard(def.advanceTo);
+      loc.cardId = next.id;
+      loc.durability = next.health ?? 3;
+      loc.cooldown = 2;
+    } else if (loc.durability <= 0) {
+      p.locations = p.locations!.filter((l) => l !== loc);
+      this.log(p.id, `${this.name(def.id)}的耐久度用完了`);
+    }
+  }
+
+  /** 具有倒轉的英雄能力 */
+  private *powerRewindable(target: number | undefined, option: number | undefined): Gen {
+    const pid = this.s.current;
+    const snap = structuredClone(this.s);
+    yield* this.useHeroPower(target, option);
+    if (this.over) return;
+    yield* this.processDeaths();
+    this.recalcAuras();
+    if (this.over) return;
+    const idx = yield { player: pid, kind: 'discover', options: ['TIME_000ta', 'TIME_000tb'], title: '倒轉？保留這個時間線，或回到使用英雄能力前重來' };
+    if (idx === 1) this.rewindReq = { snap, left: 0 };
+  }
+
+  /** 還原到倒轉前的狀態（保留亂數狀態，所以結果會不一樣） */
+  private applyRewind() {
+    const r = this.rewindReq!;
+    this.rewindReq = null;
+    const keep = { rng: this.s.rng, nextUid: this.s.nextUid, log: this.s.log, fx: this.s.fx, fxSeq: this.s.fxSeq };
+    Object.assign(this.s, r.snap, keep);
+    this.s.pendingChoice = null;
+    const p = this.s.players[this.s.current];
+    const hc = r.handUid !== undefined ? p.hand.find((h) => h.uid === r.handUid) : undefined;
+    if (hc) hc.rewinds = r.left;
+    else if (r.handUid === undefined) p.heroPower.rewoundTurn = this.s.turn;
+    this.log(p.id, `${p.name}倒轉了時間！`);
+    this.fx({ kind: 'rewind', player: p.id });
+    this.recalcAuras();
+  }
+
   private *playCard(handUid: number, target: number | undefined, position: number | undefined, option: number | undefined, side?: 'enemy'): Gen {
     const s = this.s;
     const p = s.players[s.current];
@@ -1611,6 +1724,11 @@ export class Game {
         ctx.controller = bo.id;
         this.log(p.id, `${p.name}把${this.name(def.id)}打在了對手的戰場上`);
       }
+      // 無盡的祝福：每回合你打出的第一個死靈獲得攻擊力
+      if (bo === p && p.heroPower.id === 'END_003p' && p.infiniteTurn !== s.turn && (def.races?.includes('UNDEAD') || def.races?.includes('ALL'))) {
+        p.infiniteTurn = s.turn;
+        m.atkBuff += p.imbued ?? 1;
+      }
       this.recalcAuras();
       this.countSummon(bo, m.cardId);
       this.assemble(bo, m);
@@ -1689,6 +1807,11 @@ export class Game {
       yield* this.emit({ k: 'spellCast', player: p.id, cardId: def.id, subject: target, subjectKind: 'char' });
       yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'SPELL', cardId: def.id, echo, outcast, rightmost, fromOpp });
       if (!this.spellCountered) yield* this.checkSecrets(opp(p.id), 'afterEnemySpell', {});
+    } else if (def.type === 'LOCATION') {
+      const loc: Location = { uid: this.uid(), cardId: def.id, owner: p.id, durability: def.health ?? 3, cooldown: 0 };
+      (p.locations ??= []).push(loc);
+      this.fx({ kind: 'summon', uid: loc.uid, cardId: def.id, player: p.id, played: true });
+      yield* this.emit({ k: 'cardPlayed', player: p.id, cardType: 'LOCATION', cardId: def.id, echo, outcast, rightmost, fromOpp });
     } else if (def.type === 'HERO') {
       // 英雄卡：換上新英雄、獲得護甲、換成新的英雄能力（本回合就能使用）
       p.hero.cardId = def.id;
@@ -8857,6 +8980,8 @@ export class Game {
         }
         break;
       }
+      default:
+        yield* this.customTimeways(fn, args, ctx);
     }
   }
 
@@ -8871,4 +8996,68 @@ export class Game {
       } else yield* this.doSummon(ctx, me.id, id);
     }
   }
+
+  // ==========================================================================
+  // 穿越時間流
+  // ==========================================================================
+
+  /** 開始一個目標：它的能力在接下來的幾個回合內有效 */
+  private startObjective(p: PlayerState, def: CardDef) {
+    const turns = def.objective ?? 3;
+    for (const ab of def.abilities ?? []) {
+      if (ab.on.k === 'play') continue;
+      const atStart = ab.on.k === 'turnStart';
+      (p.eternal ??= []).push({ ability: ab, sourceCardId: def.id, until: this.s.turn + 2 * (atStart ? turns : turns - 1), objective: true });
+    }
+    this.log(p.id, `${p.name}的${this.name(def.id)}開始生效（持續 ${turns} 個回合）`);
+  }
+
+  private *customTimeways(fn: string, args: Record<string, unknown>, ctx: Ctx): Gen {
+    const s = this.s;
+    const me = s.players[ctx.controller];
+    const foe = s.players[opp(ctx.controller)];
+    void foe;
+    void args;
+    void ctx;
+    void me;
+    void s;
+    switch (fn) {
+      // ------------------------------------------------------------ 目標（Aura）
+      case 'objective':
+        this.startObjective(me, getCard(ctx.sourceCardId));
+        break;
+      // 傑爾賓：把你牌堆中每種目標各一張放到戰場上
+      case 'gelbin': {
+        const seen = new Set<string>();
+        for (const hc of [...me.deck]) {
+          const d = getCard(hc.cardId);
+          if (!d.objective || seen.has(d.id)) continue;
+          seen.add(d.id);
+          me.deck.splice(me.deck.indexOf(hc), 1);
+          this.startObjective(me, d);
+        }
+        break;
+      }
+      // ------------------------------------------------------------ 灌注
+      // 灌注你的英雄能力（盜賊 / 死亡騎士才有灌注後的英雄能力）
+      case 'imbue': {
+        me.imbued = (me.imbued ?? 0) + ((args.times as number) ?? 1);
+        const id = me.heroClass === 'ROGUE' ? 'END_000p' : me.heroClass === 'DEATHKNIGHT' ? 'END_003p' : null;
+        if (id && me.heroPower.id !== id && !me.heroPower.heroCard) {
+          const used = me.heroPower.used;
+          this.setHeroPower(me, id);
+          me.heroPower.used = used;
+        }
+        this.log(me.id, `${me.name}灌注了英雄能力（${me.imbued}）`);
+        break;
+      }
+      // 青銅龍的祝福：倒轉。獲得一張隨機的其他職業手下牌，消耗減少（灌注次數）
+      case 'bronzeBlessing':
+        yield* this.customViolet('addRandomDiscount', { pool: { type: 'MINION', otherClass: true }, count: 1, discount: me.imbued ?? 1 }, ctx);
+        break;
+      default:
+        throw new Error(`未知的自訂效果：${fn}`);
+    }
+  }
+
 }
