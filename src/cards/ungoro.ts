@@ -100,7 +100,15 @@ reg('DINO_433', {
 reg('DINO_435', { abilities: play(kin({ e: 'summonCopy', target: { t: 'self' }, count: 1 })) });
 
 // 導航員艾莉絲：戰吼：若你的牌堆一開始有 10 張不同消耗的牌，製作一個自訂地點
-reg('TLC_100', { abilities: play(cond({ c: 'deckTenCosts' }, [{ e: 'addRandom', pool: { type: 'LOCATION', anyClass: true }, count: 1, who: 'self' }])) });
+reg('TLC_100', {
+  abilities: play(fn('coElise')),
+  tokens: ['TLC_100t1', 'TLC_100t2', 'TLC_100t3', ...[1, 2, 3].flatMap((t) => [1, 2, 3, 4, 5, 6, 7].map((n) => `TLC_100t${t}${n}`)), 'TLC_101t'],
+});
+for (const t of [1, 2, 3]) {
+  reg(`TLC_100t${t}`, { target: undefined });
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) reg(`TLC_100t${t}${n}`, {});
+}
+reg('TLC_101t', { keywords: ['RUSH'] });
 // 托爾加：戰吼：抽一張血緣牌與另一張可以觸發它的牌
 reg('TLC_102', { abilities: play(fn('coTorga')) });
 // 終結者安布拉：戰吼：觸發 5 個本場對戰中死亡的友方手下的亡語
@@ -127,7 +135,7 @@ reg('TLC_227', { overload: 1, abilities: play(fn('coLava')) });
 reg('TLC_228', { flags: ['bralma'] });
 // 山岳之靈：任務：打出 6 個不同種族的手下。獎勵：阿夏隆
 reg('TLC_229', { quest: { kind: 'uniqueTypes', goal: 6, reward: 'TLC_229t14' }, tokens: ['TLC_229t14'] });
-reg('TLC_229t14', { keywords: ['RUSH'], abilities: play(fn('adapt', { target: 'self', times: 2 })) });
+reg('TLC_229t14', { keywords: ['RUSH'], abilities: play(fn('coAshalon')) });
 // 樹人！！！：選擇一個手下。召喚四個 2/2 的樹人攻擊它
 reg('TLC_230', { target: anyMinion, abilities: play(fn('coTrees')), tokens: ['TLC_230t'] });
 // 巴納巴斯的故事：抽一個手下。若它的攻擊力至少為 5，使其 +5 生命值並獲得 5 點護甲
@@ -223,7 +231,8 @@ reg('TLC_443t', { keywords: ['TAUNT'] });
 reg('TLC_444', { target: anyMinion, abilities: play(fn('coBonus', { target: 'chosen', n: 3 })) });
 // 逃離魔鬼深淵：任務：打出 6 張暫時的牌。獎勵：魔鬼裂隙
 reg('TLC_446', { quest: { kind: 'temporaryPlayed', goal: 6, reward: 'TLC_446t' }, tokens: ['TLC_446t'] });
-reg('TLC_446t', { abilities: play(fn('coRift')), tokens: ['TLC_446t2', 'TLC_446t3', 'TLC_446t4'] });
+reg('TLC_446t', { abilities: play(fn('coOpenRift')), tokens: ['TLC_446t1', 'TLC_446t2', 'TLC_446t3', 'TLC_446t4'] });
+reg('TLC_446t1', { flags: ['rift'], abilities: play(fn('coRift')) });
 reg('TLC_446t2', { keywords: ['RUSH', 'LIFESTEAL'] });
 reg('TLC_446t3', { keywords: ['CHARGE', 'ELUSIVE'] });
 reg('TLC_446t4', { keywords: ['TAUNT', 'REBORN'] });
@@ -234,7 +243,43 @@ reg('TLC_450', { abilities: play({ e: 'pendingDiscount', d: { amount: 2, tempora
 // 詛咒地下墓穴：發現牌堆中的另一張牌，使其變成暫時的
 reg('TLC_451', { abilities: play(fn('coDeckTemp')) });
 // 泰坦繪圖師歐斯克：每回合獲得不同的泰坦能力
-reg('TLC_452', { abilities: play(fn('coOsk')) });
+reg('TLC_452', {
+  flags: ['osk'],
+  tokens: [1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35].map((n) => `TLC_452t${n}`),
+});
+const osk = (n: number | string, ov: Override) => reg(`TLC_452t${n}`, { flags: ['osk'], ...ov });
+// 泰坦能力：戰吼：消滅一個敵方手下，此手下與你的英雄獲得它的生命值
+osk(1, { target: optional(enemyMinion), abilities: play(fn('coOskDestroy')) });
+osk(2, { abilities: play({ e: 'pendingDiscount', d: { amount: 3, type: 'SPELL' } }, fn('coNextSpellPower', { n: 3 })) });
+osk(3, { abilities: play(summon('TLC_T_UNDEAD', 2)) });
+osk(4, { abilities: play(fn('coDiscoverSet', { pool: { type: 'MINION', hasDeathrattle: true }, reduce: 3 })) });
+osk(5, { abilities: play(fn('coHandCost', { n: 2 })) });
+osk(6, { abilities: play(summon('TLC_T_ELEM', 4)) });
+osk(7, { abilities: play(fn('drawUntil', { n: 10, current: true })) });
+osk(8, { abilities: play({ e: 'fullHeal', target: { t: 'hero', side: 'friendly' } }) });
+osk(9, { abilities: play({ e: 'mana', kind: 'refresh', amount: 10 }) });
+osk(13, { target: optional(anyChar), abilities: play(hit(5, false)) });
+osk(14, { abilities: play(fn('coCastMageSecret')) });
+osk(15, { abilities: play(fn('coOskTax')) });
+osk(16, { abilities: play({ e: 'setStats', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, atk: 2, hp: 2 }) });
+osk(17, { abilities: play({ e: 'buff', target: allFriendlyOthers, atk: 2, hp: 2 }) });
+osk(18, { abilities: play(fn('coOskDraw2')) });
+osk(19, { target: optional(anyMinion), abilities: play(fn('coOskCopy')) });
+osk(20, { abilities: play(fn('coOskSummon6')) });
+osk(21, { abilities: play(fn('coOskRemove')) });
+osk(22, { abilities: play({ e: 'buff', target: { t: 'self' }, atk: 2, hp: 1 }, { e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 4 }) });
+osk(23, { abilities: play({ e: 'buff', target: { t: 'self' }, atk: 1, hp: 2 }, draw(1)) });
+osk(24, { abilities: play({ e: 'buff', target: { t: 'self' }, hp: 3, keywords: ['ELUSIVE'] }) });
+osk(26, { target: optional({ filter: { type: 'minion', side: 'any', excludeSelf: true } }), abilities: play(hit(20, false)) });
+osk(27, { abilities: play(fn('coOskBlast')) });
+osk(28, { abilities: play(summon('EX1_tk34', 2)), tokens: ['EX1_tk34'] });
+osk(29, { abilities: play(fn('coNether2')) });
+osk(30, { abilities: play({ e: 'buff', target: { t: 'self' }, hp: 5 }, { e: 'armor', amount: 5 }) });
+osk(31, { abilities: play({ e: 'buff', target: { t: 'self' }, atk: 5 }, { e: 'heroAttack', amount: 5 }) });
+osk(32, { abilities: play({ e: 'buff', target: { t: 'self' }, atk: 2, hp: 2 }, { e: 'draw', count: 1, who: 'self', pool: { type: 'WEAPON' } }) });
+osk(33, { abilities: play(fn('coOskTendril')) });
+osk(34, { abilities: play(fn('coOskForce')) });
+osk(35, { target: optional(enemyMinion), abilities: play({ e: 'steal', target: { t: 'chosen' } }) });
 // 鱗皮科多獸：戰吼：消滅攻擊力最低的敵方手下。血緣：改為最高
 reg('TLC_454', { abilities: play(fn('coKodo')) });
 // 禁忌序列：任務：發現 8 張牌。獎勵：起源之石
@@ -338,7 +383,9 @@ reg('TLC_815', { abilities: play(fn('coVoidbulb')) });
 // 墓地陽光花：抽兩張牌。血緣：消耗減少 (2)
 reg('TLC_816', { costIf: { cond: { c: 'kindred' }, cost: 2 }, abilities: play(draw(2)) });
 // 達成平衡：任務：施放 4 個神聖法術（獎勵：生命之息）；任務：施放 4 個暗影法術（獎勵：死亡之觸）
-reg('TLC_817', { quest: { kind: 'schoolSpells', goal: 4, reward: 'TLC_817t3|TLC_817t4' }, tokens: ['TLC_817t3', 'TLC_817t4', 'TLC_817t5'] });
+reg('TLC_817', { quest: { kind: 'holySpells', goal: 4, reward: 'TLC_817t3' }, quest2: 'TLC_817t2', tokens: ['TLC_817t', 'TLC_817t2', 'TLC_817t3', 'TLC_817t4', 'TLC_817t5'] });
+reg('TLC_817t', { quest: { kind: 'holySpells', goal: 4, reward: 'TLC_817t3' } });
+reg('TLC_817t2', { quest: { kind: 'shadowSpells', goal: 4, reward: 'TLC_817t4' } });
 reg('TLC_817t3', { keywords: ['TAUNT'], abilities: play(fn('coSoletos')) });
 reg('TLC_817t4', { keywords: ['REBORN'], abilities: [...play(fn('coSoletos')), ...dr({ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 5 })] });
 reg('TLC_817t5', { keywords: ['TAUNT', 'REBORN'], abilities: [...play(summon('TLC_817t5')), ...dr({ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 5 })] });

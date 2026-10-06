@@ -711,7 +711,8 @@ export interface QuestDef {
     | 'shuffle'
     | 'surviveTurns'
     | 'exactDamage'
-    | 'schoolSpells'
+    | 'holySpells'
+    | 'shadowSpells'
     | 'beastAttacks'
     | 'discover'
     | 'temporaryPlayed';
@@ -742,6 +743,8 @@ export interface PendingDiscount {
   combo?: boolean;
   /** 只適用於暫時的牌 */
   temporary?: boolean;
+  /** 使用這個折扣的牌打出時額外獲得的關鍵字（例如聖盾） */
+  grant?: Keyword;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -900,6 +903,8 @@ export interface CardDef {
   extraOnBuff?: { atk: number; hp: number };
   /** 任務 */
   quest?: QuestDef;
+  /** 同時開始的第二個任務（達成平衡）：任務卡的 id */
+  quest2?: string;
   /** 倒轉：打出後可以選擇保留結果，或倒轉重來（數字 = 可倒轉的次數） */
   rewind?: number;
   /** 注入：手牌中時，每有一個友方手下死亡就累積一次，累積到 n 次後變成 into（race：只計算這個種族） */
@@ -1037,6 +1042,8 @@ export type MinionFlag =
   | 'stagSpirit'
   | 'orion'
   | 'bralma'
+  | 'rift'
+  | 'osk'
   | 'vaultBreaker'
   | 'petrified'
   | 'niri'

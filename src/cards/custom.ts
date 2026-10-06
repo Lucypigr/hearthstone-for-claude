@@ -46,6 +46,9 @@ export const CUSTOM_CARDS: CardDef[] = [
   token('CORE_T_MEDIC', '軍醫', 'Medic', 2, 2, { keywords: ['LIFESTEAL'], text: '<b>生命竊取</b>' }),
   token('CORE_T_BAT', '蝙蝠', 'Bat', 2, 1, { races: ['BEAST'] }),
   // 安戈洛失落之城的衍生卡（卡牌資料庫中沒有）
+  token('TLC_T_UNDEAD', '不死族', 'Undead', 3, 3, { races: ['UNDEAD'], set: 1952, keywords: ['TAUNT', 'REBORN'], text: '<b>嘲諷</b>，<b>復生</b>' }),
+  token('TLC_T_ELEM', '元素', 'Elemental', 2, 2, { races: ['ELEMENTAL'], set: 1952, keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
+  token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),
   token('TLC_T_IMP', '小鬼', 'Imp', 3, 2, { races: ['DEMON'], set: 1952 }),
   token('TLC_T_RAPTOR', '迅猛龍', 'Raptor', 3, 2, {
     races: ['BEAST'],
