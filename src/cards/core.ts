@@ -632,7 +632,6 @@ reg('CS3_035', {});
 reg('CS3_036', { abilities: play(fn('coDeathwingDiscard')) });
 // 瘟疫穀物：獲得 4 具屍體。將四個穀物箱洗入你的牌堆，抽到時召喚一個 2/2 的亡靈
 reg('RLK_039', { abilities: play({ e: 'gainCorpses', amount: 4 }, { e: 'shuffle', card: 'RLK_039t', count: 4 }), tokens: ['RLK_039t'] });
-reg('RLK_039t', { castsWhenDrawn: true, abilities: play({ e: 'summon', card: 'EDR_T_PEASANT', count: 1, who: 'self' }) });
 // 縫補怪：戰吼：消滅你對手手牌、牌堆與戰場上各一個隨機手下
 reg('RLK_071', { abilities: play(fn('coPatchwerk')) });
 // 惡臭的屍體：戰吼：對一個敵人與你的英雄各造成 2 點傷害
