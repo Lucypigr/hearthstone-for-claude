@@ -439,6 +439,12 @@ export type Condition =
   /** 你本場對戰中已經打出過另一張同名的卡 */
   | { c: 'playedCopy' }
   | { c: 'discoveredThisTurn' }
+  | { c: 'selfDormant' }
+  | { c: 'holdingGift' }
+  | { c: 'imbued'; n: number }
+  | { c: 'handAllDifferentCosts' }
+  | { c: 'heroPowerUsed' }
+  | { c: 'handHasCostAtLeast'; n: number }
   | { c: 'itFireSpell' }
   | { c: 'castHolyAndShadow' }
   | { c: 'deckTenCosts' }
@@ -679,6 +685,8 @@ export interface CostAura {
   add?: number;
   /** 只影響你每回合打出的第 3、6、9… 個手下 */
   everyThird?: boolean;
+  /** 只影響你每回合打出的第一個這個種族的手下 */
+  firstOfRace?: boolean;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -745,6 +753,8 @@ export interface PendingDiscount {
   temporary?: boolean;
   /** 使用這個折扣的牌打出時額外獲得的關鍵字（例如聖盾） */
   grant?: Keyword;
+  /** 改為消耗你對手的生命值（最多 10 點） */
+  oppHealth?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -913,6 +923,10 @@ export interface CardDef {
   fabled?: string[];
   /** 目標（Aura）：打出後持續這麼多個你的回合 */
   objective?: number;
+  /** 休眠的手下甦醒時執行的效果 */
+  awaken?: Effect[];
+  /** 燃燒：在手牌中每回合升級，持有這麼多個回合後棄掉（升級數值 = 手牌計數 + 1） */
+  immolate?: number;
   /** 地點牌：啟用後（耐久度 -1）變成這張卡（「前進到現在 / 未來」） */
   advanceTo?: string;
 }
@@ -1042,6 +1056,13 @@ export type MinionFlag =
   | 'stagSpirit'
   | 'orion'
   | 'bralma'
+  | 'awakenOnPower'
+  | 'fireImmune'
+  | 'harbinger'
+  | 'podling'
+  | 'goldrinn'
+  | 'toreth'
+  | 'leechBoost'
   | 'rift'
   | 'osk'
   | 'vaultBreaker'

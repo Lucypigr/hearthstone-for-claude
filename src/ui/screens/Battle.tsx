@@ -1467,7 +1467,7 @@ function PlayerInfo({ p }: { p: PlayerState }) {
           💎 {p.mana}/{p.maxMana}
         </span>
         <div className="crystals">
-          {Array.from({ length: 10 }, (_, i) => (
+          {Array.from({ length: 10 + (p.manaCapBonus ?? 0) }, (_, i) => (
             <span key={i} className={`crystal ${i < p.mana ? 'full' : i < p.maxMana ? 'empty' : 'none'} ${i >= p.maxMana - p.overloadLocked && i < p.maxMana ? 'locked' : ''}`} />
           ))}
         </div>

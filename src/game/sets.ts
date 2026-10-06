@@ -109,10 +109,18 @@ export const PACKS: PackType[] = [
   {
     id: 'latest',
     name: '最新擴充卡包',
-    description: '決戰荒蕪之地到翡翠夢境的卡牌',
-    sets: [1892, 1897, 1898, 1905, 1935, 1946],
+    description: '決戰荒蕪之地到深暗領域的卡牌',
+    sets: [1892, 1897, 1898, 1905, 1935],
     price: 100,
     color: '#3fa3a0',
+  },
+  {
+    id: 'emerald',
+    name: '翡翠夢境卡包',
+    description: '只包含翡翠夢境的卡牌：灌注（六個職業）、黑暗禮物、休眠、燃燒',
+    sets: [1946],
+    price: 100,
+    color: '#2e8b57',
   },
   {
     id: 'ungoro',

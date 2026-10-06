@@ -6,6 +6,7 @@
 import { KAZAKUS_TOKENS } from './kazakus';
 import { CATACLYSM_OVERRIDES } from './cataclysm';
 import { CORE_OVERRIDES } from './core';
+import { EMERALD_OVERRIDES } from './emerald';
 import { UNGORO_OVERRIDES } from './ungoro';
 import { TIMEWAYS_OVERRIDES } from './timeways';
 import { VIOLET_OVERRIDES } from './violet';
@@ -2883,3 +2884,4 @@ Object.assign(OVERRIDES, TIMEWAYS_OVERRIDES);
 // 核心系列
 Object.assign(OVERRIDES, CORE_OVERRIDES);
 Object.assign(OVERRIDES, UNGORO_OVERRIDES);
+Object.assign(OVERRIDES, EMERALD_OVERRIDES);
