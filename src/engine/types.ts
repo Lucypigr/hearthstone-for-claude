@@ -848,6 +848,8 @@ export interface CardDef {
   quest?: QuestDef;
   /** 倒轉：打出後可以選擇保留結果，或倒轉重來（數字 = 可倒轉的次數） */
   rewind?: number;
+  /** 注入：手牌中時，每有一個友方手下死亡就累積一次，累積到 n 次後變成 into（race：只計算這個種族） */
+  infuse?: { n: number; into: string; race?: Race };
   /** 傳說：開局時，這張卡的組合卡會一起洗入牌堆 */
   fabled?: string[];
   /** 目標（Aura）：打出後持續這麼多個你的回合 */
@@ -937,6 +939,8 @@ export type MinionFlag =
   | 'immuneAttacking'
   | 'doubleBattlecries'
   | 'keepBothRewinds'
+  | 'infuseInDeck'
+  | 'infuseGainsStats'
   | 'takesDoubleDamage'
   | 'natureFeeds'
   | 'natureSummons'

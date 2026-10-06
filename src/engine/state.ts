@@ -12,6 +12,10 @@ export interface StarshipPiece {
 
 export interface HandCard {
   uid: number;
+  /** 注入：已累積的友方手下死亡次數 */
+  infuseProgress?: number;
+  /** 注入：累積死亡手下的攻擊力總和 */
+  infuseAtk?: number;
   /** 每個你的回合開始時，消耗減少這麼多 */
   timeDiscount?: number;
   /** 伯昂撒姆獲得的恩澤數量 */

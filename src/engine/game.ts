@@ -2955,6 +2955,7 @@ export class Game {
             }
           }
         }
+        this.infuseTick(m);
         yield* this.emit({ k: 'minionDied', player: m.owner, subject: m.uid, races: getCard(m.cardId).races, cardId: m.cardId });
         yield* this.checkSecrets(m.owner, 'friendlyMinionDies', { it: { kind: 'char', uid: m.uid }, itCardId: m.cardId, summonedTurn: m.summonedTurn });
       }
@@ -9153,6 +9154,28 @@ export class Game {
   // ==========================================================================
   // 穿越時間流
   // ==========================================================================
+
+  /** 注入：友方手下死亡時，手牌中帶有注入的卡累積進度，達標後變成注入版本 */
+  private infuseTick(m: Minion) {
+    const p = this.s.players[m.owner];
+    const zones = this.flagOnBoard('infuseInDeck', p.id) ? [p.hand, p.deck] : [p.hand];
+    for (const zone of zones) {
+      for (const hc of zone) {
+        const inf = getCard(hc.cardId).infuse;
+        if (!inf || (inf.race && !this.isRace(m.cardId, inf.race))) continue;
+        hc.infuseProgress = (hc.infuseProgress ?? 0) + 1;
+        hc.infuseAtk = (hc.infuseAtk ?? 0) + this.atkOf(m);
+        if (hc.infuseProgress < inf.n || !hasCard(inf.into)) continue;
+        this.log(p.id, `${this.name(hc.cardId)}注入完成了`);
+        hc.cardId = inf.into;
+        hc.infuseProgress = 0;
+        if (getCard(inf.into).flags?.includes('infuseGainsStats')) {
+          hc.atkBuff += hc.infuseAtk;
+          hc.hpBuff += hc.infuseAtk;
+        }
+      }
+    }
+  }
 
   /** 開始一個目標：它的能力在接下來的幾個回合內有效 */
   private startObjective(p: PlayerState, def: CardDef) {
