@@ -1057,6 +1057,7 @@ export type MinionFlag =
   | 'orion'
   | 'bralma'
   | 'awakenOnPower'
+  | 'reopenOnFel'
   | 'fireImmune'
   | 'harbinger'
   | 'podling'

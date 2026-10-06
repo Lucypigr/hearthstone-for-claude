@@ -48,6 +48,13 @@ export const CUSTOM_CARDS: CardDef[] = [
   // 安戈洛失落之城的衍生卡（卡牌資料庫中沒有）
   token('EDR_T_WOLF23', '狼', 'Wolf', 2, 3, { races: ['BEAST'], set: 1946, keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
   token('EDR_T_WOLF32', '狼', 'Wolf', 3, 2, { races: ['BEAST'], set: 1946, keywords: ['RUSH'], text: '<b>突襲</b>' }),
+  token('EDR_T_PEASANT', '亡靈農夫', 'Undead Peasant', 2, 2, { races: ['UNDEAD'], set: 1810 }),
+  token('EDR_T_RIME', '冰霜元素', 'Rime Elemental', 2, 1, {
+    races: ['ELEMENTAL'],
+    set: 1810,
+    text: '<b>亡語：</b>對一個隨機敵人造成2點傷害',
+    abilities: [{ on: { k: 'deathrattle' }, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 2 }] }],
+  }),
   token('TLC_T_UNDEAD', '不死族', 'Undead', 3, 3, { races: ['UNDEAD'], set: 1952, keywords: ['TAUNT', 'REBORN'], text: '<b>嘲諷</b>，<b>復生</b>' }),
   token('TLC_T_ELEM', '元素', 'Elemental', 2, 2, { races: ['ELEMENTAL'], set: 1952, keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
   token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),

@@ -604,3 +604,50 @@ reg('WON_145', { abilities: play(fn('coAvatar')) });
 reg('WW_329', { keywords: ['TAUNT'], abilities: play(fn('coHandTaunt')) });
 // 護甲商人：戰吼：使每個英雄獲得 4 點護甲
 reg('YOP_032', { abilities: play({ e: 'armor', amount: 4 }, { e: 'armor', amount: 4, who: 'opponent' }) });
+
+// ============================================================== 標準剩餘：核心卡牌（CS3_ / RLK_ / TTN_）
+// 護法者艾格文：法術傷害 +2。亡語：你抽到的下一個手下會繼承這些能力
+reg('CS3_001', { spellDamage: 2, abilities: dr(fn('coAegwynn')) });
+// 精挑細選的育種者：戰吼：發現你牌堆中一隻野獸的複製
+reg('CS3_015', { abilities: play(fn('coDiscoverDeck', { race: 'BEAST', copy: true })) });
+// 伊利達瑞審判官：突襲。在你的英雄攻擊一個敵人後，此手下也攻擊它
+reg('CS3_020', { keywords: ['RUSH'], abilities: heroHit([fn('coInquisitor')]) });
+// 泰蘭‧弗丁：嘲諷、聖盾。亡語：抽你消耗最高的手下
+reg('CS3_024', { keywords: ['TAUNT', 'DIVINE_SHIELD'], abilities: dr(fn('coHighestMinion')) });
+// 霸主朗薩克：突襲。每當此手下攻擊，使你手牌中的所有手下 +1/+1
+reg('CS3_025', { keywords: ['RUSH'], abilities: [{ on: { k: 'attack', subject: 'self' }, effects: [{ e: 'handBuff', atk: 1, hp: 1, scope: 'all' }] }] });
+// 在暗影中茁壯：發現你牌堆中的一個法術
+reg('CS3_028', { abilities: play(fn('coDiscoverDeck', { type: 'SPELL' })) });
+// 生命守縛者阿萊克絲塔薩：戰吼：選擇一個角色。若是友方，恢復 #8 點生命值；若是敵方，造成 8 點傷害
+reg('CS3_031', { target: anyChar, abilities: play(fn('coAlexstrasza')) });
+// 龍巢之母奧妮克希亞：在每個回合結束時，用 1/1 的雛龍填滿你的戰場
+reg('CS3_032', { abilities: [{ on: { k: 'turnEnd', whose: 'each' }, effects: [fn('coWhelps')] }], tokens: ['BRM_004t'] });
+// 夢想者伊瑟拉：戰吼：將每種夢境牌各一張加入你的手牌
+reg('CS3_033', { abilities: play(addCard('DREAM_01'), addCard('DREAM_02'), addCard('DREAM_03'), addCard('DREAM_04'), addCard('DREAM_05')), tokens: ['DREAM_01', 'DREAM_02', 'DREAM_03', 'DREAM_04', 'DREAM_05'] });
+// 魔法編織者瑪里苟斯：戰吼：抽法術牌，直到你的手牌已滿
+reg('CS3_034', { abilities: play(fn('coMalygosFill')) });
+// 永恆的諾茲多姆：開局：若這張牌在雙方玩家的牌堆中，回合只有 15 秒（沒有計時器，不影響對戰）
+reg('CS3_035', {});
+// 毀滅者死亡之翼：戰吼：消滅所有其他手下。每消滅一個，棄掉一張牌
+reg('CS3_036', { abilities: play(fn('coDeathwingDiscard')) });
+// 瘟疫穀物：獲得 4 具屍體。將四個穀物箱洗入你的牌堆，抽到時召喚一個 2/2 的亡靈
+reg('RLK_039', { abilities: play({ e: 'gainCorpses', amount: 4 }, { e: 'shuffle', card: 'RLK_039t', count: 4 }), tokens: ['RLK_039t'] });
+reg('RLK_039t', { castsWhenDrawn: true, abilities: play({ e: 'summon', card: 'EDR_T_PEASANT', count: 1, who: 'self' }) });
+// 縫補怪：戰吼：消滅你對手手牌、牌堆與戰場上各一個隨機手下
+reg('RLK_071', { abilities: play(fn('coPatchwerk')) });
+// 惡臭的屍體：戰吼：對一個敵人與你的英雄各造成 2 點傷害
+reg('RLK_079', { target: { filter: { type: 'character', side: 'enemy' } }, abilities: play(hit(2, false), { e: 'damage', target: { t: 'hero', side: 'friendly' }, amount: 2 }) });
+// 死亡使者薩魯法爾：嘲諷。亡語：回到你的手牌，消耗生命值而不是法力
+reg('RLK_082', { keywords: ['TAUNT'], abilities: dr(fn('coSaurfang')) });
+// 令人厭惡的巨獸：敵方角色無法被治療
+reg('RLK_115', { flags: ['enemyNoHeal'] });
+// 霜寒監督者弗里加拉：戰吼：抽 2 張法術牌。若它們都是冰霜法術，對所有敵人造成 2 點傷害
+reg('RLK_224', { abilities: play(fn('coFrigidara')) });
+// 霜牙之劍：在你的英雄攻擊後，使你手牌中的一個法術消耗減少 (1)
+reg('RLK_710', { abilities: heroHit([fn('coSpellCost')]) });
+// 冰霜雕刻師：戰吼：召喚兩個 2/1 的冰霜元素，亡語：對一個隨機敵人造成 2 點傷害
+reg('RLK_752', { abilities: play(summon('EDR_T_RIME', 2)) });
+// 抵抗光環：你的對手的法術消耗增加 (1)，持續 2 個敵方回合
+reg('TTN_851', { objective: 2, abilities: [...play(fn('objective')), ...atEndOfTurn({ e: 'spellTax', amount: 1 })] });
+// 十字軍光環：每當一個友方手下攻擊，使它 +2/+1。持續 3 個回合
+reg('TTN_908', { objective: 3, abilities: [...play(fn('objective')), { on: { k: 'attack', subject: 'friendlyMinion' }, effects: [{ e: 'buff', target: { t: 'it' }, atk: 2, hp: 1 }] }] });

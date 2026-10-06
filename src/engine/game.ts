@@ -838,6 +838,7 @@ export class Game {
       if (s.players[opp(p.id)].board.length >= MAX_BOARD) return { ok: false, reason: '對手的場上已滿' };
     }
     if (hc.lockedUntil !== undefined && hc.lockedUntil >= s.turn) return { ok: false, reason: '這張牌這個回合不能打出' };
+    if (hc.lockPlayedAt !== undefined && (p.playedCards?.length ?? 0) <= hc.lockPlayedAt) return { ok: false, reason: '要先打出另一張牌才能打出這張牌' };
     if (p.edgeOnlyTurn === s.turn && p.hand.indexOf(hc) !== 0 && p.hand.indexOf(hc) !== p.hand.length - 1) return { ok: false, reason: '這個回合只能打出最左與最右的牌' };
     if (!this.canAfford(p, hc)) {
       const kind = this.costKind(p, hc);
@@ -2051,6 +2052,8 @@ export class Game {
       }
       p.spellsCastThisGame++;
       p.spellsThisTurn = (p.spellsThisTurn ?? 0) + 1;
+      // 被奴役的奈斯比拉：在你施放邪能法術後重新開啟
+      if (def.spellSchool === 'FEL') for (const l of p.locations ?? []) if (getCard(l.cardId).flags?.includes('reopenOnFel')) l.cooldown = 0;
       // 哈穆爾：每施放 3 個法術，灌注你的英雄能力
       if (p.hamuulRepeat && !this.spellCountered) {
         p.hamuulCount = (p.hamuulCount ?? 0) + 1;
@@ -2597,6 +2600,10 @@ export class Game {
     amount *= 2 ** this.flagCount('doubleHealing', healer.id);
     amount += healer.healBonus ?? 0;
     if (healer.healDamageTurn === this.s.turn) return yield* this.damage({ owner: healer.id, uid: null }, targetUid, amount);
+    if (healer.healDamageOnceTurn === this.s.turn) {
+      healer.healDamageOnceTurn = undefined;
+      return yield* this.damage({ owner: healer.id, uid: null }, targetUid, amount);
+    }
     // 噁心巨怪：敵方角色無法被治療
     if (this.s.players[opp(t.owner)].board.some((m) => !m.silenced && !m.dead && m.hp > 0 && getCard(m.cardId).flags?.includes('enemyNoHeal'))) return 0;
     // 溢療：手下被治療超過生命值上限
@@ -2688,6 +2695,12 @@ export class Game {
       }
       card.enteredTurn = this.s.turn;
       p.hand.push(card);
+      // 護法者艾格文：抽到的下一個手下繼承法術傷害 +2 與這個亡語
+      if (p.aegwynnNext && getCard(card.cardId).type === 'MINION') {
+        p.aegwynnNext = false;
+        card.spellDmg = (card.spellDmg ?? 0) + 2;
+        (card.grant ??= []).push({ on: { k: 'deathrattle' }, effects: [{ e: 'custom', fn: 'coAegwynn' }] });
+      }
       this.questFillHand(p);
       drawn.push(card);
       if (this.splitShatter(p, card)) yield* this.emit({ k: 'shatter', player: p.id });
@@ -2871,7 +2884,7 @@ export class Game {
       ...(hand?.shieldHits ? { shieldHits: hand.shieldHits } : {}),
       abilities: [...(def.abilities ?? []), ...(hand?.grant ?? [])],
       auras: def.auras ?? [],
-      spellDamage: def.spellDamage ?? 0,
+      spellDamage: (def.spellDamage ?? 0) + (hand?.spellDmg ?? 0),
       enrageAtk: def.enrage?.atk ?? 0,
       silenced: false,
       frozen: false,
@@ -12137,6 +12150,7 @@ export class Game {
         if (hc) {
           if (args.set !== undefined) hc.costMod = (args.set as number) - getCard(id).cost;
           if (args.reduce) hc.costMod -= args.reduce as number;
+          if (args.temp) hc.temporary = true;
         }
         break;
       }
@@ -13360,6 +13374,176 @@ export class Game {
       case 'coDragonkin': {
         const beasts = me.hand.filter((h) => getCard(h.cardId).type === 'MINION' && this.isRace(h.cardId, 'BEAST') && h.uid !== ctx.playedCard?.uid).sort((a, b) => getCard(a.cardId).cost - getCard(b.cardId).cost);
         if (beasts[0]) this.addToHand(me, beasts[0].cardId);
+        break;
+      }
+      case 'coLifebind':
+        me.healDamageOnceTurn = s.turn;
+        break;
+      case 'coChamber': {
+        const hc = yield* this.chooseFromList(ctx, me.hand.filter((h) => getCard(h.cardId).type === 'MINION'), '選擇你手牌中的一個手下');
+        if (hc) {
+          hc.atkBuff += 2;
+          hc.hpBuff += 2;
+        }
+        break;
+      }
+      case 'coNaga': {
+        const c = pick(s, this.randomPool({ type: 'MINION', race: 'NAGA', anyClass: true }, me.id, false).filter((x) => !x.colossal));
+        if (c) {
+          const hc = this.addToHand(me, c.id);
+          if (hc) hc.costMod = 1 - c.cost;
+        }
+        break;
+      }
+      case 'coVolcano': {
+        const fire = me.turnSpells?.turn === s.turn && me.turnSpells.ids.some((id) => getCard(id).spellSchool === 'FIRE');
+        const n = 3 + (fire ? 3 : 0);
+        for (let i = 0; i < n; i++) {
+          const t = randomEnemyTarget();
+          if (t) yield* this.damage({ owner: me.id, uid: null, cardId: ctx.sourceCardId }, t.uid, 1);
+        }
+        break;
+      }
+      case 'coClearing':
+        if (chosenM) this.goDormantFor(chosenM, 2);
+        break;
+      case 'coSpire': {
+        const m = yield* this.doSummon(ctx, me.id, 'JAIL_511t');
+        if (!m) break;
+        const n = Math.max(1, me.hand.length);
+        this.setStats(m, n, n);
+        m.sleeping = false;
+        m.tempKeywords.push('IMMUNE');
+        const t = pick(s, foe.board.filter((x) => this.alive(x) && !this.hasKw(x, 'STEALTH')));
+        if (t) yield* this.forceAttack(m, t);
+        break;
+      }
+      case 'coPrison': {
+        const hc = yield* this.chooseFromList(ctx, me.hand, '選擇一張牌棄掉');
+        if (!hc) break;
+        me.hand = me.hand.filter((h) => h !== hc);
+        (me.zuramat ??= []).push(hc.cardId);
+        yield* this.discarded(me, hc);
+        yield* this.doSummon(ctx, me.id, 'JAIL_887t3');
+        break;
+      }
+      case 'coZuramat': {
+        const list = me.zuramat ?? [];
+        if (!list.length) break;
+        const i = randomInt(s, list.length);
+        const [id] = list.splice(i, 1);
+        yield* this.replay(me.id, id);
+        break;
+      }
+      case 'coLowSecurity': {
+        const c = pick(s, this.randomPool({ type: 'MINION', cls: 'SHAMAN' }, me.id, false));
+        if (!c) break;
+        const hc = this.addToHand(me, c.id);
+        if (hc) hc.lockPlayedAt = me.playedCards?.length ?? 0;
+        break;
+      }
+      case 'coClutch': {
+        if (!chosenM) break;
+        const m = yield* this.doSummon(ctx, me.id, 'EDR_454t');
+        if (m) m.stash = chosenM.cardId;
+        break;
+      }
+      case 'coHatch': {
+        const sn = ctx.sourceSnapshot ?? self;
+        if (sn?.stash) yield* this.doSummon(ctx, sn.owner, sn.stash);
+        break;
+      }
+      case 'coForbidden': {
+        const n = me.mana;
+        me.mana = 0;
+        const c = pick(s, this.randomPool({ type: 'SPELL', cost: n, anyClass: true }, me.id, false).filter((x) => x.collectible && !x.secret));
+        if (c) yield* this.castRandomly(me.id, c.id);
+        break;
+      }
+      case 'coAmirdrassil': {
+        const loc = me.locations?.find((l) => l.uid === ctx.sourceUid);
+        const n = (loc ? (loc.uses = (loc.uses ?? 0) + 1) : 1) as number;
+        const c = pick(s, this.randomPool({ type: 'MINION', cost: n, anyClass: true }, me.id, false));
+        if (c) yield* this.doSummon(ctx, me.id, c.id);
+        me.hero.armor += n;
+        yield* this.draw(me, n);
+        me.mana = Math.min(me.maxMana, me.mana + n);
+        break;
+      }
+      case 'coAegwynn':
+        me.aegwynnNext = true;
+        break;
+      case 'coInquisitor': {
+        if (!self || !this.alive(self) || !this.lastAttack || this.lastAttack.defenderIsHero) break;
+        const t = this.char(this.lastAttack.defender);
+        if (t && t.owner !== me.id && this.alive(t)) yield* this.forceAttack(self, t);
+        break;
+      }
+      case 'coHighestMinion': {
+        const minions = me.deck.filter((h) => getCard(h.cardId).type === 'MINION').sort((a, b) => getCard(b.cardId).cost - getCard(a.cardId).cost);
+        if (minions[0]) yield* this.takeIntoHand(me, minions[0]);
+        break;
+      }
+      case 'coAlexstrasza':
+        if (chosenM || ctx.chosen !== null) {
+          const t = ctx.chosen !== null ? this.char(ctx.chosen) : null;
+          if (!t) break;
+          if (t.owner === me.id) yield* this.heal(t.uid, 8);
+          else yield* this.damage(this.dmgSource(ctx), t.uid, 8);
+        }
+        break;
+      case 'coWhelps':
+        while (me.board.length < MAX_BOARD) {
+          const m = yield* this.doSummon(ctx, me.id, 'BRM_004t');
+          if (!m) break;
+        }
+        break;
+      case 'coMalygosFill':
+        for (let i = 0; i < 20 && me.hand.length < MAX_HAND; i++) {
+          const hc = yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'SPELL');
+          if (!hc) break;
+        }
+        break;
+      case 'coDeathwingDiscard': {
+        const gone = allMinions().filter((m) => m.uid !== ctx.sourceUid);
+        for (const m of gone) m.dead = true;
+        for (let i = 0; i < gone.length; i++) {
+          const hc = pick(s, me.hand.filter((h) => h.uid !== ctx.playedCard?.uid));
+          if (!hc) break;
+          me.hand = me.hand.filter((h) => h !== hc);
+          yield* this.discarded(me, hc);
+        }
+        break;
+      }
+      case 'coPatchwerk': {
+        const h = pick(s, foe.hand.filter((x) => getCard(x.cardId).type === 'MINION'));
+        if (h) foe.hand = foe.hand.filter((x) => x !== h);
+        const d = pick(s, foe.deck.filter((x) => getCard(x.cardId).type === 'MINION'));
+        if (d) foe.deck = foe.deck.filter((x) => x !== d);
+        const b = pick(s, foe.board.filter((m) => this.alive(m)));
+        if (b) b.dead = true;
+        break;
+      }
+      case 'coSaurfang': {
+        const sn = ctx.sourceSnapshot ?? self;
+        const hc = this.addToHand(me, sn?.cardId ?? 'RLK_082');
+        if (hc) hc.healthCostUntil = 99999;
+        break;
+      }
+      case 'coFrigidara': {
+        const drawn: HandCard[] = [];
+        for (let i = 0; i < 2; i++) {
+          const hc = yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'SPELL');
+          if (hc) drawn.push(hc);
+        }
+        if (drawn.length === 2 && drawn.every((h) => getCard(h.cardId).spellSchool === 'FROST')) {
+          for (const c of [...foe.board, foe.hero] as Char[]) if (this.alive(c)) yield* this.damage(this.dmgSource(ctx), c.uid, 2);
+        }
+        break;
+      }
+      case 'coSpellCost': {
+        const hc = pick(s, me.hand.filter((h) => getCard(h.cardId).type === 'SPELL'));
+        if (hc) hc.costMod -= 1;
         break;
       }
       default:
