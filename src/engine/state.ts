@@ -12,6 +12,14 @@ export interface StarshipPiece {
 
 export interface HandCard {
   uid: number;
+  /** 每個你的回合開始時，消耗減少這麼多 */
+  timeDiscount?: number;
+  /** 伯昂撒姆獲得的恩澤數量 */
+  boons?: number;
+  /** 高等精靈學徒：傳授的法術 */
+  taught?: string;
+  /** 時間循環者托奇：這張法術屬於哪一組 */
+  looping?: number;
   cardId: string;
   /** 倒轉：剩餘可倒轉的次數（沒有設定 = 卡牌本身的倒轉次數） */
   rewinds?: number;
@@ -168,6 +176,8 @@ export interface Hero {
   frozenTurn: number;
   attacks: number;
   immune: boolean;
+  /** 英雄的聖盾：抵擋下一次傷害 */
+  divineShield?: boolean;
 }
 
 /** 地點牌：放在戰場上，每隔一個回合可以啟用一次，耐久度用完就消失 */
@@ -211,6 +221,22 @@ export interface PlayerState {
   heroPower: { id: string; used: boolean; cost: number; heroCard?: string; uses?: number; /** 這個回合倒轉過了（英雄能力的倒轉每回合一次） */ rewoundTurn?: number };
   /** 灌注：英雄能力被灌注的次數 */
   imbued?: number;
+  /** 上一個你的回合打出的卡（同族判斷用） */
+  prevPlayed?: string[];
+  /** 敵方英雄本回合受到傷害的次數 */
+  enemyHeroHits?: { turn: number; count: number };
+  /** 這個回合你的卡牌消耗增加（緩慢動作） */
+  cardTax?: { turn: number; amount: number };
+  /** 殭屍收割者胡斯克：英雄死亡時花費屍體復活 */
+  eternalLife?: boolean;
+  /** 時間彼端的鰭：暫時收起來的手牌 */
+  stashedHand?: HandCard[];
+  /** 布洛克薩：對戰開始後消失的卡 */
+  broxigar?: HandCard;
+  /** 時間循環者托奇：每一組法術已打出的數量 */
+  tokiGroups?: Record<number, number>;
+  /** 高王之錘：永久增加的攻擊力 */
+  hammerBonus?: number;
   /** 本回合已經獲得過「第一個死靈」的加成（END_003p） */
   infiniteTurn?: number;
   /** 第二個英雄能力（血腥醫生薩蕾娜：消耗屍體） */
