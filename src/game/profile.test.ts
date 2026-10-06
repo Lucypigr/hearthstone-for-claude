@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCard } from '../cards/registry';
+import { getCard, isStandardCard } from '../cards/registry';
 import { validateDeck } from './decks';
 import { LEGENDARY_PITY, WIN_REWARD, DAILY_FIRST_WIN_BONUS } from './economy';
 import { buyPacks, craftCard, disenchantCard, disenchantExtras, newProfile, openPack, recordMatch, redeemCode, rollPack, sanitizeProfile } from './profile';
@@ -109,9 +109,8 @@ describe('獎勵碼', () => {
 describe('標準卡包與傳說卡池', () => {
   it('標準卡包：只會抽到標準模式系列的卡', () => {
     const pack = packById('standard')!;
-    const std = new Set(pack.sets);
     const rand = seeded(7);
-    for (let i = 0; i < 30; i++) for (const id of rollPack(pack, 0, rand)) expect(std.has(getCard(id).set)).toBe(true);
+    for (let i = 0; i < 30; i++) for (const id of rollPack(pack, 0, rand)) expect(isStandardCard(getCard(id))).toBe(true);
   });
 
   it('開放傳說卡池：10000 金幣，每包 5 張不重複的傳說', () => {
@@ -139,14 +138,13 @@ describe('標準卡包與傳說卡池', () => {
 
   it('標準傳說卡池：只會抽到標準模式系列的傳說', () => {
     const pack = packById('legendary_std')!;
-    const std = new Set(pack.sets);
     const rand = seeded(5);
     for (let i = 0; i < 20; i++) {
       const cards = rollPack(pack, 0, rand);
       expect(new Set(cards).size).toBe(5);
       for (const id of cards) {
         expect(getCard(id).rarity).toBe('LEGENDARY');
-        expect(std.has(getCard(id).set)).toBe(true);
+        expect(isStandardCard(getCard(id))).toBe(true);
       }
     }
   });
