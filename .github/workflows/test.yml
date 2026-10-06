@@ -1,0 +1,21 @@
+# 單元測試（含模糊測試）：獨立於部署，卡住或失敗都不會擋住網站更新
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [claude/**]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
