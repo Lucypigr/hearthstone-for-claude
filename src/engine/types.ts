@@ -751,6 +751,8 @@ export interface PendingDiscount {
   combo?: boolean;
   /** 只適用於暫時的牌 */
   temporary?: boolean;
+  /** 只適用於有戰吼的手下 */
+  battlecry?: boolean;
   /** 使用這個折扣的牌打出時額外獲得的關鍵字（例如聖盾） */
   grant?: Keyword;
   /** 改為消耗你對手的生命值（最多 10 點） */
@@ -826,6 +828,8 @@ export interface CardDef {
   races?: Race[];
   spellSchool?: string;
   collectible: boolean;
+  /** 核心系列收錄的卡（即使原始系列不在標準模式，也屬於標準模式） */
+  core?: boolean;
   keywords?: Keyword[];
   spellDamage?: number;
   overload?: number;
@@ -923,6 +927,8 @@ export interface CardDef {
   fabled?: string[];
   /** 目標（Aura）：打出後持續這麼多個你的回合 */
   objective?: number;
+  /** 地點：在這些條件下重新開啟（重置冷卻） */
+  reopen?: 'fel' | 'spell' | 'minionDied' | 'armor' | 'heroAttack' | 'battlecryMinion' | 'drawnPlayed';
   /** 休眠的手下甦醒時執行的效果 */
   awaken?: Effect[];
   /** 燃燒：在手牌中每回合升級，持有這麼多個回合後棄掉（升級數值 = 手牌計數 + 1） */

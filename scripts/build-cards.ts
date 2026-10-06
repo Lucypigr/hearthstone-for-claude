@@ -411,6 +411,8 @@ async function main() {
     for (const r of group) {
       const def = buildDef(r, true);
       if (def) {
+        // 核心系列收錄的卡（有 CORE_ 版本）屬於標準模式
+        if (group.some((x) => /^core_/i.test(x.id) && [1810, 1637].includes(x.tags.CARD_SET))) def.core = true;
         cards.push(def);
         for (const other of group) if (other.id !== def.id) aliases[other.dbf] = def.id;
         break;

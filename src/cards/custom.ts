@@ -55,6 +55,7 @@ export const CUSTOM_CARDS: CardDef[] = [
     text: '<b>亡語：</b>對一個隨機敵人造成2點傷害',
     abilities: [{ on: { k: 'deathrattle' }, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 2 }] }],
   }),
+  token('VAC_T_PIRATE', '海盜', 'Pirate', 1, 1, { races: ['PIRATE'], set: 1905, keywords: ['CHARGE'], text: '<b>衝鋒</b>' }),
   token('TLC_T_UNDEAD', '不死族', 'Undead', 3, 3, { races: ['UNDEAD'], set: 1952, keywords: ['TAUNT', 'REBORN'], text: '<b>嘲諷</b>，<b>復生</b>' }),
   token('TLC_T_ELEM', '元素', 'Elemental', 2, 2, { races: ['ELEMENTAL'], set: 1952, keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
   token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),

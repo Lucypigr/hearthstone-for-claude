@@ -1,6 +1,6 @@
 // 玩家存檔：金幣、奧術之塵、收藏、套牌、未開卡包、戰績
 // 所有函式都回傳新的 Profile（不修改原本的物件），方便 React 更新。
-import { COLLECTIBLE, getCard, hasCard, PLAYABLE_CLASSES } from '../cards/registry';
+import { COLLECTIBLE, getCard, hasCard, isStandardCard, PLAYABLE_CLASSES } from '../cards/registry';
 import type { Difficulty } from '../engine/ai';
 import { CLASS_NAMES } from '../engine/heroes';
 import type { Rarity } from '../engine/types';
@@ -127,7 +127,7 @@ export function buyPacks(p: Profile, packId: string, count: number): { ok: boole
 }
 
 export function packPool(pack: PackType) {
-  return COLLECTIBLE.filter((c) => c.rarity !== 'FREE' && (pack.sets.length === 0 || pack.sets.includes(c.set)));
+  return COLLECTIBLE.filter((c) => c.rarity !== 'FREE' && (pack.standard ? isStandardCard(c) : pack.sets.length === 0 || pack.sets.includes(c.set)));
 }
 
 export function rollPack(pack: PackType, pity: number, rand: Rand): string[] {

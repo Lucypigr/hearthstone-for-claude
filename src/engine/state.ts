@@ -356,6 +356,16 @@ export interface PlayerState {
   schoolsThisTurn?: { turn: number; schools: string[] };
   /** 紀念石碑：本回合施放的神聖法術 */
   holySpellsThisTurn?: { turn: number; ids: string[] };
+  /** 遺物庫：本回合下一個遺物施放兩次 */
+  relicTwiceTurn?: number;
+  /** 同時具有兩種效果：本回合下一張二選一卡 */
+  chooseBothTurn?: number;
+  /** 水晶灣：本回合下一個召喚的手下屬性值設為 4/4 */
+  nextMinion44Turn?: number;
+  /** 魔法玩偶屋：本回合額外的法術傷害 */
+  spellDmgTurn?: { turn: number; n: number };
+  /** 雜貨鋪：抽到的那張牌（本回合打出就重新開啟） */
+  knickUid?: number;
   /** 護法者艾格文：你抽到的下一個手下會繼承它的能力 */
   aegwynnNext?: boolean;
   /** 本回合你的下一次治療改為造成傷害（紅玉聖所） */
