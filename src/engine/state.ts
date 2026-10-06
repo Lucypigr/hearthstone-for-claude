@@ -29,6 +29,10 @@ export interface HandCard {
   gifted?: boolean;
   /** 沙拉德拉希爾：已被腐化 */
   corrupted?: boolean;
+  /** 護法者艾格文：額外的法術傷害 */
+  spellDmg?: number;
+  /** 低安全區：在已打出的牌數超過這個數字之前無法打出 */
+  lockPlayedAt?: number;
   /** 沼澤惡魔瓦洛已獲得的黑暗禮物 */
   wallow?: string[];
   livingCopy?: boolean;
@@ -217,6 +221,8 @@ export interface Location {
   durability: number;
   /** 還要等幾個你的回合才能再啟用（0 = 可以啟用） */
   cooldown: number;
+  /** 啟用過的次數（艾梅達希爾每次使用都會提升） */
+  uses?: number;
   /** 自訂地點（導航員艾莉絲製作）：啟用時的效果與耐久度用完時的亡語 */
   effects?: Effect[];
   deathrattle?: Effect[];
@@ -350,6 +356,12 @@ export interface PlayerState {
   schoolsThisTurn?: { turn: number; schools: string[] };
   /** 紀念石碑：本回合施放的神聖法術 */
   holySpellsThisTurn?: { turn: number; ids: string[] };
+  /** 護法者艾格文：你抽到的下一個手下會繼承它的能力 */
+  aegwynnNext?: boolean;
+  /** 本回合你的下一次治療改為造成傷害（紅玉聖所） */
+  healDamageOnceTurn?: number;
+  /** 祖拉瑪特的監獄：被棄掉的牌（祖拉瑪特每回合打出一張） */
+  zuramat?: string[];
   /** 艾維娜：滿月已經升起（你的牌消耗為 1） */
   fullMoon?: boolean;
   /** 雷費拉爾已打出的次數 */

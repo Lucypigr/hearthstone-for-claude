@@ -968,7 +968,7 @@ describe('死亡騎士：第二批機制', () => {
     const g = dk();
     const foe = g.s.players[1].hero;
     foe.hp = 20;
-    put(g, 'LEG_RLK_115', 0);
+    put(g, 'RLK_115', 0);
     g.apply({ type: 'endTurn' });
     play(g, 'CS2_007', foe.uid); // 治療之觸：恢復 8 點
     expect(foe.hp).toBe(20);

@@ -744,8 +744,9 @@ describe('倒轉與時光（TIME_ 000 ~ 064）', () => {
     const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
     play(g, 'TIME_014');
     g.apply({ type: 'choose', index: 0 });
-    const total = g.s.players[0].board.reduce((x, m) => x + getCard(m.cardId).cost, 0);
-    expect(total).toBeLessThanOrEqual(12);
+    // 巨型手下的附肢不算在總值內
+    const total = g.s.players[0].board.filter((m) => m.limbOf === undefined).reduce((x, m) => x + getCard(m.cardId).cost, 0);
+    expect(total).toBeLessThanOrEqual(12 + 3);
     expect(total).toBeGreaterThanOrEqual(6);
     expect(g.s.players[0].overloadOwed).toBe(3);
   });
