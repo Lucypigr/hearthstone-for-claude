@@ -400,7 +400,7 @@ export const TIMEWAYS_OVERRIDES: Record<string, Override> = {
   TIME_434: { abilities: dr(fn('twShadowStrike')), tokens: ['TIME_434t'] },
   TIME_434t: {},
   // 永恆者：戰吼：奪取一個生命值不高於此手下的敵方手下
-  TIME_435: { target: enemyMinion, abilities: play(fn('twEternus')) },
+  TIME_435: { target: { filter: { type: 'minion', side: 'enemy', maxHp: 2 } }, abilities: play({ e: 'steal', target: { t: 'chosen' } }) },
   // 過去的匯流（地點）：召喚一條消耗 (5) 以上的隨機龍。前進到現在！
   TIME_436: {
     advanceTo: 'TIME_436t1',

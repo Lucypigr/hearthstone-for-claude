@@ -1115,3 +1115,258 @@ describe('倒轉與時光（TIME_ 000 ~ 064）', () => {
     expect(g2.s.players[0].hand.length).toBe(n + 2);
   });
 });
+
+describe('倒轉與時光（TIME_ 100 ~ 449）', () => {
+  it('錯位的炎術士：碎裂一張牌時對所有敵方手下造成 2 點傷害', () => {
+    const g = newGame();
+    put(g, 'TIME_101', 0);
+    const foe = put(g, FILLER, 1);
+    const shatterCard = COLLECTIBLE.find((c) => c.shatter)!;
+    g.s.players[0].deck.push(g.newHandCard(shatterCard.id));
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(foe.hp).toBe(3);
+  });
+
+  it('晝夜術士：加入手牌的 8 費手下每個回合消耗減少 (1)', () => {
+    const g = newGame();
+    play(g, 'TIME_102');
+    const me = g.s.players[0];
+    const hc = me.hand[me.hand.length - 1];
+    expect(getCard(hc.cardId).cost).toBe(8);
+    expect(g.costOf(me, hc)).toBe(8);
+    pass(g);
+    expect(g.costOf(me, hc)).toBe(7);
+    pass(g);
+    expect(g.costOf(me, hc)).toBe(6);
+  });
+
+  it('克羅米：亡語抽取你打出過的卡牌的複製', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'CS2_168');
+    me.deck.push(g.newHandCard('CS2_168'));
+    const m = put(g, 'TIME_103', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.filter((h) => h.cardId === 'CS2_168')).toHaveLength(1);
+  });
+
+  it('穆拉丁：戰吼拿走高王之錘，死亡時回到手牌；錘子亡語洗回牌堆並永久 +2 攻擊力', () => {
+    const deck = Array(30).fill(FILLER) as string[];
+    deck[0] = 'TIME_209';
+    const g = newGame({ deck, deck1: Array(30).fill(FILLER) });
+    const me = g.s.players[0];
+    expect(me.deck.concat(me.hand).some((h) => h.cardId === 'TIME_209t')).toBe(true);
+    play(g, 'TIME_209');
+    expect(me.deck.some((h) => h.cardId === 'TIME_209t')).toBe(false);
+    const m = me.board[0];
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'TIME_209t')).toBe(true);
+    // 錘子
+    const g2 = newGame({ classes: ['WARRIOR', 'MAGE'] });
+    play(g2, 'TIME_209t');
+    g2.s.players[0].weapon!.durability = 0;
+    g2.apply({ type: 'endTurn' });
+    const back = g2.s.players[0].deck.find((h) => h.cardId === 'TIME_209t')!;
+    expect(back.atkBuff).toBe(2);
+  });
+
+  it('化身形態：+2 攻擊力，攻擊後對所有敵人造成 2 點傷害', () => {
+    const g = newGame({ classes: ['WARRIOR', 'MAGE'] });
+    const m = put(g, FILLER, 0);
+    put(g, FILLER, 1);
+    play(g, 'TIME_209t2', m.uid);
+    expect(g.atkOf(m)).toBe(6);
+    g.apply({ type: 'attack', attacker: m.uid, target: g.s.players[1].hero.uid });
+    expect(g.s.players[1].hero.hp).toBe(30 - 6 - 2);
+    expect(g.s.players[1].board[0].hp).toBe(3);
+  });
+
+  it('艾薩拉女士：強化辛艾薩拉會摧毀永恆之井並使辛艾薩拉召喚雙倍體質的複製', () => {
+    const deck = Array(30).fill(FILLER) as string[];
+    deck[0] = 'TIME_211';
+    const g = newGame({ deck, deck1: Array(30).fill(FILLER) });
+    const me = g.s.players[0];
+    expect([...me.deck, ...me.hand].some((h) => h.cardId === 'TIME_211t1')).toBe(true);
+    play(g, 'TIME_211', undefined, { option: 0 });
+    expect([...g.s.players[0].deck, ...g.s.players[0].hand].some((h) => h.cardId === 'TIME_211t1')).toBe(false);
+    const zin = [...g.s.players[0].deck, ...g.s.players[0].hand].find((h) => h.cardId === 'TIME_211t2t');
+    expect(zin).toBeTruthy();
+    // 辛艾薩拉：複製一個友方手下並使體質加倍
+    const g2 = newGame({ classes: ['DRUID', 'MAGE'] });
+    const m = put(g2, FILLER, 0);
+    play(g2, 'TIME_211t2t');
+    const loc = g2.s.players[0].locations![0];
+    g2.apply({ type: 'location', uid: loc.uid, target: m.uid });
+    const copy = g2.s.players[0].board[1];
+    expect([g2.atkOf(copy), copy.hp]).toEqual([8, 10]);
+    // 永恆之井：用暫時法術填滿手牌
+    const g3 = newGame({ classes: ['DRUID', 'MAGE'] });
+    g3.s.players[0].hand = [];
+    play(g3, 'TIME_211t1t');
+    const loc3 = g3.s.players[0].locations![0];
+    g3.apply({ type: 'location', uid: loc3.uid });
+    expect(g3.s.players[0].hand).toHaveLength(10);
+    expect(g3.s.players[0].hand.every((h) => h.temporary && h.castTwice)).toBe(true);
+  });
+
+  it('閃電避雷針 / 靜電震擊 / 雷震 / 初生雷霆', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const mine = put(g, FILLER, 0);
+    const foe = put(g, FILLER, 1);
+    play(g, 'TIME_212', mine.uid);
+    expect(mine.hp).toBe(3);
+    expect(foe.hp).toBe(1);
+    const g2 = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const f2 = put(g2, FILLER, 1);
+    play(g2, 'TIME_215');
+    expect(f2.hp).toBe(4);
+    expect(g2.s.players[0].hand.some((h) => h.cardId === 'TIME_218')).toBe(true);
+    const g3 = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const f3 = put(g3, FILLER, 1);
+    play(g3, 'TIME_218', f3.uid);
+    expect(f3.hp).toBe(4);
+    expect(g3.s.players[0].hero.tempAtk).toBe(1);
+    const g4 = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const f4 = put(g4, FILLER, 1);
+    f4.hp = f4.maxHp = 9;
+    const n = g4.s.players[0].hand.length;
+    play(g4, 'TIME_216', f4.uid);
+    expect(g4.s.players[0].hand.length).toBe(n + 2);
+  });
+
+  it('原初監督者 / 熔流亡魂 / 風暴巨鴉：自然法術的互動', () => {
+    const nature = COLLECTIBLE.find((c) => c.type === 'SPELL' && c.spellSchool === 'NATURE' && c.cost <= 3 && c.target?.filter.side === 'any' && c.target.filter.type !== 'hero' && c.abilities?.some((a) => a.effects.some((e) => e.e === 'damage' && e.target.t === 'chosen')))!;
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const overseer = toHand(g, g.s.players[0], 'TIME_213');
+    overseer.counter = 0;
+    toHand(g, g.s.players[0], nature.id);
+    const nat = g.s.players[0].hand[g.s.players[0].hand.length - 1];
+    const tgt = put(g, FILLER, 1);
+    g.s.players[0].mana = 10;
+    g.apply({ type: 'play', handUid: nat.uid, target: tgt.uid });
+    expect(g.s.players[0].hand.find((h) => h.uid === overseer.uid)?.counter).toBe(1);
+    // 熔流亡魂
+    const g2 = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const rev = put(g2, 'TIME_214', 0);
+    give(g2, nature.id);
+    const nat2 = g2.s.players[0].hand[g2.s.players[0].hand.length - 1];
+    const ok = g2.apply({ type: 'play', handUid: nat2.uid, target: rev.uid });
+    if (ok) {
+      expect(rev.hp).toBeGreaterThanOrEqual(5);
+      expect(g2.atkOf(rev)).toBe(3);
+    }
+    // 風暴巨鴉
+    const g3 = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const rook = put(g3, 'TIME_217', 0);
+    give(g3, nature.id);
+    const nat3 = g3.s.players[0].hand[g3.s.players[0].hand.length - 1];
+    if (g3.apply({ type: 'play', handUid: nat3.uid, target: rook.uid })) {
+      expect(rook.hp).toBe(5);
+      expect(g3.s.players[0].board.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('淨化光裔 / 琥珀女祭司 / 神聖占卜師 / 永恆者', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    const foe = put(g, FILLER, 1);
+    play(g, 'TIME_427', foe.uid);
+    expect(foe.hp).toBe(5 - 3);
+    const g2 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    g2.s.players[0].hero.hp = 10;
+    play(g2, 'TIME_431', g2.s.players[0].hero.uid);
+    expect(g2.s.players[0].hero.hp).toBe(14);
+    const g3 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    g3.s.players[0].hand = [g3.newHandCard('CS2_182')];
+    play(g3, 'TIME_429');
+    expect(g3.handStats(0, g3.s.players[0].hand[0])).toEqual({ atk: 5, hp: 5 });
+    const g4 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    const small = put(g4, 'CS2_168', 1); // 2/1
+    const big = put(g4, FILLER, 1);
+    expect(g4.apply({ type: 'play', handUid: give(g4, 'TIME_435').uid, target: big.uid })).toBe(false); // 生命值太高
+    expect(g4.apply({ type: 'play', handUid: g4.s.players[0].hand[g4.s.players[0].hand.length - 1].uid, target: small.uid })).toBe(true);
+    expect(g4.s.players[0].board.some((m) => m.uid === small.uid)).toBe(true);
+  });
+
+  it('不復存在 / 暫時的旅者 / 時光看守者', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    put(g, FILLER, 1);
+    play(g, 'TIME_433');
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[1].board).toHaveLength(0);
+    const g2 = newGame();
+    const t = put(g2, 'TIME_434', 0);
+    const victim = put(g2, 'CS2_168', 1);
+    kill(t);
+    g2.apply({ type: 'endTurn' });
+    expect(g2.s.players[1].board.some((m) => m.uid === victim.uid)).toBe(false);
+    const g3 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    const f = put(g3, FILLER, 1);
+    play(g3, 'TIME_442', f.uid);
+    expect(f.keywords).toContain('DORMANT');
+    const warden = g3.s.players[0].board[0];
+    kill(warden);
+    g3.apply({ type: 'endTurn' });
+    expect(f.keywords).not.toContain('DORMANT');
+  });
+
+  it('過去的匯流：前進到現在發現並召喚龍，未來還獲得複製', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    play(g, 'TIME_436t2');
+    const loc = g.s.players[0].locations![0];
+    g.apply({ type: 'location', uid: loc.uid });
+    expect(g.s.pendingChoice).not.toBeNull();
+    const n = g.s.players[0].hand.length;
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].board).toHaveLength(1);
+    expect(g.s.players[0].hand.length).toBe(n + 1);
+  });
+
+  it('狂怒獵犬 / 時光遺失的戰刃 / 永恆牢籠 / 孤獨 / 持久的遺產', () => {
+    const g = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    g.s.players[0].deck = [];
+    const foe = g.s.players[1];
+    play(g, 'TIME_443');
+    expect(g.s.players[0].board).toHaveLength(2);
+    expect(foe.hero.hp).toBe(30 - 6);
+    const g2 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    g2.s.players[0].deck = [g2.newHandCard('CS2_168')];
+    play(g2, 'TIME_443');
+    expect(g2.s.players[1].hero.hp).toBe(30);
+    const g3 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    play(g3, 'TIME_444');
+    g3.s.players[0].weapon!.durability = 0;
+    g3.apply({ type: 'endTurn' });
+    expect(g3.s.players[0].hand.some((h) => getCard(h.cardId).races?.includes('DEMON'))).toBe(true);
+    const g4 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    g4.s.players[0].deck = [];
+    play(g4, 'TIME_446');
+    g4.apply({ type: 'location', uid: g4.s.players[0].locations![0].uid });
+    g4.apply({ type: 'choose', index: 0 });
+    const demon = g4.s.players[0].hand[g4.s.players[0].hand.length - 1];
+    expect(g4.costOf(g4.s.players[0], demon)).toBe(1);
+    const g5 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    g5.s.players[0].deck = [];
+    g5.s.players[0].hand = [g5.newHandCard('CS2_182')];
+    play(g5, 'TIME_448');
+    g5.apply({ type: 'choose', index: 0 });
+    g5.apply({ type: 'choose', index: 0 });
+    expect(g5.s.players[0].hand.some((h) => h.costMod === -2)).toBe(true);
+    const g6 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    g6.s.players[0].deck = [];
+    g6.s.players[0].hand = [g6.newHandCard('CS2_182')];
+    play(g6, 'TIME_449');
+    expect(g6.s.players[0].hero.tempAtk).toBe(4);
+    expect(g6.s.players[0].hand[0].atkBuff).toBe(4);
+  });
+
+  it('真言術：障', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    g.s.players[0].hand = [g.newHandCard('CS2_182')];
+    play(g, 'TIME_447', g.s.players[0].hero.uid);
+    expect(g.s.players[0].hero.divineShield).toBe(true);
+    expect(g.s.players[0].hand[0].hpBuff).toBe(2);
+  });
+});

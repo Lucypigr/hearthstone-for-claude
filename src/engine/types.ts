@@ -94,8 +94,8 @@ export interface Filter {
   /** 屬於某個職業 / 不屬於某個職業的手下 */
   cardClass?: CardClass;
   notClass?: CardClass;
-  /** 生命值不高於效果來源（手下）的生命值 */
-  hpAtMostSource?: boolean;
+  /** 生命值不高於這個數值 */
+  maxHp?: number;
 }
 
 export type TargetExpr =

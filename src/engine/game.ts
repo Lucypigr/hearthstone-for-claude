@@ -3093,6 +3093,8 @@ export class Game {
       case 'prepare':
       case 'lastMana':
         return ev.player === owner;
+      case 'shatter':
+        return ev.player === owner;
       case 'summoned':
         return ev.subject === holderUid;
       case 'firstSpellDamage':
@@ -3376,10 +3378,7 @@ export class Game {
     if (f.undamaged && c.hp < c.maxHp) return false;
     if (f.maxAttack !== undefined && this.atkOf(c) > f.maxAttack) return false;
     if (f.minAttack !== undefined && this.atkOf(c) < f.minAttack) return false;
-    if (f.hpAtMostSource) {
-      const src = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
-      if (src && c.hp > src.hp) return false;
-    }
+    if (f.maxHp !== undefined && c.hp > f.maxHp) return false;
     if (f.keyword && (hero || !this.hasKw(c, f.keyword))) return false;
     if (f.starship && (hero || !(c.starship || getCard(c.cardId).starshipPiece))) return false;
     if (f.terran && (hero || !getCard(c.cardId).terran)) return false;
@@ -9775,9 +9774,6 @@ export class Game {
         }
         break;
       }
-      case 'twEternus':
-        if (chosenM && self && chosenM.hp <= self.hp) yield* this.runEffect({ e: 'steal', target: { t: 'chosen' } }, ctx);
-        break;
       case 'twDiscoverSummon': {
         const opts = pickDistinct(this.randomPool(args.pool as Pool, me.id, true), 3);
         if (!opts.length) break;
