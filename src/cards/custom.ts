@@ -23,7 +23,28 @@
 // ============================================================================
 import type { CardDef } from '../engine/types';
 
+/** 資料庫中沒有的簡單衍生卡 */
+const token = (id: string, name: string, nameEn: string, attack: number, health: number, extra: Partial<CardDef> = {}): CardDef => ({
+  id,
+  dbfId: 9100000 + Number(id.replace(/\D/g, '').slice(-5) || 0),
+  name,
+  nameEn,
+  text: '',
+  type: 'MINION',
+  cardClass: 'NEUTRAL',
+  rarity: 'FREE',
+  set: 1810,
+  cost: 1,
+  attack,
+  health,
+  collectible: false,
+  ...extra,
+});
+
 export const CUSTOM_CARDS: CardDef[] = [
+  token('CORE_T_HYENA', '鬣狗', 'Hyena', 1, 1, { keywords: ['RUSH'], races: ['BEAST'], text: '<b>突襲</b>' }),
+  token('CORE_T_MEDIC', '軍醫', 'Medic', 2, 2, { keywords: ['LIFESTEAL'], text: '<b>生命竊取</b>' }),
+  token('CORE_T_BAT', '蝙蝠', 'Bat', 2, 1, { races: ['BEAST'] }),
   // 坦克工程師（穿越時間流）的 7/7 坦克：卡牌資料庫中沒有這張衍生卡
   {
     id: 'TIME_017t',

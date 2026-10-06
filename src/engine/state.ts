@@ -155,6 +155,8 @@ export interface Minion {
   spellsOn?: string[];
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
   dormantTurns?: number;
+  /** 本回合的下一次攻擊 / 對手回合具有高於元素閃避 */
+  elusiveOpp?: boolean;
   /** 巨型手下的附肢（附肢的 uid） */
   limbs?: number[];
   /** 這個附肢屬於哪個本體 */
@@ -243,6 +245,24 @@ export interface PlayerState {
   tokiGroups?: Record<number, number>;
   /** 高王之錘：永久增加的攻擊力 */
   hammerBonus?: number;
+  /** 你這個回合恢復過生命值 */
+  healedTurn?: number;
+  /** 埃辛諾斯戰刃：這個回合已經再攻擊過了 */
+  glaiveTurn?: number;
+  /** 寇瓦斯：打出下一張流放牌後回到手牌 */
+  korvasPending?: boolean;
+  /** 可拋棄的表演者：這個回合召喚的七個伊利達瑞新兵 */
+  performers?: { turn: number; uids: number[]; done: boolean };
+  /** 指控：被標記的手下，在條件成立後消滅 */
+  accusations?: { kind: 'arson' | 'murder' | 'theft'; uid: number }[];
+  /** 這個回合只能打出最左與最右的牌 */
+  edgeOnlyTurn?: number;
+  /** 本場對戰中每回合額外抽的牌數 */
+  extraDraw?: number;
+  /** 洛瑟克森：你召喚的白銀之手新兵有聖盾 */
+  recruitShield?: boolean;
+  /** 變形 / 暗影形態：英雄能力換回去前還能用幾次 */
+  powerSwap?: { back: string; uses: number };
   /** 本回合已經獲得過「第一個死靈」的加成（END_003p） */
   infiniteTurn?: number;
   /** 第二個英雄能力（血腥醫生薩蕾娜：消耗屍體） */

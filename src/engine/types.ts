@@ -344,6 +344,18 @@ export type Condition =
   | { c: 'handCenter' }
   /** 觸發事件的手下是在上個回合被打出的（不合時宜的死亡） */
   | { c: 'itPlayedLastTurn' }
+  /** 你這個回合恢復過生命值 */
+  | { c: 'healedThisTurn' }
+  /** 你上個回合施放過法術 */
+  | { c: 'castSpellLastTurn' }
+  /** 剛剛的攻擊是英雄攻擊手下 */
+  | { c: 'attackedMinion' }
+  /** 觸發事件的手下是此手下本身或相鄰的手下 */
+  | { c: 'itSelfOrAdjacent' }
+  /** 觸發事件的手下攻擊力不高於 n */
+  | { c: 'itAttackAtMost'; n: number }
+  /** 觸發事件的卡有超載 */
+  | { c: 'itHasOverload' }
   /** 你控制某個（英文名稱符合的）地點 */
   | { c: 'controlLocation'; nameEn: string }
   /** 你裝備的武器（英文名稱符合） */
@@ -593,7 +605,9 @@ export type SecretEvent =
   /** 一個手下攻擊你的英雄之後 */
   | 'afterMinionAttacksHero'
   /** 對手使用英雄能力之後 */
-  | 'enemyHeroPower';
+  | 'enemyHeroPower'
+  /** 一個敵方手下造成 3 點以上的傷害之後 */
+  | 'enemyBigHit';
 
 export interface Ability {
   on: Trig;
@@ -688,6 +702,8 @@ export interface PendingDiscount {
   maxCost?: number;
   /** 只適用於英文名稱包含這段文字的牌 */
   nameEn?: string;
+  /** 只適用於有連擊的牌 */
+  combo?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -940,6 +956,12 @@ export type MinionFlag =
   | 'doubleBattlecries'
   | 'keepBothRewinds'
   | 'infuseInDeck'
+  | 'ignoreTaunt'
+  | 'weaponAbsorbs'
+  | 'gorehowl'
+  | 'atkEqualsHealth'
+  | 'khadgar'
+  | 'secretsLocked'
   | 'infuseGainsStats'
   | 'takesDoubleDamage'
   | 'natureFeeds'
