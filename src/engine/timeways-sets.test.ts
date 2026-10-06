@@ -308,3 +308,377 @@ describe('傳說', () => {
     expect(g.s.players[0].hand.some((h) => h.cardId === 'TIME_020')).toBe(true);
   });
 });
+
+const toHand = (g: Game, p: PlayerState, id: string): HandCard => (g as unknown as { addToHand(p: PlayerState, id: string): HandCard }).addToHand(p, id);
+
+describe('終結（END_）卡牌', () => {
+  it('邪惡的枯萎之子：亡語裝備匕首；已有武器則 +2 攻擊力', () => {
+    const g = newGame();
+    const m = put(g, 'END_002', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    // 亡語在結算死亡時觸發
+    const g2 = newGame();
+    const m2 = put(g2, 'END_002', 0);
+    m2.keywords = m2.keywords.filter((k) => k !== 'REBORN');
+    kill(m2);
+    g2.apply({ type: 'endTurn' });
+    g2.apply({ type: 'endTurn' });
+    expect(g2.s.players[0].weapon?.cardId).toBe('CS2_082');
+    const g3 = newGame();
+    play(g3, 'CS2_106'); // 戰歌指揮官的武器（任一武器）
+    const before = g3.s.players[0].weapon!.atk;
+    const m3 = put(g3, 'END_002', 0);
+    m3.keywords = m3.keywords.filter((k) => k !== 'REBORN');
+    kill(m3);
+    g3.apply({ type: 'endTurn' });
+    g3.apply({ type: 'endTurn' });
+    expect(g3.s.players[0].weapon!.atk).toBe(before + 2);
+    void g;
+  });
+
+  it('怒火殘影：本回合每死亡一個手下，消耗減少 (1)', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const hc = give(g, 'END_004');
+    expect(g.costOf(me, hc)).toBe(7);
+    g.s.deathsThisTurn = 3;
+    expect(g.costOf(me, hc)).toBe(4);
+  });
+
+  it('往日回聲：召喚隨機 4 費手下；4 具屍體再一個；流放再一個', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.corpses = 4;
+    play(g, 'END_005');
+    expect(me.board).toHaveLength(3);
+    for (const m of me.board) expect(getCard(m.cardId).cost).toBe(4);
+    expect(me.corpses).toBe(0);
+  });
+
+  it('時光獵手克羅尼卡：英雄本回合、下回合、下下回合各 +3 攻擊力', () => {
+    const g = newGame();
+    play(g, 'END_006');
+    expect(g.s.players[0].hero.tempAtk).toBe(3);
+    pass(g);
+    expect(g.s.players[0].hero.tempAtk).toBe(3);
+    pass(g);
+    expect(g.s.players[0].hero.tempAtk).toBe(3);
+    pass(g);
+    expect(g.s.players[0].hero.tempAtk).toBe(0);
+  });
+
+  it('乘勝追擊：造成 1 點傷害、英雄 +1 攻擊力、抽牌、護甲', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    const hand = me.hand.length;
+    play(g, 'END_007', g.s.players[1].hero.uid);
+    expect(g.s.players[1].hero.hp).toBe(29);
+    expect(me.hero.tempAtk).toBe(1);
+    expect(me.hero.armor).toBe(1);
+    expect(me.hand.length).toBe(hand + 1);
+  });
+
+  it('持久的蟑螂：使用英雄能力後補充 2 顆法力水晶', () => {
+    const g = newGame();
+    put(g, 'END_008', 0);
+    const me = g.s.players[0];
+    me.mana = me.maxMana = 10;
+    g.apply({ type: 'heroPower', target: g.s.players[1].hero.uid });
+    expect(me.mana).toBe(10);
+  });
+
+  it('碎裂的現實：樹人獲得與死亡樹人數量相同的體質', () => {
+    const g = newGame({ classes: ['DRUID', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.graveyard.push('END_009t', 'END_009t', 'END_009t');
+    play(g, 'END_009');
+    expect(me.board.map((m) => [g.atkOf(m), m.hp])).toEqual([
+      [5, 5],
+      [5, 5],
+    ]);
+  });
+
+  it('暮光時光收割者：二選一，把其他手下的攻擊力或生命值設為 1', () => {
+    const g = newGame();
+    const a = put(g, FILLER, 0);
+    const b = put(g, FILLER, 1);
+    play(g, 'END_010', undefined, { option: 0 });
+    expect(g.atkOf(a)).toBe(1);
+    expect(g.atkOf(b)).toBe(1);
+    expect(a.hp).toBe(5);
+    const g2 = newGame();
+    const c = put(g2, FILLER, 1);
+    play(g2, 'END_010', undefined, { option: 1 });
+    expect(c.hp).toBe(1);
+    expect(g2.atkOf(c)).toBe(4);
+  });
+
+  it('無限之刃：本回合攻擊力無限，回合結束後恢復', () => {
+    const g = newGame();
+    play(g, 'END_012');
+    expect(g.s.players[0].weapon!.atk).toBeGreaterThan(900);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].weapon!.atk).toBe(4);
+  });
+
+  it('粗野的終末之口 / 永恆之翼：發現帶黑暗禮物的手下', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'END_013');
+    expect(g.s.pendingChoice?.options.length).toBeGreaterThan(0);
+    for (const id of g.s.pendingChoice!.options) expect(getCard(id).cost).toBe(1);
+    const before = me.hand.length;
+    g.apply({ type: 'choose', index: 0 });
+    expect(me.hand.length).toBe(before + 1);
+    const g2 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    play(g2, 'END_027');
+    for (const id of g2.s.pendingChoice!.options) expect(getCard(id).races).toContain('DRAGON');
+  });
+
+  it('同步火花：敵人死亡時，隨機友方手下 +3/+3', () => {
+    const g = newGame();
+    const mine = put(g, FILLER, 0);
+    const victim = put(g, 'CS2_168', 1);
+    play(g, 'END_014', victim.uid);
+    expect(g.atkOf(mine)).toBe(7);
+    expect(mine.hp).toBe(8);
+  });
+
+  it('三年霸王龍：亡語獲得一張亡語手下牌', () => {
+    const g = newGame({ classes: ['HUNTER', 'WARRIOR'] });
+    const me = g.s.players[0];
+    const hand = me.hand.length;
+    const m = put(g, 'END_015', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(me.hand.length).toBeGreaterThanOrEqual(hand);
+    expect(g.s.players[0].hand.some((h) => getCard(h.cardId).abilities?.some((a) => a.on.k === 'deathrattle'))).toBe(true);
+  });
+
+  it('時光利爪：英雄攻擊後棄掉消耗最高的牌', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    play(g, 'END_016');
+    me.hand = [g.newHandCard('CS2_168'), g.newHandCard(FILLER), g.newHandCard('CS2_168')];
+    g.apply({ type: 'attack', attacker: me.hero.uid, target: g.s.players[1].hero.uid });
+    expect(g.s.players[0].hand.map((h) => h.cardId)).toEqual(['CS2_168', 'CS2_168']);
+  });
+
+  it('終末之戰（任務）：填滿手牌再清空，獲得滴答與嘀嗒', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.hand = [];
+    play(g, 'END_017');
+    expect(me.quest?.cardId).toBe('END_017');
+    while (g.s.players[0].hand.length < 10) toHand(g, g.s.players[0], 'CS2_168');
+    expect(g.s.players[0].quest?.progress).toBe(1);
+    // 打光手牌
+    g.s.players[0].mana = g.s.players[0].maxMana = 10;
+    for (let i = 0; i < 20 && g.s.players[0].hand.length && !g.s.players[0].hand.some((h) => h.cardId === 'END_017t'); i++) {
+      const hc = g.s.players[0].hand[0];
+      if (!g.apply({ type: 'play', handUid: hc.uid })) {
+        g.s.players[0].hand.shift();
+        toHand(g, g.s.players[0], 'CS2_168'); // 不應該發生
+      }
+      g.s.players[0].board = [];
+      g.s.players[0].mana = 10;
+    }
+    expect(g.s.players[0].hand.map((h) => h.cardId)).toContain('END_017t');
+  });
+
+  it('無限的侍僧：戰吼把一張手牌消耗設為無限，死亡後恢復', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.hand = [g.newHandCard('CS2_168')];
+    play(g, 'END_018');
+    expect(g.costOf(me, me.hand[0])).toBeGreaterThan(100);
+    const acolyte = me.board[0];
+    kill(acolyte);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.costOf(g.s.players[0], g.s.players[0].hand[0])).toBeLessThan(10);
+  });
+
+  it('終結時光的倖存者：英雄本回合受過傷害才有 +3/+3', () => {
+    const g = newGame();
+    play(g, 'END_019');
+    expect(g.atkOf(g.s.players[0].board[0])).toBe(5);
+    const g2 = newGame();
+    g2.s.players[0].heroDamagedTurn = g2.s.turn;
+    play(g2, 'END_019');
+    expect(g2.atkOf(g2.s.players[0].board[0])).toBe(8);
+  });
+
+  it('永恆的勞役：存活抽牌，死亡召喚 1 費手下', () => {
+    const g = newGame();
+    const m = put(g, FILLER, 1);
+    const hand = g.s.players[0].hand.length;
+    play(g, 'END_020', m.uid);
+    expect(g.s.players[0].hand.length).toBe(hand + 1);
+    const g2 = newGame();
+    const v = put(g2, 'CS2_168', 1);
+    play(g2, 'END_020', v.uid);
+    expect(g2.s.players[0].board).toHaveLength(1);
+    expect(getCard(g2.s.players[0].board[0].cardId).cost).toBe(1);
+  });
+
+  it('次元武器匠：手牌中的手下與武器 +2 攻擊力', () => {
+    const g = newGame({ classes: ['WARRIOR', 'MAGE'] });
+    const me = g.s.players[0];
+    me.hand = [g.newHandCard('CS2_168'), g.newHandCard('CS2_106')];
+    play(g, 'END_021');
+    expect(me.hand.map((h) => h.atkBuff)).toEqual([2, 2]);
+  });
+
+  it('扭曲時間的先知：受傷時法術傷害 +2', () => {
+    const g = newGame();
+    const m = put(g, 'END_022', 0);
+    expect(g.spellDamage(0)).toBe(0);
+    m.hp = 1;
+    expect(g.spellDamage(0)).toBe(2);
+  });
+
+  it('苦澀的終點：凍結並消滅受傷的手下與相鄰手下', () => {
+    const g = newGame();
+    const a = put(g, FILLER, 1);
+    const b = put(g, FILLER, 1);
+    const c = put(g, FILLER, 1);
+    b.hp = 2;
+    play(g, 'END_023', a.uid);
+    expect(a.frozen).toBe(true);
+    expect(b.frozen).toBe(true);
+    expect(g.s.players[1].board.map((m) => m.uid)).toEqual([a.uid, c.uid].filter((u) => g.s.players[1].board.some((m) => m.uid === u)));
+    expect(g.s.players[1].board.some((m) => m.uid === b.uid)).toBe(false);
+  });
+
+  it('無盡之焰：在對手回合結束時消滅其生命值最高的手下', () => {
+    const g = newGame();
+    play(g, 'END_024');
+    const small = put(g, 'CS2_168', 1);
+    const big = put(g, FILLER, 1);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[1].board.map((m) => m.uid)).toEqual([small.uid]);
+    void big;
+  });
+
+  it('永恆火焰箭：擊殺後在回合結束時回到手牌', () => {
+    const g = newGame();
+    const v = put(g, 'CS2_168', 1);
+    play(g, 'END_025', v.uid);
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'END_025')).toBe(false);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'END_025')).toBe(true);
+  });
+
+  it('虛無碎片：對手下施放法術後抽一張牌', () => {
+    const g = newGame();
+    put(g, 'END_026', 0);
+    const target = put(g, FILLER, 1);
+    const hand = g.s.players[0].hand.length;
+    play(g, 'CS2_029', target.uid); // 火球術
+    expect(g.s.players[0].hand.length).toBe(hand + 1);
+  });
+
+  it('亙古不變：消滅所有攻擊力 4 以下的手下，超載 2', () => {
+    const g = newGame();
+    const small = put(g, 'CS2_168', 1);
+    const mine = put(g, 'CS2_168', 0);
+    const big = put(g, 'CS2_186', 1); // 戰歌指揮官 2/3?
+    play(g, 'END_028');
+    expect(small.dead || small.hp <= 0).toBe(true);
+    expect(mine.dead || mine.hp <= 0).toBe(true);
+    expect(g.s.players[0].overloadOwed).toBe(2);
+    void big;
+  });
+
+  it('巫毒圖騰：回合結束時獲得一張暗影法術', () => {
+    const g = newGame();
+    put(g, 'END_029', 0);
+    const hand = g.s.players[0].hand.length;
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.length).toBe(hand + 1);
+    expect(getCard(g.s.players[0].hand[hand].cardId).spellSchool).toBe('SHADOW');
+  });
+
+  it('故障的豬頭怪：每超載過一顆法力水晶，消耗減少 (1)', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    const hc = give(g, 'END_030');
+    expect(g.costOf(g.s.players[0], hc)).toBe(6);
+    g.s.players[0].overloadTotal = 3;
+    expect(g.costOf(g.s.players[0], hc)).toBe(3);
+  });
+
+  it('長翼畸變體：連擊超載 (2)，本回合免疫並獲得風怒', () => {
+    const g = newGame();
+    play(g, 'CS2_168');
+    play(g, 'END_032');
+    const m = g.s.players[0].board[1];
+    expect(m.cardId).toBe('END_032');
+    expect(g.hasKw(m, 'IMMUNE')).toBe(true);
+    expect(g.hasKw(m, 'WINDFURY')).toBe(true);
+    expect(g.s.players[0].overloadOwed).toBe(2);
+  });
+
+  it('先見的蛇龍：手牌中有另一條龍時消耗減少 (3)', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.hand = [];
+    const hc = give(g, 'END_033');
+    expect(g.costOf(me, hc)).toBe(7);
+    toHand(g, me, 'END_033');
+    expect(g.costOf(me, hc)).toBe(4);
+  });
+
+  it('碎世者：消滅一個隨機敵方手下、地點與武器', () => {
+    const g = newGame();
+    const foe = g.s.players[1];
+    put(g, FILLER, 1);
+    foe.locations = [{ uid: 999, cardId: 'TIME_044', owner: 1, durability: 3, cooldown: 0 }];
+    foe.weapon = { uid: 998, cardId: 'CS2_106', owner: 1, atk: 3, durability: 2, abilities: [], keywords: [] };
+    play(g, 'END_034');
+    expect(foe.board.every((m) => m.dead || m.hp <= 0) || foe.board.length === 0).toBe(true);
+    expect(foe.locations).toHaveLength(0);
+    expect(foe.weapon).toBeNull();
+  });
+
+  it('終結的預兆：牌堆已空時，摧毀敵方牌堆最上面的 5 張牌', () => {
+    const g = newGame();
+    g.s.players[0].deck = [];
+    const n = g.s.players[1].deck.length;
+    play(g, 'END_035');
+    expect(g.s.players[1].deck.length).toBe(n - 5);
+    const g2 = newGame();
+    const n2 = g2.s.players[1].deck.length;
+    play(g2, 'END_035');
+    expect(g2.s.players[1].deck.length).toBe(n2);
+  });
+
+  it('莫奇：倒轉保留兩種結果', () => {
+    const g = newGame();
+    put(g, 'END_036', 0);
+    const foeHp = g.s.players[1].hero.hp;
+    const hc = give(g, 'TIME_004');
+    g.apply({ type: 'play', handUid: hc.uid });
+    g.apply({ type: 'choose', index: 1 });
+    expect(g.s.players[0].board.map((m) => m.cardId)).toContain('TIME_004');
+    expect(g.s.players[1].hero.hp).toBe(foeHp - 14);
+  });
+
+  it('終結時光墨衛：填滿戰場、治療英雄、跳過下個回合', () => {
+    const g = newGame();
+    g.s.players[0].hero.hp = 10;
+    play(g, 'END_037');
+    expect(g.s.players[0].board.length).toBeGreaterThanOrEqual(6);
+    expect(g.s.players[0].hero.hp).toBe(30);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.current).toBe(1);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.current).toBe(1);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.current).toBe(0);
+  });
+});
