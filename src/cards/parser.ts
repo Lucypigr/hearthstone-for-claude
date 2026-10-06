@@ -146,6 +146,9 @@ export function normalizeText(en: string): string {
     .replace(/\ba\{1\} \{0\} /g, 'a ')
     .replace(/\{0\} (Silver Hand Recruits?)/g, '1/1 $1')
     .replace(/Summon a basic Totem/g, 'Summon a random basic Totem')
+    // 注入：效果由「注入後的衍生卡」表達，原卡不解析注入的敘述
+    .replace(/\s*(Endlessly )?Infuse ?\(.*$/i, '')
+    .replace(/^Infused\s*/i, '')
     .trim();
   return t;
 }

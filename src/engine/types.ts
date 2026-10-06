@@ -207,7 +207,9 @@ export type DynAmount =
   /** 場上（雙方）的手下數 */
   | 'minionsOnBoardTotal'
   /** 你上一張打出的卡的消耗 */
-  | 'lastCardCost';
+  | 'lastCardCost'
+  /** 你控制的小鬼數 */
+  | 'friendlyImps';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -255,6 +257,8 @@ export interface Pool {
   past?: boolean;
   /** 有倒轉的卡 */
   rewind?: boolean;
+  /** 有流放的卡 */
+  outcast?: boolean;
 }
 
 export type Condition =
@@ -344,6 +348,18 @@ export type Condition =
   | { c: 'handCenter' }
   /** 觸發事件的手下是在上個回合被打出的（不合時宜的死亡） */
   | { c: 'itPlayedLastTurn' }
+  /** 你這個回合恢復過生命值 */
+  | { c: 'healedThisTurn' }
+  /** 你上個回合施放過法術 */
+  | { c: 'castSpellLastTurn' }
+  /** 剛剛的攻擊是英雄攻擊手下 */
+  | { c: 'attackedMinion' }
+  /** 觸發事件的手下是此手下本身或相鄰的手下 */
+  | { c: 'itSelfOrAdjacent' }
+  /** 觸發事件的手下攻擊力不高於 n */
+  | { c: 'itAttackAtMost'; n: number }
+  /** 觸發事件的卡有超載 */
+  | { c: 'itHasOverload' }
   /** 你控制某個（英文名稱符合的）地點 */
   | { c: 'controlLocation'; nameEn: string }
   /** 你裝備的武器（英文名稱符合） */
@@ -593,7 +609,11 @@ export type SecretEvent =
   /** 一個手下攻擊你的英雄之後 */
   | 'afterMinionAttacksHero'
   /** 對手使用英雄能力之後 */
-  | 'enemyHeroPower';
+  | 'enemyHeroPower'
+  /** 一個敵方手下造成 3 點以上的傷害之後 */
+  | 'enemyBigHit'
+  /** 對手花光所有法力之後 */
+  | 'enemyAllMana';
 
 export interface Ability {
   on: Trig;
@@ -615,6 +635,8 @@ export interface Aura {
   race?: Race;
   /** 只影響這個英文名稱的手下（例如白銀之手新兵） */
   nameEn?: string;
+  /** 不影響這個英文名稱的手下（例如「你的非紅鯡魚手下」） */
+  notNameEn?: string;
   /** 只影響具有這個關鍵字的手下 */
   keyword?: Keyword;
   /** 條件成立時才有效（以光環來源的擁有者判斷） */
@@ -642,6 +664,8 @@ export interface CostAura {
   set?: number;
   /** 消耗增加（負數為減少） */
   add?: number;
+  /** 只影響你每回合打出的第 3、6、9… 個手下 */
+  everyThird?: boolean;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -688,6 +712,8 @@ export interface PendingDiscount {
   maxCost?: number;
   /** 只適用於英文名稱包含這段文字的牌 */
   nameEn?: string;
+  /** 只適用於有連擊的牌 */
+  combo?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -848,6 +874,8 @@ export interface CardDef {
   quest?: QuestDef;
   /** 倒轉：打出後可以選擇保留結果，或倒轉重來（數字 = 可倒轉的次數） */
   rewind?: number;
+  /** 注入：手牌中時，每有一個友方手下死亡就累積一次，累積到 n 次後變成 into（race：只計算這個種族） */
+  infuse?: { n: number; into: string; race?: Race };
   /** 傳說：開局時，這張卡的組合卡會一起洗入牌堆 */
   fabled?: string[];
   /** 目標（Aura）：打出後持續這麼多個你的回合 */
@@ -937,6 +965,14 @@ export type MinionFlag =
   | 'immuneAttacking'
   | 'doubleBattlecries'
   | 'keepBothRewinds'
+  | 'infuseInDeck'
+  | 'ignoreTaunt'
+  | 'weaponAbsorbs'
+  | 'gorehowl'
+  | 'atkEqualsHealth'
+  | 'khadgar'
+  | 'secretsLocked'
+  | 'infuseGainsStats'
   | 'takesDoubleDamage'
   | 'natureFeeds'
   | 'natureSummons'
@@ -968,4 +1004,10 @@ export type MinionFlag =
   | 'doubleOtherSpells'
   | 'healthToMax'
   | 'ashWorm'
-  | 'chogallDeck';
+  | 'chogallDeck'
+  | 'footman'
+  | 'stagSpirit'
+  | 'orion'
+  | 'courier'
+  | 'fandral'
+  | 'mirrorSpell';

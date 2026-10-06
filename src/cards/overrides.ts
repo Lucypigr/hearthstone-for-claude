@@ -5,6 +5,7 @@
 // ============================================================================
 import { KAZAKUS_TOKENS } from './kazakus';
 import { CATACLYSM_OVERRIDES } from './cataclysm';
+import { CORE_OVERRIDES } from './core';
 import { TIMEWAYS_OVERRIDES } from './timeways';
 import { VIOLET_OVERRIDES } from './violet';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
@@ -15,6 +16,8 @@ export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' 
   heroPower?: HeroPowerSpec;
   /** 覆寫中引用的衍生卡，需一起收錄 */
   tokens?: string[];
+  /** 這張卡雖然有注入標籤，但沒有（或不需要自動產生）注入版本 */
+  noInfuse?: boolean;
 };
 
 const play = (...effects: Effect[]) => [{ on: { k: 'play' as const }, effects }];
@@ -2875,3 +2878,6 @@ Object.assign(OVERRIDES, CATACLYSM_OVERRIDES);
 
 // 穿越時間流
 Object.assign(OVERRIDES, TIMEWAYS_OVERRIDES);
+
+// 核心系列
+Object.assign(OVERRIDES, CORE_OVERRIDES);

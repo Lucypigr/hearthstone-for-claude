@@ -12,6 +12,10 @@ export interface StarshipPiece {
 
 export interface HandCard {
   uid: number;
+  /** 注入：已累積的友方手下死亡次數 */
+  infuseProgress?: number;
+  /** 注入：累積死亡手下的攻擊力總和 */
+  infuseAtk?: number;
   /** 每個你的回合開始時，消耗減少這麼多 */
   timeDiscount?: number;
   /** 伯昂撒姆獲得的恩澤數量 */
@@ -149,8 +153,14 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
+  brand?: PlayerId;
+  /** 在這個回合的生命值不會被降到 1 以下 */
+  undyingTurn?: number;
   /** 休眠還要幾個回合甦醒（在擁有者的回合開始時倒數） */
   dormantTurns?: number;
+  /** 本回合的下一次攻擊 / 對手回合具有高於元素閃避 */
+  elusiveOpp?: boolean;
   /** 巨型手下的附肢（附肢的 uid） */
   limbs?: number[];
   /** 這個附肢屬於哪個本體 */
@@ -211,6 +221,8 @@ export interface Weapon {
 export interface SecretInst {
   uid: number;
   cardId: string;
+  /** 哈基亞：被存放在這個奧秘裡的靈魂（觸發時重新召喚） */
+  souls?: string[];
 }
 
 export interface PlayerState {
@@ -239,6 +251,24 @@ export interface PlayerState {
   tokiGroups?: Record<number, number>;
   /** 高王之錘：永久增加的攻擊力 */
   hammerBonus?: number;
+  /** 你這個回合恢復過生命值 */
+  healedTurn?: number;
+  /** 埃辛諾斯戰刃：這個回合已經再攻擊過了 */
+  glaiveTurn?: number;
+  /** 寇瓦斯：打出下一張流放牌後回到手牌 */
+  korvasPending?: boolean;
+  /** 可拋棄的表演者：這個回合召喚的七個伊利達瑞新兵 */
+  performers?: { turn: number; uids: number[]; done: boolean };
+  /** 指控：被標記的手下，在條件成立後消滅 */
+  accusations?: { kind: 'arson' | 'murder' | 'theft'; uid: number }[];
+  /** 這個回合只能打出最左與最右的牌 */
+  edgeOnlyTurn?: number;
+  /** 本場對戰中每回合額外抽的牌數 */
+  extraDraw?: number;
+  /** 洛瑟克森：你召喚的白銀之手新兵有聖盾 */
+  recruitShield?: boolean;
+  /** 變形 / 暗影形態：英雄能力換回去前還能用幾次 */
+  powerSwap?: { back: string; uses: number };
   /** 本回合已經獲得過「第一個死靈」的加成（END_003p） */
   infiniteTurn?: number;
   /** 第二個英雄能力（血腥醫生薩蕾娜：消耗屍體） */
@@ -277,6 +307,10 @@ export interface PlayerState {
   delayed?: { turns: number; effects: Effect[]; sourceCardId: string }[];
   /** 本場對戰剩下的時間都有效的能力（例如「在你的回合結束時對對手造成 3 點傷害」）；turn：只在這個回合有效；minSpells：施放的法術數達到這個值才觸發 */
   eternal?: { ability: Ability; sourceCardId: string; turn?: number; minSpells?: number; until?: number; /** 目標（Objective / Aura）：顯示在英雄旁邊 */ objective?: boolean }[];
+  /** 遺物已經打出的次數（遺物的數值 = 1 + 次數） */
+  relics?: number;
+  /** 不在不在場證明：直到這個回合結束前，英雄每次最多受到 1 點傷害 */
+  heroCapUntil?: number;
   /** 你的手下在這個回合消耗增加（對手的冰涼腳丫等） */
   minionTax?: { amount: number; turn: number };
   /** 本回合下一張法術的折扣 */

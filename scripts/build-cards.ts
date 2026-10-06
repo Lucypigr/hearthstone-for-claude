@@ -87,7 +87,6 @@ const UNSUPPORTED_TAGS = [
   'MAGNETIC',
   'CORRUPT',
   'DORMANT',
-  'INFUSE',
   'FORGE',
   'COLOSSAL',
   'TITAN',
@@ -144,7 +143,9 @@ async function main() {
   const tokenDefs = new Map<string, CardDef | null>();
   const tokenStack = new Set<string>();
 
-  function makeEnv(sourceId: string): ParseEnv {
+  function makeEnv(rawSourceId: string): ParseEnv {
+    // 核心系列的重印卡，衍生卡仍然掛在原本系列的卡牌 ID 之下
+    const sourceId = rawSourceId.replace(/^CORE_/, '');
     const prefix = sourceId.split('_')[0];
     return {
       findToken(q: TokenQuery): string | null {
@@ -276,6 +277,20 @@ async function main() {
       def.twinspellCopy = copy.id;
     }
 
+    // 注入：友方手下死亡累積足夠次數後，手牌中的這張卡變成「注入」版本
+    if (r.tags.INFUSE) {
+      const tokenId = `${r.id.replace(/^CORE_/, '')}t`;
+      // 覆寫可以自行指定注入版本（或沒有注入版本）
+      const manual = OVERRIDES[r.id] && ('infuse' in OVERRIDES[r.id] || OVERRIDES[r.id].noInfuse);
+      if (!manual && (!byId.get(tokenId) || !buildToken(tokenId))) {
+        if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `注入版本 ${tokenId} 不支援` });
+        return null;
+      }
+      const raceWord = /Infuse \(@ (?:\|\d+\()?(\w+)/.exec(r.strs.CARDTEXT?.enUS ?? '')?.[1]?.replace(/s$/, '').toUpperCase();
+      const infuse: NonNullable<CardDef['infuse']> = { n: r.tags.TAG_SCRIPT_DATA_NUM_1 ?? 3, into: tokenId };
+      if (raceWord && ['BEAST', 'TOTEM', 'MURLOC', 'DEMON', 'UNDEAD', 'MECH', 'ELEMENTAL', 'DRAGON', 'PIRATE'].includes(raceWord)) infuse.race = (raceWord === 'MECH' ? 'MECHANICAL' : raceWord) as Race;
+      if (!manual) def.infuse = infuse;
+    }
     const ov = OVERRIDES[r.id];
     if (ov) {
       const { tokens, heroPower, ...rest } = ov;

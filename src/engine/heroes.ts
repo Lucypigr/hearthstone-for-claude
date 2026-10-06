@@ -82,6 +82,12 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   UNG_917t1: { effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 3, hp: 3 }], target: { filter: { type: 'minion', side: 'any', race: 'BEAST' } } },
   // 血腥醫生薩蕾娜的第二個英雄能力：吸血鬼之吻（消耗 3 具屍體）：賦予一個手下 +3 攻擊力
   JAIL_446hp: { effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 3 }], target: { filter: { type: 'minion', side: 'any' } } },
+  // 惡魔變身（核心）：英雄能力換成「造成 5 點傷害」，用兩次後換回去
+  BT_429p: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 5 }], target: { filter: { type: 'character', side: 'any' } } },
+  BT_429p2: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 5 }], target: { filter: { type: 'character', side: 'any' } } },
+  // 暗影形態（核心）：心靈尖刺 / 心靈碎裂
+  EX1_625t: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 2 }], target: { filter: { type: 'character', side: 'any' } } },
+  EX1_625t2: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 3 }], target: { filter: { type: 'character', side: 'any' } } },
   // 灌注後的英雄能力（穿越時間流）：青銅龍的祝福（盜賊）/ 無盡的祝福（死亡騎士）
   END_000p: { effects: [{ e: 'custom', fn: 'bronzeBlessing' }], rewind: true },
   END_003p: { effects: [], passive: true },
