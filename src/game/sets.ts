@@ -63,9 +63,28 @@ export interface PackType {
   sets: number[];
   price: number;
   color: string;
+  /** 每包 5 張都是傳說（不重複），不計保底 */
+  legendaryOnly?: boolean;
 }
 
 export const PACKS: PackType[] = [
+  {
+    id: 'standard',
+    name: '標準卡包',
+    description: '目前標準模式的所有卡牌：核心、穿越時間流、浩劫與重生、逃離紫羅蘭堡、翡翠夢境、安戈洛失落之城',
+    sets: [1810, 1637, 1946, 1952, 1957, 1980, 1988],
+    price: 100,
+    color: '#2a7fd1',
+  },
+  {
+    id: 'legendary',
+    name: '傳說卡池',
+    description: '每包 5 張傳說（不重複），從所有系列的傳說卡中抽出',
+    sets: [],
+    price: 2000,
+    color: '#e0a526',
+    legendaryOnly: true,
+  },
   {
     id: 'classic',
     name: '經典卡包',
