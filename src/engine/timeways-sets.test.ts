@@ -682,3 +682,436 @@ describe('終結（END_）卡牌', () => {
     expect(g.s.current).toBe(0);
   });
 });
+
+describe('倒轉與時光（TIME_ 000 ~ 064）', () => {
+  it('半穩定傳送門 / 永恆巫師 / 傳送門先鋒', () => {
+    const g = newGame({ classes: ['MAGE', 'WARRIOR'] });
+    const me = g.s.players[0];
+    const hand = me.hand.length;
+    play(g, 'TIME_000');
+    g.apply({ type: 'choose', index: 0 });
+    expect(me.hand.length).toBe(hand + 1);
+    expect(getCard(me.hand[hand].cardId).type).toBe('MINION');
+    expect(g.costOf(me, me.hand[hand])).toBe(Math.max(0, getCard(me.hand[hand].cardId).cost - 3));
+    const g2 = newGame({ classes: ['MAGE', 'WARRIOR'] });
+    const h2 = g2.s.players[0].hand.length;
+    play(g2, 'TIME_002');
+    g2.apply({ type: 'choose', index: 0 });
+    expect(g2.s.players[0].hand.length).toBe(h2 + 2);
+    const g3 = newGame();
+    g3.s.players[0].deck = [g3.newHandCard('CS2_168')];
+    play(g3, 'TIME_003');
+    g3.apply({ type: 'choose', index: 0 });
+    const drawn = g3.s.players[0].hand.find((h) => h.cardId === 'CS2_168')!;
+    expect(drawn.atkBuff).toBe(2);
+    expect(drawn.hpBuff).toBe(2);
+  });
+
+  it('計時匕首 / 匯流粉碎者 / 永恆撕裂：倒轉後結果再隨機', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    const foe = g.s.players[1];
+    play(g, 'TIME_001');
+    g.apply({ type: 'choose', index: 0 });
+    expect(foe.hero.hp).toBe(30 - 6);
+    const g2 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    play(g2, 'TIME_441');
+    g2.apply({ type: 'choose', index: 0 });
+    expect(g2.s.players[1].hero.hp).toBe(30 - 8);
+  });
+
+  it('鏡像空間：有龍時召喚兩個 0/4 嘲諷', () => {
+    const g = newGame({ classes: ['MAGE', 'WARRIOR'] });
+    play(g, 'TIME_006');
+    expect(g.s.players[0].board).toHaveLength(1);
+    const g2 = newGame({ classes: ['MAGE', 'WARRIOR'] });
+    const dragon = COLLECTIBLE.find((c) => c.type === 'MINION' && c.races?.includes('DRAGON') && c.cost <= 3)!;
+    give(g2, dragon.id);
+    play(g2, 'TIME_006');
+    expect(g2.s.players[0].board).toHaveLength(2);
+    expect(g2.hasKw(g2.s.players[0].board[0], 'TAUNT')).toBe(true);
+  });
+
+  it('往日末日預言者：雙方各棄一張牌', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const a = g.s.players[0].hand.length;
+    const b = g.s.players[1].hand.length;
+    play(g, 'TIME_008');
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].hand.length).toBe(a - 1);
+    expect(g.s.players[1].hand.length).toBe(b - 1);
+  });
+
+  it('瞬間多元宇宙：召喚總值 12 的手下並超載 3', () => {
+    const g = newGame({ classes: ['SHAMAN', 'WARRIOR'] });
+    play(g, 'TIME_014');
+    g.apply({ type: 'choose', index: 0 });
+    const total = g.s.players[0].board.reduce((x, m) => x + getCard(m.cardId).cost, 0);
+    expect(total).toBeLessThanOrEqual(12);
+    expect(total).toBeGreaterThanOrEqual(6);
+    expect(g.s.players[0].overloadOwed).toBe(3);
+  });
+
+  it('硬光守護者：英雄獲得聖盾，抵擋下一次傷害', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    g.s.players[0].hero.hp = 20;
+    play(g, 'TIME_015');
+    expect(g.s.players[0].hero.hp).toBe(23);
+    expect(g.s.players[0].hero.divineShield).toBe(true);
+    g.apply({ type: 'endTurn' });
+    const atk = put(g, FILLER, 1);
+    g.apply({ type: 'attack', attacker: atk.uid, target: g.s.players[0].hero.uid });
+    expect(g.s.players[0].hero.hp).toBe(23);
+    expect(g.s.players[0].hero.divineShield).toBe(false);
+  });
+
+  it('坦克工程師：亡語召喚 7/7 聖盾坦克', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    const m = put(g, 'TIME_017', 0);
+    m.keywords = m.keywords.filter((k) => k !== 'DIVINE_SHIELD');
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    const tank = g.s.players[0].board.find((x) => x.cardId === 'TIME_017t')!;
+    expect(g.atkOf(tank)).toBe(7);
+    expect(g.hasKw(tank, 'DIVINE_SHIELD')).toBe(true);
+  });
+
+  it('修復時間線：獲得 2 張神聖法術並治療', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    g.s.players[0].hero.hp = 10;
+    const hand = g.s.players[0].hand.length;
+    play(g, 'TIME_018');
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].hand.length).toBe(hand + 2);
+    expect(g.s.players[0].hero.hp).toBeGreaterThan(10);
+  });
+
+  it('末日準備者：流放時英雄免疫到下個回合', () => {
+    const g = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    play(g, 'TIME_021'); // 加到手牌最右邊 = 流放
+    g.apply({ type: 'endTurn' });
+    const atk = put(g, FILLER, 1);
+    g.apply({ type: 'attack', attacker: atk.uid, target: g.s.players[0].hero.uid });
+    expect(g.s.players[0].hero.hp).toBe(30);
+  });
+
+  it('常青巨蛇：有休眠手下時消耗減少 (4)', () => {
+    const g = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
+    const hc = give(g, 'TIME_022');
+    expect(g.costOf(g.s.players[0], hc)).toBe(8);
+    const m = put(g, FILLER, 1);
+    m.keywords.push('DORMANT');
+    expect(g.costOf(g.s.players[0], hc)).toBe(4);
+  });
+
+  it('後手準備：抽牌堆最底下 2 張牌', () => {
+    const g = newGame({ classes: ['DRUID', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.deck = [g.newHandCard('CS2_168'), g.newHandCard('CS2_186'), g.newHandCard(FILLER)];
+    play(g, 'TIME_023');
+    expect(me.hand.slice(-2).map((h) => h.cardId)).toEqual(['CS2_168', 'CS2_186']);
+    expect(me.deck.map((h) => h.cardId)).toEqual([FILLER]);
+  });
+
+  it('莫祖戎，無拘無束：下個回合開始時攻擊力變無限', () => {
+    const g = newGame();
+    play(g, 'TIME_024');
+    const m = g.s.players[0].board[0];
+    expect(g.atkOf(m)).toBe(8);
+    pass(g);
+    expect(g.atkOf(g.s.players[0].board[0])).toBeGreaterThan(900);
+  });
+
+  it('時間碎片：洗入牌堆，抽到時對自己的英雄造成 3 點傷害', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const me = g.s.players[0];
+    play(g, 'TIME_025');
+    expect(me.deck.filter((h) => h.cardId === 'TIME_025t')).toHaveLength(2);
+    me.deck = me.deck.filter((h) => h.cardId === 'TIME_025t');
+    const hp = me.hero.hp;
+    pass(g);
+    expect(g.s.players[0].hero.hp).toBeLessThan(hp);
+  });
+
+  it('熵之延續 / 超光速彈幕：洗入時間碎片', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const m = put(g, FILLER, 0);
+    play(g, 'TIME_026');
+    expect(g.atkOf(m)).toBe(5);
+    expect(g.s.players[0].deck.filter((h) => h.cardId === 'TIME_025t')).toHaveLength(2);
+    const g2 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    play(g2, 'TIME_027');
+    expect(g2.s.players[1].hero.hp).toBe(24);
+  });
+
+  it('破運者 / 毀滅速龍：從牌堆施放時間碎片來觸發效果', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    g.s.players[0].deck.push(g.newHandCard('TIME_025t'));
+    play(g, 'TIME_028');
+    const m = g.s.players[0].board[0];
+    expect(g.atkOf(m)).toBe(7);
+    expect(g.s.players[0].hero.hp).toBe(27);
+    const g2 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    play(g2, 'TIME_029');
+    expect(g2.s.players[0].board).toHaveLength(1); // 牌堆沒有時間碎片
+    const g3 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    g3.s.players[0].deck.push(g3.newHandCard('TIME_025t'));
+    play(g3, 'TIME_029');
+    expect(g3.s.players[0].board).toHaveLength(2);
+  });
+
+  it('分歧：把手牌中的一個手下分成兩半', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.hand = [g.newHandCard('CS2_182')];
+    play(g, 'TIME_030');
+    expect(me.hand).toHaveLength(2);
+    const [a, b] = me.hand;
+    expect(g.costOf(me, a)).toBe(2);
+    expect(g.handStats(0, a)).toEqual({ atk: 2, hp: 3 });
+    expect(g.handStats(0, b)).toEqual({ atk: 2, hp: 3 });
+  });
+
+  it('拉法姆階梯 / 時序戈爾', () => {
+    const g = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const me = g.s.players[0];
+    me.deck = ['CS2_168', 'CS2_186', FILLER, 'CS2_168', 'CS2_182'].map((id) => g.newHandCard(id));
+    me.hand = [];
+    play(g, 'TIME_031');
+    const costs = me.hand.map((h) => getCard(h.cardId).cost);
+    expect(new Set(costs).size).toBe(costs.length);
+    expect(costs.length).toBeLessThanOrEqual(3);
+    const g2 = newGame({ classes: ['WARLOCK', 'WARRIOR'] });
+    const p = g2.s.players[0];
+    p.deck = ['CS2_168', 'CS2_168', 'CS2_182', FILLER].map((id) => g2.newHandCard(id));
+    p.hand = [];
+    play(g2, 'TIME_032');
+    expect(p.hand.map((h) => getCard(h.cardId).cost).sort()).toEqual([4, 4]);
+    expect(g2.s.players[1].hand.slice(-2).map((h) => h.cardId)).toEqual(['CS2_168', 'CS2_168']);
+  });
+
+  it('再生德魯伊：施放 2 個隨機自然法術', () => {
+    const g = newGame({ classes: ['DRUID', 'WARRIOR'] });
+    expect(() => {
+      play(g, 'TIME_033');
+      g.apply({ type: 'choose', index: 0 });
+    }).not.toThrow();
+  });
+
+  it('體育場播報員：雙方各裝備隨機武器，你的 +1/+1', () => {
+    const g = newGame({ classes: ['WARRIOR', 'MAGE'] });
+    play(g, 'TIME_034');
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].weapon).not.toBeNull();
+    expect(g.s.players[1].weapon).not.toBeNull();
+    const base = getCard(g.s.players[0].weapon!.cardId);
+    expect(g.s.players[0].weapon!.durability).toBe((base.health ?? 0) + 1);
+  });
+
+  it('時光機：亡語獲得一張倒轉牌', () => {
+    const g = newGame();
+    const m = put(g, 'TIME_035', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.some((h) => !!getCard(h.cardId).rewind)).toBe(true);
+  });
+
+  it('皇家線人：獲得對手最右邊牌的複製，或使它消耗增加', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    g.s.players[1].hand = [g.newHandCard('CS2_168')];
+    play(g, 'TIME_036');
+    expect(g.s.pendingChoice?.options).toEqual(['CS2_168', 'TIME_036t']);
+    g.apply({ type: 'choose', index: 1 });
+    expect(g.s.players[1].hand[0].costMod).toBe(2);
+    const g2 = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    g2.s.players[1].hand = [g2.newHandCard('CS2_168')];
+    const n = g2.s.players[0].hand.length;
+    play(g2, 'TIME_036');
+    g2.apply({ type: 'choose', index: 0 });
+    expect(g2.s.players[0].hand.length).toBe(n + 1);
+  });
+
+  it('鴿之信徒：抽一張手下並使手牌中的手下 +2 生命值', () => {
+    const g = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    g.s.players[0].hand = [g.newHandCard('CS2_168')];
+    g.s.players[0].deck = [g.newHandCard('CS2_186')];
+    play(g, 'TIME_037');
+    expect(g.s.players[0].hand.map((h) => h.hpBuff)).toEqual([2, 2]);
+  });
+
+  it('時鐘發條先生：召喚 2 個傳說手下，有三次倒轉', () => {
+    const g = newGame();
+    const hc = give(g, 'TIME_038');
+    expect(g.rewindsOf(hc)).toBe(3);
+    g.apply({ type: 'play', handUid: hc.uid });
+    expect(g.s.pendingChoice?.title).toContain('3');
+    g.apply({ type: 'choose', index: 1 });
+    const back = g.s.players[0].hand.find((h) => h.uid === hc.uid)!;
+    expect(g.rewindsOf(back)).toBe(2);
+    expect(g.s.players[0].board).toHaveLength(0);
+    g.apply({ type: 'play', handUid: hc.uid });
+    g.apply({ type: 'choose', index: 0 });
+    expect(g.s.players[0].board.filter((m) => getCard(m.cardId).rarity === 'LEGENDARY').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('既視感 / 交織的命運：發現對手手牌或牌堆的複製', () => {
+    const g = newGame({ classes: ['ROGUE', 'WARRIOR'] });
+    g.s.players[1].hand = [g.newHandCard('CS2_168'), g.newHandCard('CS2_186')];
+    play(g, 'TIME_039');
+    expect(g.s.pendingChoice?.options.sort()).toEqual(['CS2_168', 'CS2_186']);
+    g.apply({ type: 'choose', index: 0 });
+    const g2 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
+    play(g2, 'TIME_432');
+    g2.apply({ type: 'choose', index: 0 });
+    g2.apply({ type: 'choose', index: 0 });
+    expect(g2.s.pendingChoice).toBeNull();
+  });
+
+  it('褪色的記憶：亡語獲得來自過去的 5 費手下', () => {
+    const g = newGame();
+    const m = put(g, 'TIME_040', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.some((h) => getCard(h.cardId).cost === 5)).toBe(true);
+  });
+
+  it('未來的先祖：猜中對手手牌，獲得 +4 生命值', () => {
+    const g = newGame();
+    g.s.players[1].hand = [g.newHandCard('CS2_168')];
+    play(g, 'TIME_041');
+    const opts = g.s.pendingChoice!.options;
+    g.apply({ type: 'choose', index: opts.indexOf('CS2_168') });
+    expect(g.s.players[0].board[0].hp).toBe(8);
+  });
+
+  it('馬魯克王：棄掉手牌，獲得無限香蕉（用完還會回來）', () => {
+    const g = newGame({ classes: ['HUNTER', 'WARRIOR'] });
+    play(g, 'TIME_042');
+    expect(g.s.players[0].hand.map((h) => h.cardId)).toEqual(['TIME_042t']);
+    const m = g.s.players[0].board[0];
+    play(g, 'TIME_042t', m.uid);
+    expect(g.atkOf(m)).toBe(6);
+    expect(g.s.players[0].hand.some((h) => h.cardId === 'TIME_042t')).toBe(true);
+  });
+
+  it('PMM 無限化機：友方手下變成 8/8，本回合不能攻擊英雄', () => {
+    const g = newGame({ classes: ['PALADIN', 'WARRIOR'] });
+    const m = put(g, 'CS2_168', 0);
+    const foeMinion = put(g, FILLER, 1);
+    play(g, 'TIME_043', m.uid);
+    expect(g.atkOf(m)).toBe(8);
+    expect(m.hp).toBe(8);
+    expect(g.canAttack(m.uid)).toBe(true);
+    expect(g.attackTargets(m.uid)).toEqual([foeMinion.uid]);
+    expect(g.attackTargets(m.uid).includes(g.s.players[1].hero.uid)).toBe(false);
+  });
+
+  it('賽博族長 / 時間領主諾茲多姆：休眠後甦醒；打出本擴充包的牌會提早甦醒', () => {
+    const g = newGame();
+    play(g, 'TIME_046');
+    const m = g.s.players[0].board[0];
+    expect(m.keywords).toContain('DORMANT');
+    pass(g);
+    pass(g);
+    pass(g);
+    expect(g.s.players[0].board[0].keywords).not.toContain('DORMANT');
+    const g2 = newGame();
+    play(g2, 'TIME_063');
+    const n = g2.s.players[0].board[0];
+    expect(n.dormantTurns).toBe(5);
+    play(g2, 'TIME_046');
+    expect(n.dormantTurns).toBe(4);
+    play(g2, 'CS2_168');
+    expect(n.dormantTurns).toBe(4);
+  });
+
+  it('狡詐的土狼 / 發條暴怒者 / 危險的變異體', () => {
+    const g = newGame();
+    const hc = give(g, 'TIME_047');
+    expect(g.costOf(g.s.players[0], hc)).toBe(5);
+    g.s.players[0].enemyHeroHits = { turn: g.s.turn, count: 2 };
+    expect(g.costOf(g.s.players[0], hc)).toBe(3);
+    const g2 = newGame();
+    play(g2, 'TIME_048');
+    expect(g2.s.players[0].board[0].hp).toBe(2); // 先手第 1 回合
+    const g3 = newGame();
+    play(g3, 'TIME_049');
+    pass(g3);
+    expect(getCard(g3.s.players[0].board[0].cardId).cost).toBe(5);
+  });
+
+  it('有感知的沙漏 / 未知的旅人：受傷後存活的效果', () => {
+    const g = newGame();
+    const m = put(g, 'TIME_050', 0);
+    const foe = put(g, 'CS2_168', 1);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'attack', attacker: foe.uid, target: m.uid });
+    expect([g.atkOf(m), m.hp]).toEqual([7, 4]);
+    const g2 = newGame();
+    const v = put(g2, 'TIME_055', 0);
+    const f2 = put(g2, 'CS2_168', 1);
+    g2.apply({ type: 'endTurn' });
+    g2.apply({ type: 'attack', attacker: f2.uid, target: v.uid });
+    const now = g2.s.players[0].board[0];
+    expect(getCard(now.cardId).cost).toBe(7);
+  });
+
+  it('琥珀典獄長 / 時光機 / 微不足道的振翅者', () => {
+    const g = newGame();
+    const m = put(g, 'TIME_052', 0);
+    kill(m);
+    g.apply({ type: 'endTurn' });
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].board.length).toBeGreaterThanOrEqual(1);
+    const g2 = newGame();
+    const f = put(g2, 'TIME_058', 0);
+    kill(f);
+    g2.apply({ type: 'endTurn' });
+    g2.apply({ type: 'endTurn' });
+    const d = g2.s.players[0].board.find((x) => x.keywords.includes('DORMANT'));
+    expect(d).toBeTruthy();
+    expect(getCard(d!.cardId).cost).toBe(2);
+  });
+
+  it('跳時者 / 睿智的求真者 / 活著的悖論 / 量子不穩定者', () => {
+    const g = newGame();
+    put(g, 'TIME_054', 0);
+    const a = g.s.players[0].hand.length;
+    const b = g.s.players[1].hand.length;
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[0].hand.length).toBe(a + 1);
+    g.apply({ type: 'endTurn' });
+    expect(g.s.players[1].hand.length).toBeGreaterThan(b);
+    const g2 = newGame();
+    const hc = toHand(g2, g2.s.players[0], 'CS2_168');
+    hc.costMod = -1;
+    play(g2, 'TIME_057');
+    expect(g2.s.players[0].hand.every((h) => h.costMod === 0)).toBe(true);
+    const g3 = newGame();
+    play(g3, 'TIME_059');
+    expect(g3.s.players[0].board).toHaveLength(3);
+    const g4 = newGame();
+    const q = put(g4, 'TIME_060', 0);
+    const foe = put(g4, 'CS2_168', 1);
+    g4.apply({ type: 'endTurn' });
+    g4.apply({ type: 'attack', attacker: foe.uid, target: q.uid });
+    expect(q.hp).toBe(9 - 2 * 2);
+  });
+
+  it('無盡因果 / 時間領主迪奧斯', () => {
+    const g = newGame();
+    const me = g.s.players[0];
+    me.deck = ['CS2_168', 'CS2_186', FILLER].map((id) => g.newHandCard(id));
+    play(g, 'TIME_061');
+    expect(me.deck.map((h) => h.cardId)).toEqual([FILLER, 'CS2_186', 'CS2_168']);
+    // 迪奧斯：回合結束效果觸發兩次
+    const g2 = newGame();
+    put(g2, 'TIME_064', 0);
+    put(g2, 'TIME_054', 0);
+    const n = g2.s.players[0].hand.length;
+    g2.apply({ type: 'endTurn' });
+    expect(g2.s.players[0].hand.length).toBe(n + 2);
+  });
+});
