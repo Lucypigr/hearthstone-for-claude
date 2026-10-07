@@ -3146,6 +3146,8 @@ textarea {
 .hand-slot,
 .hand-slot * {
   touch-action: none;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 html,

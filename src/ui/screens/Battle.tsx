@@ -414,6 +414,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const startPress = (handUid: number, e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // 滑鼠：避免瀏覽器接手成文字選取 / 原生拖曳，讓卡牌能自由跟著游標
+    if (e.pointerType === 'mouse') e.preventDefault();
     const hc = me.hand.find((h) => h.uid === handUid);
     if (!hc) return;
     const st: { uid: number; sx: number; sy: number; dragging: boolean; long: boolean; timer: number; aim?: number[] } = { uid: handUid, sx: e.clientX, sy: e.clientY, dragging: false, long: false, timer: 0 };
@@ -908,6 +910,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 data-hand-uid={h.uid}
                 className={`hand-slot ${selectedHand === h.uid ? 'selected' : ''} ${h.echo ? 'echo-copy' : ''} ${drag?.handUid === h.uid ? 'dragging' : ''}`}
                 onPointerDown={(e) => startPress(h.uid, e)}
+                onDragStart={(e) => e.preventDefault()}
                 style={{ '--i': i } as CSSProperties}
                 title={h.echo ? '回音的複製：只能在本回合使用' : undefined}
               >
