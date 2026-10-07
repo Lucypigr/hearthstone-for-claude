@@ -48,6 +48,7 @@ export const SET_NAMES: Record<number, string> = {
   1957: '穿越時間流',
   1980: '浩劫與重生',
   1988: '逃離紫羅蘭堡',
+  1994: '黑暗帝國霸業',
   9999: '自訂',
 };
 
@@ -142,7 +143,7 @@ export const PACKS: PackType[] = [
     id: 'latest',
     name: '最新擴充卡包',
     description: '決戰荒蕪之地到深暗領域的卡牌',
-    sets: [1892, 1897, 1898, 1905, 1935],
+    sets: [1892, 1897, 1898, 1905, 1935, 1994],
     price: 100,
     color: '#3fa3a0',
   },

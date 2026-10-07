@@ -2260,6 +2260,14 @@ export class Game {
       p.spellsCastThisGame++;
       for (const loc of p.locations ?? []) if (loc.cardId === 'GDB_136t' && !loc.absorbed) loc.absorbed = def.id;
       if (def.protoss) p.protossSpells = (p.protossSpells ?? 0) + 1;
+      for (const m of p.board) {
+        if (!m.shaped) continue;
+        m.shaped -= cost;
+        if (m.shaped <= 0) {
+          m.shaped = undefined;
+          m.keywords = m.keywords.filter((k) => k !== 'CANT_ATTACK');
+        }
+      }
       yield* this.dungeonSpellCast(p);
       p.spellsThisTurn = (p.spellsThisTurn ?? 0) + 1;
       // 被奴役的奈斯比拉：在你施放邪能法術後重新開啟
@@ -11404,6 +11412,25 @@ export class Game {
         return true;
       case 'gdPressure':
         for (const h of me.hand) if (JSON.stringify(getCard(h.cardId).abilities ?? []).includes('"c":"combo"')) h.costMod -= 1;
+        return true;
+      case 'beMother': {
+        // M.O.T.H.E.R.：降低手牌中一張牌的消耗 5 點，向左右延伸時每格少減 1 點
+        const hc = yield* this.chooseFromList(ctx, me.hand, '選擇一張手牌，降低它的消耗');
+        if (!hc) return true;
+        const i = me.hand.indexOf(hc);
+        for (let d = 0; d < 5; d++) {
+          for (const j of d === 0 ? [i] : [i - d, i + d]) if (me.hand[j]) me.hand[j].costMod -= 5 - d;
+        }
+        return true;
+      }
+      case 'beIsiset':
+        for (let i = 0; i < 2; i++) {
+          const m = yield* this.doSummon(ctx, me.id, 'BE_T_CONSTRUCT');
+          if (m) {
+            m.shaped = 15;
+            if (!m.keywords.includes('CANT_ATTACK')) m.keywords.push('CANT_ATTACK');
+          }
+        }
         return true;
       case 'gdArchimonde':
         for (const id of [...(me.nonStartDemons ?? [])]) {

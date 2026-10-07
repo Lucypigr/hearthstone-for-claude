@@ -156,6 +156,8 @@ export interface Minion {
   fireDmg?: number;
   /** 受到的傷害加倍（幻象） */
   doubleDmg?: boolean;
+  /** 沙塑：還要在法術上花費多少法力才能攻擊（伊希賽特） */
+  shaped?: number;
   enrageAtk: number;
   silenced: boolean;
   frozen: boolean;

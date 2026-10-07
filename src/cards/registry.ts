@@ -78,7 +78,7 @@ export function cardClasses(c: CardDef): CardClass[] {
 
 /** 依卡池條件篩選可收藏卡（發現 / 隨機產生卡牌用） */
 /** 目前的標準模式系列（不在其中的就是「來自過去」的卡） */
-export const STANDARD_SETS = new Set([1810, 1637, 1946, 1952, 1957, 1980, 1988, 1941, 9999]);
+export const STANDARD_SETS = new Set([1810, 1637, 1946, 1952, 1957, 1980, 1988, 1941, 1994, 9999]);
 /** 這張卡在標準模式嗎（標準系列，或核心系列收錄的卡） */
 export const isStandardCard = (c: CardDef): boolean => STANDARD_SETS.has(c.set) || !!c.core;
 
