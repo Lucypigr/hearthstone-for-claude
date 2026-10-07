@@ -102,6 +102,7 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   EDR_449p: { effects: [{ e: 'custom', fn: 'coImbued', args: { kind: 'moon' } }] },
   EDR_448p: { effects: [{ e: 'custom', fn: 'coImbued', args: { kind: 'wind' } }], target: { filter: { type: 'minion', side: 'friendly' } } },
   // 蘇拉斯的故事：對一個隨機敵人造成 8 點傷害（用兩次後換回）
+  JAIL_EVENT_101hp: { effects: [{ e: 'custom', fn: 'coCollapse' }] },
   TLC_632t: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
 };

@@ -48,6 +48,8 @@ export interface HandCard {
   rewinds?: number;
   /** 永久費用變化（例如「其消耗減少(2)」） */
   costMod: number;
+  /** 只在這個回合有效的費用減少 */
+  costTurn?: { turn: number; amount: number };
   /** 手牌中的手下增益 */
   atkBuff: number;
   hpBuff: number;
@@ -289,6 +291,10 @@ export interface PlayerState {
   accusations?: { kind: 'arson' | 'murder' | 'theft'; uid: number }[];
   /** 這個回合只能打出最左與最右的牌 */
   edgeOnlyTurn?: number;
+  /** 這個回合只能打出這種類型的牌（古神降臨 / 泰坦降臨） */
+  onlyPlay?: { turn: number; type: 'MINION' | 'SPELL' };
+  /** 崩塌之星的傷害 */
+  starDmg?: number;
   /** 本場對戰中每回合額外抽的牌數 */
   extraDraw?: number;
   /** 洛瑟克森：你召喚的白銀之手新兵有聖盾 */

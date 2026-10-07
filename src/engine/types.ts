@@ -221,6 +221,8 @@ export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; ra
 
 export interface Pool {
   type?: CardType;
+  /** 巨型手下 */
+  colossal?: boolean;
   race?: Race;
   cost?: number;
   maxCost?: number;
@@ -723,7 +725,8 @@ export interface QuestDef {
     | 'shadowSpells'
     | 'beastAttacks'
     | 'discover'
-    | 'temporaryPlayed';
+    | 'temporaryPlayed'
+    | 'beastUndead';
   goal: number;
   /** 可重複：完成後獲得獎勵並重新開始 */
   repeatable?: boolean;
