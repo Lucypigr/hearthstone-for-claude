@@ -1297,14 +1297,37 @@ function MinionView({
 
 function LocationView({ l, className, onClick, onHover }: { l: Location; className: string; onClick: () => void; onHover: (on: boolean) => void }) {
   const def = getCard(l.cardId);
+  // 長按顯示資訊，輕點啟用
+  const timer = useRef<number | null>(null);
+  const longPressed = useRef(false);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
   return (
     <div
       data-loc-uid={l.uid}
       className={`location ${l.cooldown > 0 ? 'cooling' : ''} ${className}`}
       onClick={(e) => {
         e.stopPropagation();
+        if (longPressed.current) {
+          longPressed.current = false;
+          return;
+        }
         onClick();
       }}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'mouse') return;
+        longPressed.current = false;
+        clear();
+        timer.current = window.setTimeout(() => {
+          longPressed.current = true;
+          onHover(true);
+        }, 400);
+      }}
+      onPointerUp={clear}
+      onPointerCancel={clear}
+      onContextMenu={(e) => e.preventDefault()}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       title={`${def.name}（耐久度 ${l.durability}）`}
