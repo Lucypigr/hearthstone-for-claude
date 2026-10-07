@@ -72,6 +72,7 @@ export const CUSTOM_CARDS: CardDef[] = [
     collectible: false,
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'buildABeast' }, { e: 'costMod', amount: -3, scope: 'it' }] }],
   },
+  token('BE_T_CONSTRUCT', '構造體', 'Construct', 10, 10, { set: 1994 }),
   token('SC_T_ZERGLING', '跳蟲', 'Zergling', 1, 1, { set: 1935, zerg: true, races: [] }),
   token('DUN_SPORE', '劇毒孢子', 'Deadly Spore', 1, 1, { set: 1004, keywords: ['POISONOUS'], text: '<b>劇毒</b>' }),
   token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),

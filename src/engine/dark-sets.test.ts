@@ -232,3 +232,26 @@ describe('蟲族與神族', () => {
     expect(failures).toEqual([]);
   });
 });
+
+describe('黑暗帝國霸業（先行公布的卡）', () => {
+  it('M.O.T.H.E.R.：降低一張手牌的消耗，向左右延伸時每格少減 1', () => {
+    const g = newGame();
+    const p = g.s.players[0];
+    p.hand = [];
+    const hs = [1, 2, 3].map(() => g.newHandCard('CS2_032')); // 烈焰風暴 7 費
+    p.hand.push(...hs);
+    play(g, 'BE_036');
+    const costs = hs.map((h) => h.costMod);
+    expect(costs[0] + costs[1] + costs[2]).toBeLessThan(0);
+    expect(Math.min(...costs)).toBe(-5);
+  });
+
+  it('伊希賽特：構造體在花費 15 點法力施放法術前無法攻擊', () => {
+    const g = newGame();
+    play(g, 'BE_259');
+    const cons = g.s.players[0].board.filter((m) => m.cardId === 'BE_T_CONSTRUCT');
+    expect(cons.length).toBe(2);
+    expect(g.hasKw(cons[0], 'CANT_ATTACK')).toBe(true);
+    expect(cons[0].shaped).toBe(15);
+  });
+});
