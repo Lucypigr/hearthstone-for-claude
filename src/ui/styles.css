@@ -3166,17 +3166,20 @@ body {
   touch-action: none;
 }
 
-/* 地點牌 */
+/* 地點牌：直式石框、頂部橫幅名牌、底部耐久寶石 */
 .location {
   position: relative;
   width: calc(var(--mw) * 0.95);
-  height: calc(var(--mw) * 1.15);
-  border: 2px solid #6b5a3a;
-  border-radius: 10px;
-  background: #2a2216;
+  height: calc(var(--mw) * 1.3);
+  border: 3px solid #8c7b58;
+  border-radius: 46% 46% 14px 14px / 22% 22% 14px 14px;
+  background: linear-gradient(160deg, #6d5b3a, #3a2d1a 60%, #4d3c24);
+  box-shadow: inset 0 0 0 2px #2a1f10, inset 0 0 8px #000a, 0 3px 6px #0008;
   overflow: visible;
   cursor: default;
   touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .location.ready {
@@ -3194,20 +3197,22 @@ body {
 }
 
 .location-portrait {
-  width: 100%;
-  height: 100%;
-  border-radius: 8px;
+  position: absolute;
+  inset: 4px;
+  border-radius: 46% 46% 10px 10px / 22% 22% 10px 10px;
   overflow: hidden;
+  border: 2px solid #1c140a;
 }
 
 .location-dur {
   position: absolute;
   right: -6px;
   bottom: -6px;
-  min-width: 24px;
-  height: 24px;
+  min-width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: #3b6fd6;
+  background: radial-gradient(circle at 35% 30%, #7fb0ff, #2b57b8 70%);
+  box-shadow: 0 0 6px #4a86ffaa;
   color: #fff;
   font-weight: 700;
   display: grid;
@@ -3233,8 +3238,9 @@ body {
   bottom: 0;
   font-size: 11px;
   text-align: center;
-  background: #000b;
-  color: #fff;
+  background: linear-gradient(#5b4a2c, #2c2112);
+  border-top: 1px solid #c8b27a;
+  color: #f6e7c1;
   border-radius: 0 0 8px 8px;
   overflow: hidden;
   white-space: nowrap;
