@@ -14,6 +14,7 @@ import { LAUNCH_COST, starshipDef, starshipIdFor } from '../cards/starship';
 import { ZOMBEAST_ID, ZOMBEAST_PARTS, zombeastDef } from '../cards/zombeast';
 import { BASIC_TOTEMS, EXTRA_POWERS, HERO_POWERS, RAGNAROS_HERO, RAGNAROS_POWER, UPGRADED_POWER_IDS } from './heroes';
 import { nextRandom, pick, randomInt, shuffle } from './rng';
+import { PASSIVE_FLAGS } from './dungeon';
 import {
   MAX_BOARD,
   MAX_HAND,
@@ -193,6 +194,20 @@ export interface NewGameOptions {
   ai: [boolean, boolean];
   seed?: number;
   first?: PlayerId;
+  /** 地城探險：被動寶藏 / Boss 被動 */
+  passives?: [string[], string[]];
+  /** 開局生命值（預設 30） */
+  heroHp?: [number | undefined, number | undefined];
+  /** 指定英雄卡（Boss 的英雄牌） */
+  heroCards?: [string | undefined, string | undefined];
+  /** 指定英雄能力 id（Boss 的英雄能力） */
+  heroPowerIds?: [string | undefined, string | undefined];
+  /** 開局的法力水晶 */
+  startMana?: [number | undefined, number | undefined];
+  /** 這一輪已擊敗的 Boss 數 */
+  dungeonWins?: number;
+  /** 後攻玩家不給幸運幣 */
+  noCoin?: boolean;
 }
 
 export type Chooser = (state: GameState, req: ChoiceRequest) => number;
@@ -311,6 +326,26 @@ export class Game {
       s.players[id].startedNoSpells = !s.players[id].deck.some((h) => getCard(h.cardId).type === 'SPELL');
     }
     for (const id of [0, 1] as PlayerId[]) {
+      const p = s.players[id];
+      p.passives = [...(o.passives?.[id] ?? [])];
+      if (o.dungeonWins !== undefined) p.dungeonWins = o.dungeonWins;
+      if (o.noCoin) p.noCoin = true;
+      const hp = o.heroHp?.[id];
+      if (hp) p.hero.hp = p.hero.maxHp = hp;
+      if (o.heroCards?.[id]) p.hero.cardId = o.heroCards[id]!;
+      const pw = o.heroPowerIds?.[id];
+      if (pw) p.heroPower = { id: pw, used: false, cost: POWER_INFO[pw]?.cost ?? 0 };
+      const sm = o.startMana?.[id];
+      if (sm) p.maxMana = sm - 1;
+      // 被動寶藏
+      if (p.passives.includes('LOOTA_800')) p.hero.hp = p.hero.maxHp = p.hero.maxHp * 2;
+      if (p.passives.includes('LOOTA_801')) p.maxMana += 1;
+      if (p.passives.includes('LOOTA_802')) {
+        const up = UPGRADED_POWER_IDS[p.heroClass];
+        p.heroPower = { id: up, used: false, cost: 1 };
+      }
+    }
+    for (const id of [0, 1] as PlayerId[]) {
       game.startOfGame(s.players[id]);
       shuffle(s, s.players[id].deck);
     }
@@ -322,6 +357,14 @@ export class Game {
     const second = opp(s.first);
     for (let i = 0; i < 3; i++) game.drawRaw(s.players[s.first]);
     for (let i = 0; i < 4; i++) game.drawRaw(s.players[second]);
+    for (const pl of s.players) {
+      // 小背包：開局多抽 2 張牌；神秘魔典：開局打出 3 個隨機奧秘
+      if (pl.passives?.includes('LOOTA_804')) for (let i = 0; i < 2; i++) game.drawRaw(pl);
+      if (pl.passives?.includes('LOOTA_833')) {
+        const secrets = shuffle(s, poolCards({ isSecret: true }, pl.heroClass, pl.heroClass).filter((c) => c.secret && c.collectible));
+        for (const c of secrets.slice(0, 3)) pl.secrets.push({ uid: game.uid(), cardId: c.id });
+      }
+    }
     game.log(null, `${s.players[s.first].name}先攻`);
     return game;
   }
@@ -589,6 +632,7 @@ export class Game {
     for (const p of this.s.players) {
       if (pid !== undefined && p.id !== pid) continue;
       for (const m of p.board) if (!m.silenced && !m.dead && m.hp > 0 && getCard(m.cardId).flags?.includes(flag)) n++;
+      for (const id of p.passives ?? []) if (PASSIVE_FLAGS[id]?.includes(flag)) n++;
     }
     return n;
   }
@@ -608,6 +652,8 @@ export class Game {
     let n = pl.board.reduce((sum, m) => sum + (m.silenced ? 0 : m.spellDamage + (m.hp < m.maxHp && getCard(m.cardId).flags?.includes('spellDamage2Damaged') ? 2 : 0)), 0);
     // 叢林梟獸：雙方都有法術傷害 +2
     n += 2 * this.flagCount('bothSpellDamage2');
+    // 魔導師長袍
+    if (pl.passives?.includes('LOOTA_825')) n += 3;
     // 星界特使：本回合下一張法術額外的法術傷害
     if (pl.nextSpellPower?.turn === this.s.turn) n += pl.nextSpellPower.amount;
     if (pl.spellDmgTurn?.turn === this.s.turn) n += pl.spellDmgTurn.n;
@@ -709,6 +755,14 @@ export class Game {
         for (const a of m.auras) if (a.scope === 'firstSpellDiscount') cost -= a.cost ?? 0;
       }
     }
+    // 地城探險：被動寶藏對消耗的影響
+    if (p.passives?.length) {
+      if (def.type === 'MINION' && p.passives.includes('LOOTA_803') && cost > 5) cost = 5;
+      if (def.type === 'WEAPON' && p.passives.includes('LOOTA_818')) cost = 1;
+      if (def.type === 'SPELL' && p.passives.includes('LOOTA_824')) cost -= 1;
+    }
+    if (def.type === 'MINION' && this.s.players[opp(p.id)].passives?.includes('LOOTA_831')) cost += 1;
+    if (def.type === 'MINION' && p.freeMinionsTurn === this.s.turn) cost = 0;
     if (def.costRule) {
       let n = 0;
       switch (def.costRule.per) {
@@ -1207,6 +1261,28 @@ export class Game {
   private courierBusy = false;
 
   /** 地點在某個條件下重新開啟 */
+  /** 地城探險：Boss 被動 — 打出手下之後 */
+  private *dungeonMinionPlayed(p: PlayerState, m: Minion): Gen {
+    for (const pl of this.s.players) {
+      const id = pl.heroPower.id;
+      if (id === 'LOOTA_BOSS_31p' && pl.id === p.id && this.alive(m) && !m.keywords.includes('CHARGE')) {
+        m.keywords.push('CHARGE');
+        m.sleeping = false;
+      }
+      if (id === 'LOOTA_BOSS_47p' && this.alive(m)) yield* this.damage(this.dmgSource(this.baseCtx(pl.id)), m.uid, 2);
+    }
+  }
+
+  /** 地城探險：Boss 被動 — 對手施放法術之後 */
+  private *dungeonSpellCast(caster: PlayerState): Gen {
+    const boss = this.s.players[opp(caster.id)];
+    if (boss.heroPower.id === 'LOOTA_BOSS_19p') yield* this.doSummon(this.baseCtx(boss.id), boss.id, 'LOE_018');
+    if (boss.heroPower.id === 'LOOTA_BOSS_33p') {
+      const [hc] = yield* this.draw(boss, 1);
+      if (hc) hc.costMod = 1 - getCard(hc.cardId).cost;
+    }
+  }
+
   private reopenLocations(p: PlayerState, kind: NonNullable<CardDef['reopen']>) {
     for (const l of p.locations ?? []) if (getCard(l.cardId).reopen === kind) l.cooldown = 0;
   }
@@ -1378,7 +1454,7 @@ export class Game {
     p.openingHand = p.hand.map((h) => h.cardId);
     if (s.players[0].mulliganDone && s.players[1].mulliganDone) {
       const second = s.players[opp(s.first)];
-      second.hand.push(this.newHandCard('GAME_005'));
+      if (!second.noCoin) second.hand.push(this.newHandCard('GAME_005'));
       s.phase = 'play';
       this.drive(this.wrap(this.startTurn(s.first)));
     }
@@ -2021,6 +2097,7 @@ export class Game {
       yield* this.emit({ k: 'summoned', player: bo.id, subject: m.uid });
       yield* this.emit({ k: 'cardPlayed', player: p.id, subject: m.uid, cardType: 'MINION', races: def.races, cardId: def.id, echo, outcast, rightmost, fromOpp });
       if (this.minion(m.uid) && bo === p) yield* this.checkSecrets(opp(p.id), 'enemyPlaysMinion', { it: { kind: 'char', uid: m.uid } });
+      yield* this.dungeonMinionPlayed(p, m);
     } else if (def.type === 'SPELL') {
       this.spellCountered = false;
       yield* this.checkSecrets(opp(p.id), 'enemyCastsSpell', { itCardId: def.id });
@@ -2077,6 +2154,7 @@ export class Game {
         }
       }
       p.spellsCastThisGame++;
+      yield* this.dungeonSpellCast(p);
       p.spellsThisTurn = (p.spellsThisTurn ?? 0) + 1;
       // 被奴役的奈斯比拉：在你施放邪能法術後重新開啟
       if (def.spellSchool === 'FEL') this.reopenLocations(p, 'fel');
@@ -2876,6 +2954,21 @@ export class Game {
   }
 
   makeMinion(owner: PlayerId, cardId: string, hand?: HandCard): Minion {
+    const m = this.makeMinionBase(owner, cardId, hand);
+    const ps = this.s.players[owner].passives;
+    if (ps?.length) {
+      // 奪來的旗幟：你的手下 +1/+1；隱形斗篷：你的手下具有隱形
+      if (ps.includes('LOOTA_828')) {
+        m.atkBuff += 1;
+        m.maxHp += 1;
+        m.hp += 1;
+      }
+      if (ps.includes('LOOTA_832') && !m.keywords.includes('STEALTH')) m.keywords.push('STEALTH');
+    }
+    return m;
+  }
+
+  private makeMinionBase(owner: PlayerId, cardId: string, hand?: HandCard): Minion {
     const parts = hand?.parts && cardId === ZOMBEAST_ID ? hand.parts : undefined;
     const ship = hand?.starship;
     const def = ship ? starshipDef(cardId, ship) : parts ? zombeastDef(parts) : getCard(cardId);
@@ -3561,6 +3654,8 @@ export class Game {
       if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
       this.revealSecret(owner, sec.uid);
       yield* this.runEffects(ab.effects, ctx);
+      // 機關房間：每揭露一個奧秘，召喚一個 3/3 的鋸刃
+      if (p.heroPower.id === 'LOOTA_BOSS_48p') yield* this.doSummon(ctx, owner, 'LOOTA_BOSS_48t');
       // 哈基亞：奧秘被觸發時，重新召喚存放在裡面的靈魂
       for (const soul of sec.souls ?? []) yield* this.doSummon(ctx, owner, soul);
       // 莊園經理歐萊恩：友方奧秘被揭露後，施放另一個法師奧秘
@@ -13673,6 +13768,127 @@ export class Game {
           yield* this.discarded(me, hc);
         }
         yield* this.draw(me, 2);
+        break;
+      }
+      case 'dunDiscardOpp':
+        for (let i = 0; i < (args.n as number) && foe.hand.length; i++) {
+          const [c] = foe.hand.splice(randomInt(s, foe.hand.length), 1);
+          yield* this.discarded(foe, c);
+        }
+        break;
+      case 'dunFreeMinions':
+        me.freeMinionsTurn = s.turn;
+        break;
+      case 'dunWish': {
+        const pool = this.randomPool({ type: 'MINION', rarity: 'LEGENDARY', anyClass: true }, me.id, false);
+        while (me.board.length < MAX_BOARD) {
+          const c = pick(s, pool);
+          if (!c || !(yield* this.doSummon(ctx, me.id, c.id))) break;
+        }
+        me.hero.hp = me.hero.maxHp;
+        break;
+      }
+      case 'dunPortal': {
+        const cost = ctx.itCardId ? getCard(ctx.itCardId).cost : 0;
+        const c = pick(s, this.randomPool({ type: 'MINION', cost: Math.min(10, cost), anyClass: true }, me.id, false));
+        if (c) yield* this.doSummon(ctx, me.id, c.id);
+        break;
+      }
+      case 'dunRoast': {
+        for (let i = 0; i < 60 && !this.over; i++) {
+          const list = [...me.board, ...foe.board].filter((m) => this.alive(m)).map((m) => m.uid);
+          list.push(me.hero.uid, foe.hero.uid);
+          const uid = pick(s, list)!;
+          yield* this.damage(this.dmgSource(ctx), uid, 10 + this.spellDamage(me.id));
+          yield* this.processDeaths();
+          if (me.hero.hp <= 0 || foe.hero.hp <= 0) break;
+        }
+        break;
+      }
+      case 'dunFillHand':
+        while (me.hand.length < MAX_HAND) {
+          const [hc] = yield* this.draw(me, 1);
+          if (!hc || this.over) break;
+        }
+        break;
+      case 'dunWinsBuff': {
+        const n = me.dungeonWins ?? 0;
+        if (self && n > 0) {
+          self.atkBuff += n;
+          self.maxHp += n;
+          self.hp += n;
+        }
+        break;
+      }
+      case 'dunMug':
+        for (let i = 0; i < (args.n as number) && foe.hand.length && me.hand.length < MAX_HAND; i++) {
+          const [c] = foe.hand.splice(randomInt(s, foe.hand.length), 1);
+          me.hand.push(c);
+        }
+        break;
+      case 'dunCoins':
+        while (me.hand.length < MAX_HAND) this.addToHand(me, 'GAME_005');
+        break;
+      case 'dunMask': {
+        const t = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!t) break;
+        for (const h of me.hand) if (getCard(h.cardId).type === 'MINION') h.cardId = t.cardId;
+        break;
+      }
+      case 'dunWaxCopy': {
+        const t = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!t) break;
+        const m = yield* this.doSummon(ctx, me.id, t.cardId);
+        if (m && args.oneOne) {
+          m.baseAtk = 1;
+          m.baseHp = 1;
+          m.atkBuff = 0;
+          m.hp = m.maxHp = 1;
+        }
+        break;
+      }
+      case 'dunEvolve': {
+        const t = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!t) break;
+        const c = pick(s, this.randomPool({ type: 'MINION', cost: Math.min(10, getCard(t.cardId).cost + (args.delta as number)), anyClass: true }, me.id, false));
+        if (c) this.transform(t.uid, c.id);
+        break;
+      }
+      case 'dunDestroyHighest': {
+        const list = [...me.board, ...foe.board].filter((m) => this.alive(m));
+        const top = Math.max(-1, ...list.map((m) => this.atkOf(m)));
+        const m = pick(s, list.filter((x) => this.atkOf(x) === top));
+        if (m) m.dead = true;
+        break;
+      }
+      case 'dunFromDeck': {
+        const hc = pick(s, me.deck.filter((h) => getCard(h.cardId).type === 'MINION'));
+        if (!hc || me.board.length >= MAX_BOARD) break;
+        me.deck.splice(me.deck.indexOf(hc), 1);
+        yield* this.doSummon(ctx, me.id, hc.cardId);
+        break;
+      }
+      case 'dunHandDiscount':
+        for (const h of me.hand) h.costMod -= args.amount as number;
+        break;
+      case 'dunDevour':
+        foe.deck.splice(Math.max(0, foe.deck.length - 2), 2);
+        break;
+      case 'dunSecret':
+        if (me.secrets.length < MAX_SECRETS && !me.secrets.some((x) => x.cardId === args.card)) me.secrets.push({ uid: this.uid(), cardId: args.card as string });
+        break;
+      case 'dunRecruitBoth':
+        for (const pl of [me, foe]) {
+          if (pl.board.length >= MAX_BOARD) continue;
+          const hc = pick(s, pl.deck.filter((h) => getCard(h.cardId).type === 'MINION'));
+          if (!hc) continue;
+          pl.deck.splice(pl.deck.indexOf(hc), 1);
+          yield* this.doSummon(ctx, pl.id, hc.cardId);
+        }
+        break;
+      case 'dunTreasure': {
+        const id = pick(s, (args.pool as string[]).filter((x) => hasCard(x)));
+        if (id) this.addToHand(me, id);
         break;
       }
       case 'coOnlyPlay':

@@ -34,6 +34,9 @@ for (const [id, patch] of Object.entries(OVERRIDES)) {
 }
 for (const c of CUSTOM_CARDS) CARDS[c.id] = { ...c, custom: true };
 
+/** 所有卡（含不可收藏的衍生卡） */
+export const ALL_CARDS = (): CardDef[] => Object.values(CARDS);
+
 export const HEROES = raw.heroes as Record<Exclude<CardClass, 'NEUTRAL'>, HeroInfo>;
 
 /** 基本職業以外的英雄能力的名稱、敘述與消耗（以卡牌 ID 為 key） */

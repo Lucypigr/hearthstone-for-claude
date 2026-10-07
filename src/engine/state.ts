@@ -291,6 +291,14 @@ export interface PlayerState {
   accusations?: { kind: 'arson' | 'murder' | 'theft'; uid: number }[];
   /** 這個回合只能打出最左與最右的牌 */
   edgeOnlyTurn?: number;
+  /** 地城探險：被動寶藏 / Boss 被動（卡牌 id 或英雄能力 id） */
+  passives?: string[];
+  /** 地城探險：這一輪已經擊敗的 Boss 數 */
+  dungeonWins?: number;
+  /** 迅捷之靴：這個回合你的手下消耗 (0) */
+  freeMinionsTurn?: number;
+  /** 這名玩家（後攻時）不會得到幸運幣 */
+  noCoin?: boolean;
   /** 這個回合只能打出這種類型的牌（古神降臨 / 泰坦降臨） */
   onlyPlay?: { turn: number; type: 'MINION' | 'SPELL' };
   /** 崩塌之星的傷害 */

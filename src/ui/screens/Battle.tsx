@@ -10,6 +10,7 @@ import { RUNE_NAMES } from '../../game/decks';
 import { DECK_KIND_NAMES, recordLadderMatch, type LadderChange } from '../../game/ladder';
 import { makeAiDeck } from '../../game/opponents';
 import { recordMatch } from '../../game/profile';
+import { finishFight, gameOptions, newDungeonState } from '../../game/dungeon';
 import type { BattleConfig } from '../App';
 import { CLASS_COLORS, formatCardText } from '../cardText';
 import { Art, CardBack, CardView } from '../components/Card';
@@ -45,14 +46,16 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const brain = useMemo(() => (ladder ? new AiBrain(ladder.persona) : null), [ladder]);
   const [error] = useState(() => {
     const deck = getProfile().decks.find((d) => d.id === config.deckId);
-    if (!deck) return '找不到套牌';
+    if (!deck && !config.dungeon) return '找不到套牌';
     const aiDeck = ladder ? ladder.deck : makeAiDeck(config.oppClass, config.difficulty, Math.floor(Math.random() * 1e9));
-    const g = Game.create({
-      decks: [deck.cards, aiDeck],
-      classes: [deck.heroClass, config.oppClass],
-      names: ['你', ladder ? ladder.name : HEROES[config.oppClass].name],
-      ai: [false, true],
-    });
+    const g = config.dungeon
+      ? Game.create(gameOptions(config.dungeon))
+      : Game.create({
+          decks: [deck!.cards, aiDeck],
+          classes: [deck!.heroClass, config.oppClass],
+          names: ['你', ladder ? ladder.name : HEROES[config.oppClass].name],
+          ai: [false, true],
+        });
     g.apply({ type: 'mulligan', player: AI, replace: brain ? brain.mulligan(g, AI) : aiMulligan(g, AI, config.difficulty) });
     gameRef.current = g;
     return '';
@@ -256,6 +259,12 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setReward({ gold: r.gold, daily: r.dailyBonus, result, change: r.change });
       const conceded = s.log.some((l) => l.player === AI && l.text.endsWith('投降了'));
       if (brain && !conceded) aiSay(brain.react(result === 'win' ? 'lose' : 'win'), 600);
+      return;
+    }
+    if (config.dungeon) {
+      // 地城探險：更新這一輪（獎勵在地城畫面領取）
+      setProfile((pr) => ({ ...pr, dungeon: { ...(pr.dungeon ?? newDungeonState()), run: finishFight(config.dungeon!, result === 'win') } }));
+      setReward({ gold: 0, daily: 0, result });
       return;
     }
     const r = recordMatch(getProfile(), result, config.difficulty, s.players[ME].heroClass, config.oppClass);
@@ -734,6 +743,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             <>
               🏆 天梯・{foe.name}（{ladder.rank.label}・{CLASS_NAMES[foe.heroClass]}）
             </>
+          ) : config.dungeon ? (
+            <>
+              🕯 地城探險・第 {config.dungeon.wins + 1} 關・{foe.name}
+              {(me.passives ?? []).length > 0 && <>・寶藏：{(me.passives ?? []).map((id) => getCard(id).name).join('、')}</>}
+            </>
           ) : (
             <>
               對戰 {CLASS_NAMES[foe.heroClass]}（{DIFFICULTY_NAMES[config.difficulty]}）
@@ -1125,15 +1139,18 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 對手：{ladder.name}・{ladder.deckName}（{DECK_KIND_NAMES[ladder.deckKind]}）
               </p>
             )}
-            {reward && (
+            {reward && config.dungeon && (
+              <p className="reward-line">{s.winner === ME ? '選擇你的獎勵，繼續深入地城！' : '這一輪探險結束了。'}</p>
+            )}
+            {reward && !config.dungeon && (
               <p className="reward-line">
                 獲得 <b>🪙 {reward.gold}</b> 金幣{reward.daily > 0 && <>（含每日首勝 {reward.daily}）</>}
               </p>
             )}
-            <p className="muted">目前金幣：{profile.gold}</p>
+            {!config.dungeon && <p className="muted">目前金幣：{profile.gold}</p>}
             <div className="row">
               <button className="btn big primary" onClick={onRematch}>
-                {ladder ? '🔍 繼續配對' : '再戰一場'}
+                {config.dungeon ? '繼續' : ladder ? '🔍 繼續配對' : '再戰一場'}
               </button>
               <button className="btn big" onClick={onExit}>
                 {ladder ? '返回天梯' : '返回主選單'}
