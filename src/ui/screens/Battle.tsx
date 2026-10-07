@@ -382,7 +382,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   };
 
   /** 拖出瞄準箭頭：放開時指在合法目標上就執行，否則取消 */
-  const beginAim = (from: { x: number; y: number }, targets: number[], onHit: (uid: number) => void) => {
+  const beginAim = (from: { x: number; y: number }, targets: number[], onHit: (uid: number) => void, onEnd?: () => void) => {
     const set = new Set(targets);
     const hitAt = (x: number, y: number) => {
       for (const el of document.elementsFromPoint(x, y)) {
@@ -401,6 +401,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       setAim(null);
+      onEnd?.();
       suppressClick.current = true;
       window.setTimeout(() => (suppressClick.current = false), 50);
       const t = ev.type === 'pointerup' ? hitAt(ev.clientX, ev.clientY) : null;
@@ -415,8 +416,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const hc = me.hand.find((h) => h.uid === handUid);
     if (!hc) return;
-    const slotEl = e.currentTarget as HTMLElement;
-    const st = { uid: handUid, sx: e.clientX, sy: e.clientY, dragging: false, long: false, timer: 0 };
+    const st: { uid: number; sx: number; sy: number; dragging: boolean; long: boolean; timer: number; aim?: number[] } = { uid: handUid, sx: e.clientX, sy: e.clientY, dragging: false, long: false, timer: 0 };
     // 手機：長按放大查看卡牌
     if (e.pointerType !== 'mouse') {
       st.timer = window.setTimeout(() => {
@@ -440,16 +440,20 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         const req = def.type !== 'MINION' && !def.chooseOne ? g.playTargetReq(handUid) : null;
         if (req) {
           const targets = g.validTargets(req, ME, g.cardIsSpell(handUid));
-          if (targets.length > 0) {
-            detach();
-            const r = slotEl.getBoundingClientRect();
-            beginAim({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, targets, (t) => act({ type: 'play', handUid, target: t }));
-            return;
-          }
+          if (targets.length > 0) st.aim = targets;
         }
         st.dragging = true;
       }
       setDrag({ handUid, x: ev.clientX, y: ev.clientY });
+      // 需要目標的牌：半透明的牌先跟著手指，拖出手牌區後固定在那裡並拉出瞄準箭頭；在手牌區放開就取消
+      if (st.aim) {
+        const handTop = battleRef.current?.querySelector('.my-hand')?.getBoundingClientRect().top ?? Infinity;
+        if (ev.clientY < handTop - 4) {
+          const targets = st.aim;
+          detach();
+          beginAim({ x: ev.clientX, y: ev.clientY }, targets, (t) => act({ type: 'play', handUid, target: t }), () => setDrag(null));
+        }
+      }
     };
     // iOS：必須在 touchmove 阻止預設行為，瀏覽器才不會接手手勢（捲動 / 下拉）
     const block = (ev: TouchEvent) => ev.preventDefault();
