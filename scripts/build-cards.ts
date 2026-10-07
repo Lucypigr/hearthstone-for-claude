@@ -261,6 +261,9 @@ async function main() {
     if (r.tags.CASTS_WHEN_DRAWN) def.castsWhenDrawn = true;
     if (r.tags.STARSHIP) def.starship = true;
     if (r.tags.TERRAN) def.terran = true;
+    if (r.tags.LIBRAM) def.libram = true;
+    if (r.tags.ZERG) def.zerg = true;
+    if (r.tags.PROTOSS) def.protoss = true;
     // 死亡騎士的符文需求
     if (r.tags.COST_BLOOD || r.tags.COST_FROST || r.tags.COST_UNHOLY) {
       def.runes = {};

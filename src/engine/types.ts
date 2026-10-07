@@ -83,6 +83,8 @@ export interface Filter {
   /** 星艦或星艦組件 */
   starship?: boolean;
   terran?: boolean;
+  protoss?: boolean;
+  zerg?: boolean;
   /** 排除某種族（例如「對惡魔以外的所有手下」） */
   notRace?: Race;
   /** 傳說手下 */
@@ -198,6 +200,14 @@ export type DynAmount =
   | 'remainingMana'
   /** 預兆的力量倍率：預兆 0~1 次 = 1，2~3 次 = 2，4 次以上 = 4 */
   | 'heraldPower'
+  /** 本場對戰中你抽的 / 打出的 / 被消滅的牌數（無盡星空） */
+  | 'cardEvents'
+  /** 本場對戰中你發現的牌數 */
+  | 'discoveredThisGame'
+  /** 你控制的蟲族手下數 */
+  | 'zergOnBoard'
+  /** 本場對戰中你施放的神族法術數 */
+  | 'protossSpells'
   /** 你本場對戰中預兆的次數 */
   | 'heralds'
   /** 你本回合用法術造成的傷害 */
@@ -233,6 +243,9 @@ export interface Pool {
   hasDeathrattle?: boolean;
   hasBattlecry?: boolean;
   starshipPiece?: boolean;
+  libram?: boolean;
+  zerg?: boolean;
+  protoss?: boolean;
   /** 需要某種死亡騎士符文 */
   rune?: 'blood' | 'frost' | 'unholy';
   /** 來自另一個職業（不是你的職業，也不是中立） */
@@ -277,6 +290,16 @@ export type Condition =
   | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean; hp?: number; frozen?: boolean }
   | { c: 'combo' }
   | { c: 'outcast' }
+  /** 這張牌現在的消耗是 (0) */
+  | { c: 'selfCostZero' }
+  /** 本回合你打出過一張與這張牌相鄰的牌 */
+  | { c: 'adjPlayed' }
+  /** 本回合你發現過牌 */
+  | { c: 'discoveredThisTurn' }
+  /** 本場對戰中你發射過星艦 */
+  | { c: 'launchedShip' }
+  /** 你控制一個地點 */
+  | { c: 'hasLocation' }
   | { c: 'heroAttacked' }
   | { c: 'handSize'; op: '>=' | '<='; n: number; side?: 'enemy' }
   | { c: 'maxMana'; n: number }
@@ -642,6 +665,8 @@ export interface Ability {
   cond?: Condition;
   /** 只觸發一次（例如法術迸發） */
   once?: boolean;
+  /** 這個法術系別的法術不會用掉法術迸發 */
+  keepOnce?: string;
 }
 
 export interface Aura {
@@ -754,6 +779,9 @@ export interface PendingDiscount {
   combo?: boolean;
   /** 只適用於暫時的牌 */
   temporary?: boolean;
+  protoss?: boolean;
+  zerg?: boolean;
+  libram?: boolean;
   /** 只適用於有戰吼的手下 */
   battlecry?: boolean;
   /** 使用這個折扣的牌打出時額外獲得的關鍵字（例如聖盾） */
@@ -858,6 +886,12 @@ export interface CardDef {
   starship?: boolean;
   /** 星海爭霸：人類（Terran） */
   terran?: boolean;
+  /** 聖契 / 蟲族 / 星靈（神族）*/
+  libram?: boolean;
+  zerg?: boolean;
+  protoss?: boolean;
+  /** 手牌中相鄰的牌被打出時，這張牌消耗 -1（赤紅巨星） */
+  adjDiscount?: boolean;
   /** 發射過星艦後，手牌與牌堆中的這張卡會變形成另一張卡 */
   launchTransform?: string;
   /** 雙生法術：施放後加入手牌的複製（沒有雙生法術） */
@@ -1019,6 +1053,13 @@ export type MinionFlag =
   | 'heroElusive'
   | 'elusiveOnOppTurn'
   | 'immuneAttacking'
+  | 'talgath'
+  | 'anchorite'
+  | 'murmur'
+  | 'auchenai'
+  | 'lumia'
+  | 'mutalisk'
+  | 'rangari'
   | 'doubleBattlecries'
   | 'keepBothRewinds'
   | 'infuseInDeck'

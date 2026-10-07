@@ -109,6 +109,9 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.past && isStandardCard(c)) return false;
     if (pool.rewind && !c.rewind) return false;
     if (pool.colossal && !c.colossal) return false;
+    if (pool.libram && !c.libram) return false;
+    if (pool.zerg && !c.zerg) return false;
+    if (pool.protoss && !c.protoss) return false;
     if (pool.multiRace && (c.races?.length ?? 0) < 2) return false;
     if (pool.outcast && c.outcastCost === undefined && !JSON.stringify(c.abilities ?? []).includes('"c":"outcast"')) return false;
     if (pool.attack !== undefined && (c.type !== 'MINION' || c.attack !== pool.attack)) return false;
