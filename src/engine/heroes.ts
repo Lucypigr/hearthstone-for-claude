@@ -1,5 +1,9 @@
 // 各職業的基本英雄能力
-import type { CardClass, HeroPowerSpec } from './types';
+import { ACTIVE_TREASURES } from './dungeon';
+import type { CardClass, HeroPowerSpec, TargetReq } from './types';
+
+const DUN_MINION: TargetReq = { filter: { type: 'minion', side: 'any' } };
+const DUN_FRIENDLY_MINION: TargetReq = { filter: { type: 'minion', side: 'friendly' } };
 
 export const HERO_POWERS: Record<Exclude<CardClass, 'NEUTRAL'>, HeroPowerSpec> = {
   MAGE: {
@@ -102,6 +106,50 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   EDR_449p: { effects: [{ e: 'custom', fn: 'coImbued', args: { kind: 'moon' } }] },
   EDR_448p: { effects: [{ e: 'custom', fn: 'coImbued', args: { kind: 'wind' } }], target: { filter: { type: 'minion', side: 'friendly' } } },
   // 蘇拉斯的故事：對一個隨機敵人造成 8 點傷害（用兩次後換回）
+  // ------------------------------------------------------------ 地城探險 Boss 英雄能力
+  LOOTA_BOSS_04p: { target: DUN_MINION, needsBoardSpace: true, effects: [{ e: 'custom', fn: 'dunWaxCopy', args: { oneOne: true } }] },
+  LOOTA_BOSS_27p: { target: DUN_MINION, needsBoardSpace: true, effects: [{ e: 'custom', fn: 'dunWaxCopy', args: { oneOne: false } }] },
+  LOOTA_BOSS_05p: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 2 }, amount: 1 }] },
+  LOOTA_BOSS_28p: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 3 }, amount: 2 }] },
+  LOOTA_BOSS_06p: { target: DUN_MINION, effects: [{ e: 'custom', fn: 'dunEvolve', args: { delta: 1 } }] },
+  LOOTA_BOSS_29p: { target: DUN_MINION, effects: [{ e: 'custom', fn: 'dunEvolve', args: { delta: 3 } }] },
+  LOOTA_BOSS_09p: { target: DUN_MINION, effects: [{ e: 'freeze', target: { t: 'chosen' } }] },
+  LOOTA_BOSS_10p: { effects: [{ e: 'heal', target: { t: 'all', filter: { type: 'minion', side: 'any' } }, amount: 2 }] },
+  LOOTA_BOSS_11p: { target: DUN_FRIENDLY_MINION, effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 1 }, { e: 'buff', target: { t: 'chosen' }, atk: 2, hp: 0 }] },
+  LOOTA_BOSS_30p: { target: DUN_FRIENDLY_MINION, effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 1 }, { e: 'buff', target: { t: 'chosen' }, atk: 5, hp: 0 }] },
+  LOOTA_BOSS_12p: { target: DUN_MINION, effects: [{ e: 'buff', target: { t: 'chosen' }, atk: 0, hp: 0, keywords: ['CHARGE'] }] },
+  LOOTA_BOSS_13p: { target: DUN_FRIENDLY_MINION, effects: [{ e: 'returnToHand', target: { t: 'chosen' } }] },
+  LOOTA_BOSS_15p: { effects: [{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } }, atk: 0, hp: 0, keywords: ['DIVINE_SHIELD'] }] },
+  LOOTA_BOSS_16p: { passive: true, effects: [] },
+  LOOTA_BOSS_17p: { passive: true, effects: [] },
+  LOOTA_BOSS_38p: { passive: true, effects: [] },
+  LOOTA_BOSS_19p: { passive: true, effects: [] },
+  LOOTA_BOSS_31p: { passive: true, effects: [] },
+  LOOTA_BOSS_33p: { passive: true, effects: [] },
+  LOOTA_BOSS_47p: { passive: true, effects: [] },
+  LOOTA_BOSS_48p: { passive: true, effects: [] },
+  LOOTA_BOSS_18p: { needsBoardSpace: true, effects: [{ e: 'summon', card: 'LOOTA_BOSS_18t', count: 2, who: 'self' }] },
+  LOOTA_BOSS_20p: { effects: [{ e: 'silence', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } } }] },
+  LOOTA_BOSS_21p: { effects: [{ e: 'custom', fn: 'dunDestroyHighest' }] },
+  LOOTA_BOSS_22p: { needsBoardSpace: true, effects: [{ e: 'custom', fn: 'dunFromDeck' }] },
+  LOOTA_BOSS_23p: { effects: [{ e: 'custom', fn: 'dunHandDiscount', args: { amount: 1 } }] },
+  LOOTA_BOSS_24p: { effects: [{ e: 'handBuff', atk: 1, hp: 1, scope: 'all' }] },
+  LOOTA_BOSS_34p: { passive: false, effects: [{ e: 'custom', fn: 'dunDevour' }] },
+  LOOTA_BOSS_35p: { effects: [{ e: 'custom', fn: 'dunSecret', args: { card: 'EX1_287' } }] },
+  LOOTA_BOSS_36p: { needsBoardSpace: true, effects: [{ e: 'summon', card: 'DUN_SPORE', count: 1, who: 'self' }] },
+  LOOTA_BOSS_37p: { effects: [{ e: 'addCard', card: 'EX1_277', count: 1, who: 'self' }] },
+  LOOTA_BOSS_39p: { effects: [{ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, amount: 1 }] },
+  LOOTA_BOSS_40p: { target: DUN_MINION, effects: [{ e: 'buff', target: { t: 'chosen' }, atk: -1, hp: 0 }] },
+  LOOTA_BOSS_41p: { effects: [{ e: 'custom', fn: 'dunRecruitBoth' }] },
+  LOOTA_BOSS_42p: { effects: [{ e: 'armor', amount: 3 }] },
+  LOOTA_BOSS_43p: { effects: [{ e: 'draw', count: 3, who: 'both' }] },
+  LOOTA_BOSS_44p: { target: { filter: { type: 'character', side: 'any' } }, effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 2 }] },
+  LOOTA_BOSS_45p: { effects: [{ e: 'mana', kind: 'temp', amount: 1 }] },
+  LOOTA_BOSS_46p: { effects: [{ e: 'buff', target: { t: 'all', filter: { type: 'minion', side: 'friendly' } }, atk: 1, hp: 1 }] },
+  LOOTA_BOSS_49p: { needsBoardSpace: true, effects: [{ e: 'summon', card: 'LOOTA_BOSS_49t', count: 1, who: 'self' }] },
+  LOOTA_BOSS_51p: { target: { filter: { type: 'minion', side: 'enemy', maxAttack: 2 } }, effects: [{ e: 'steal', target: { t: 'chosen' } }] },
+  LOOTA_BOSS_54p: { effects: [] },
+  LOOTA_BOSS_99p: { effects: [{ e: 'custom', fn: 'dunTreasure', args: { pool: ACTIVE_TREASURES } }] },
   JAIL_EVENT_101hp: { effects: [{ e: 'custom', fn: 'coCollapse' }] },
   TLC_632t: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },

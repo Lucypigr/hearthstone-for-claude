@@ -5,6 +5,8 @@ import type { Difficulty } from '../engine/ai';
 import { CLASS_NAMES } from '../engine/heroes';
 import type { Rarity } from '../engine/types';
 import { buildDeck, maxCopies, type Deck, type HeroClass } from './decks';
+import { DUNGEON_BOSSES } from '../cards/dungeonBosses';
+import { newDungeonState, type DungeonState } from './dungeon';
 import { sanitizeLadder, type LadderState } from './ladder';
 import {
   CARDS_PER_PACK,
@@ -49,6 +51,8 @@ export interface Profile {
   history: MatchRecord[];
   settings: { aiSpeed: 'slow' | 'normal' | 'fast' };
   ladder?: LadderState;
+  /** 地城探險（狗頭人與地下城） */
+  dungeon?: DungeonState;
 }
 
 export type Rand = () => number;
@@ -84,6 +88,12 @@ export function newProfile(): Profile {
 }
 
 /** 讀取存檔並修正不合法的資料（例如卡牌資料更新後消失的卡） */
+function sanitizeDungeon(d: DungeonState): DungeonState {
+  const base = newDungeonState();
+  const run = d.run && Array.isArray(d.run.deck) && DUNGEON_BOSSES[d.run.boss] ? { ...d.run, deck: d.run.deck.filter((id) => hasCard(id)), passives: (d.run.passives ?? []).filter((id) => hasCard(id)) } : null;
+  return { run, best: Math.max(0, Number(d.best) || 0), clears: Math.max(0, Number(d.clears) || 0), runs: Math.max(0, Number(d.runs) || base.runs) };
+}
+
 export function sanitizeProfile(raw: unknown): Profile {
   const base = newProfile();
   if (!raw || typeof raw !== 'object') return base;
@@ -108,6 +118,7 @@ export function sanitizeProfile(raw: unknown): Profile {
     history: (p.history ?? []).slice(-30),
     settings: { ...base.settings, ...(p.settings ?? {}) },
     ladder: p.ladder ? sanitizeLadder(p.ladder) : undefined,
+    dungeon: p.dungeon ? sanitizeDungeon(p.dungeon) : undefined,
   };
 }
 

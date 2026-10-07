@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { Difficulty } from '../engine/ai';
 import type { HeroClass } from '../game/decks';
+import type { DungeonRun } from '../game/dungeon';
 import type { LadderOpponent } from '../game/ladder';
 import { useProfile } from './store';
 import { Battle } from './screens/Battle';
 import { Collection } from './screens/Collection';
+import { Dungeon } from './screens/Dungeon';
 import { Home } from './screens/Home';
 import { Ladder } from './screens/Ladder';
 import { PackOpen } from './screens/PackOpen';
@@ -12,7 +14,7 @@ import { PlaySetup } from './screens/PlaySetup';
 import { Settings } from './screens/Settings';
 import { Shop } from './screens/Shop';
 
-export type Screen = 'home' | 'play' | 'ladder' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings';
+export type Screen = 'home' | 'play' | 'ladder' | 'dungeon' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings';
 
 export interface BattleConfig {
   deckId: string;
@@ -20,6 +22,8 @@ export interface BattleConfig {
   oppClass: HeroClass;
   /** 天梯配對到的對手 */
   ladder?: LadderOpponent;
+  /** 地城探險：這一場使用的 Run */
+  dungeon?: DungeonRun;
 }
 
 export function App() {
@@ -38,9 +42,10 @@ export function App() {
         config={battle}
         onExit={() => {
           setAutoQueue(null);
-          setScreen(battle.ladder ? 'ladder' : 'home');
+          setScreen(battle.ladder ? 'ladder' : battle.dungeon ? 'dungeon' : 'home');
         }}
         onRematch={() => {
+          if (battle.dungeon) return setScreen('dungeon');
           if (!battle.ladder) return setBattleKey((k) => k + 1);
           setAutoQueue(battle.deckId);
           setScreen('ladder');
@@ -61,6 +66,9 @@ export function App() {
           </button>
           <button className={screen === 'play' ? 'active' : ''} onClick={() => setScreen('play')}>
             練習
+          </button>
+          <button className={screen === 'dungeon' ? 'active' : ''} onClick={() => setScreen('dungeon')}>
+            地城探險
           </button>
           <button className={screen === 'collection' ? 'active' : ''} onClick={() => setScreen('collection')}>
             收藏與套牌
@@ -106,6 +114,15 @@ export function App() {
               setScreen('battle');
             }}
             go={setScreen}
+          />
+        )}
+        {screen === 'dungeon' && (
+          <Dungeon
+            onStart={(cfg) => {
+              setBattle(cfg);
+              setBattleKey((k) => k + 1);
+              setScreen('battle');
+            }}
           />
         )}
         {screen === 'collection' && <Collection />}

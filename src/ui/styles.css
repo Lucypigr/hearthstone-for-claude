@@ -3281,3 +3281,63 @@ body {
   text-align: center;
   padding: 2px;
 }
+
+/* 地城探險 */
+.dungeon {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 4px 40px;
+}
+
+.dungeon-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--muted, #c9b790);
+}
+
+.dungeon-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dungeon-boss {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.dungeon-options {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.dungeon-option {
+  background: #2b2115;
+  border: 2px solid #6b5a3a;
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  color: inherit;
+  max-width: 420px;
+  text-align: center;
+}
+
+.dungeon-option:hover {
+  border-color: #ffd34e;
+  box-shadow: 0 0 14px #ffd34e66;
+}
+
+.dungeon-option-cards {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}

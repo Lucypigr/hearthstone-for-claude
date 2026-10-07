@@ -8,6 +8,7 @@ import { parseCardText, Unsupported, type ParseEnv, type ParsedCard, type TokenQ
 import type { CardClass, CardDef, CardType, ChooseOneOption, Keyword, Race, Rarity } from '../src/engine/types';
 import { OVERRIDES } from '../src/cards/overrides';
 import { EXTRA_POWERS } from '../src/engine/heroes';
+import { DUNGEON_EXTRA_IDS } from '../src/cards/dungeon';
 
 const CACHE = '.cache/CardDefs.xml';
 const OUT = 'src/data/cards.json';
@@ -428,6 +429,7 @@ async function main() {
   extra.push('ULD_326t', 'ULD_711t');
   // 各職業的星艦本體
   extra.push('GDB_100t2', 'GDB_100t4', 'GDB_100t5', 'GDB_100t6', 'GDB_100t7', 'GDB_100t8', 'GDB_100t9', 'SC_999t');
+  extra.push(...DUNGEON_EXTRA_IDS);
   for (const id of extra) {
     const def = buildToken(id);
     if (!def) throw new Error(`必要衍生卡 ${id} 解析失敗`);

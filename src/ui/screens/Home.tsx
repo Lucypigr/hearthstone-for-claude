@@ -25,6 +25,9 @@ export function Home({ go }: { go: (s: Screen) => void }) {
           <button className="btn big" onClick={() => go('play')}>
             ⚔️ 練習對戰
           </button>
+          <button className="btn big" onClick={() => go('dungeon')}>
+            🕯 地城探險
+          </button>
           <button className="btn big" onClick={() => go('collection')}>
             📚 收藏與套牌
           </button>

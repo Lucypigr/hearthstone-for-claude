@@ -72,6 +72,7 @@ export const CUSTOM_CARDS: CardDef[] = [
     collectible: false,
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'buildABeast' }, { e: 'costMod', amount: -3, scope: 'it' }] }],
   },
+  token('DUN_SPORE', '劇毒孢子', 'Deadly Spore', 1, 1, { set: 1004, keywords: ['POISONOUS'], text: '<b>劇毒</b>' }),
   token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),
   token('TLC_T_IMP', '小鬼', 'Imp', 3, 2, { races: ['DEMON'], set: 1952 }),
   token('TLC_T_RAPTOR', '迅猛龍', 'Raptor', 3, 2, {
