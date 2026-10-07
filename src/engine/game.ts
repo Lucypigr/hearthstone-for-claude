@@ -692,6 +692,7 @@ export class Game {
   costOf(p: PlayerState, hc: HandCard): number {
     const def = this.handDef(hc);
     let cost = (def.costIf && this.evalCond(def.costIf.cond, { ...this.baseCtx(p.id), playedCard: hc }, hc.uid) ? def.costIf.cost : def.cost) + hc.costMod;
+    if (hc.costTurn?.turn === this.s.turn) cost -= hc.costTurn.amount;
     // 碧藍女王辛德拉苟薩：你控制另一條龍時，奧術法術消耗減少 (2)
     if (def.type === 'SPELL' && def.spellSchool === 'ARCANE' && this.dragonLord(p, 'sindragosaArcane')) cost -= 2;
     // 緩慢動作：這個回合你的卡牌消耗增加
@@ -841,6 +842,7 @@ export class Game {
     }
     if (hc.lockedUntil !== undefined && hc.lockedUntil >= s.turn) return { ok: false, reason: '這張牌這個回合不能打出' };
     if (hc.lockPlayedAt !== undefined && (p.playedCards?.length ?? 0) <= hc.lockPlayedAt) return { ok: false, reason: '要先打出另一張牌才能打出這張牌' };
+    if (p.onlyPlay?.turn === s.turn && def.type !== p.onlyPlay.type) return { ok: false, reason: p.onlyPlay.type === 'MINION' ? '這個回合只能打出手下牌' : '這個回合只能打出法術牌' };
     if (p.edgeOnlyTurn === s.turn && p.hand.indexOf(hc) !== 0 && p.hand.indexOf(hc) !== p.hand.length - 1) return { ok: false, reason: '這個回合只能打出最左與最右的牌' };
     if (!this.canAfford(p, hc)) {
       const kind = this.costKind(p, hc);
@@ -1258,6 +1260,13 @@ export class Game {
           const pool = poolCards({}, p.heroClass, p.heroClass).filter((c) => c.type !== 'HERO' && !c.startOfGame && (c.cardClass === 'NEUTRAL' || cardClasses(c).includes(p.heroClass)));
           p.deck = Array.from({ length: 30 }, () => this.newHandCard(pick(this.s, pool)!.id)).map((h) => ({ ...h, starting: true }));
           return;
+        }
+        case 'dragonSoul': {
+          // 破碎的龍魂：分裂成 6 個相鄰的龍族精華
+          const i = p.deck.indexOf(hc);
+          const parts = ['CATA_EVENT_110t2', 'CATA_EVENT_110t3', 'CATA_EVENT_110t4', 'CATA_EVENT_110t5', 'CATA_EVENT_110t6', 'CATA_EVENT_110t7'].map((id) => ({ ...this.newHandCard(id), starting: true }));
+          p.deck.splice(i, 1, ...parts);
+          break;
         }
         case 'genn':
           // 吉恩‧葛雷邁恩：牌堆只有偶數消耗的卡時，英雄能力消耗為 (1)
@@ -1872,6 +1881,7 @@ export class Game {
     if (kind === 'mana' && cost > 0) for (const h of p.hand) if (h.uid !== hc.uid) h.spent = (h.spent ?? 0) + cost;
     if (def.type === 'MINION') {
       p.minionPlayedTurn = s.turn;
+      if (this.isRace(def.id, 'BEAST') || this.isRace(def.id, 'UNDEAD')) this.questProgress(p, 'beastUndead');
       if (def.cost === 1) (p.oneCostMinions ??= []).push(def.id);
     }
     if (def.type === 'SPELL' && def.spellSchool === 'FEL') p.felSpells = (p.felSpells ?? 0) + 1;
@@ -3132,6 +3142,7 @@ export class Game {
     const def = getCard(cardId);
     for (const r of def.races ?? []) p.summonedRaces[r] = (p.summonedRaces[r] ?? 0) + 1;
     this.questProgress(p, 'summon');
+    if (this.isRace(cardId, 'DEMON') && p.heroPower.id === 'JAIL_EVENT_101hp') p.heroPower.used = false;
     if ((def.attack ?? 0) >= 5) this.questProgress(p, 'bigMinionSummon');
     if (def.abilities?.some((a) => a.on.k === 'deathrattle')) this.questProgress(p, 'deathrattleSummon');
     if (this.isRace(cardId, 'MURLOC')) {
@@ -13662,6 +13673,157 @@ export class Game {
           yield* this.discarded(me, hc);
         }
         yield* this.draw(me, 2);
+        break;
+      }
+      case 'coOnlyPlay':
+        me.onlyPlay = { turn: s.turn, type: args.type as 'MINION' | 'SPELL' };
+        break;
+      case 'coTerraform': {
+        // 黑暗地貌改造：對一個手下造成 5 點傷害，向左右延伸，傷害每格減 1
+        const t = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+        if (!t) break;
+        const board = s.players[t.owner].board;
+        const i = board.indexOf(t);
+        const bonus = ctx.isSpell ? this.spellDamage(me.id) : 0;
+        for (const m of [...board]) {
+          const left = 5 - Math.abs(board.indexOf(m) - i);
+          if (left > 0 && this.alive(m)) yield* this.damage(this.dmgSource(ctx), m.uid, left + bonus);
+        }
+        break;
+      }
+      case 'coPrimordial': {
+        const c = pick(s, this.randomPool({ type: 'MINION', colossal: true, past: true, anyClass: true }, me.id, false));
+        if (!c) break;
+        const hc = this.addToHand(me, c.id);
+        if (hc) hc.costMod -= c.cost;
+        break;
+      }
+      case 'coPhoenix': {
+        const hc = yield* this.chooseFromList(ctx, me.hand.filter((h) => h.uid !== ctx.handSource), '選擇一張手牌點燃');
+        if (!hc) break;
+        (me.delayed ??= []).push({ turns: 3, sourceCardId: ctx.sourceCardId, effects: [{ e: 'custom', fn: 'coPhoenixBurn', args: { uid: hc.uid, card: ctx.sourceCardId } }] });
+        break;
+      }
+      case 'coPhoenixBurn': {
+        const hc = me.hand.find((h) => h.uid === args.uid);
+        if (!hc) break;
+        me.hand = me.hand.filter((h) => h !== hc);
+        yield* this.discarded(me, hc);
+        yield* this.doSummon(ctx, me.id, args.card as string);
+        break;
+      }
+      case 'coBlazer': {
+        const fire = me.turnSpells?.turn === s.turn && me.turnSpells.ids.some((id) => getCard(id).spellSchool === 'FIRE');
+        if (fire && ctx.chosen !== null) yield* this.runEffects([{ e: 'destroy', target: { t: 'chosen' } }], ctx);
+        break;
+      }
+      case 'coEssence': {
+        const ESS = ['CATA_EVENT_110t2', 'CATA_EVENT_110t3', 'CATA_EVENT_110t4', 'CATA_EVENT_110t5', 'CATA_EVENT_110t6', 'CATA_EVENT_110t7'];
+        const fx = (id: string, own: boolean): Effect[] => {
+          switch (id) {
+            case ESS[0]:
+              return [{ e: 'damage', target: own ? { t: 'chosen' } : { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8, spell: true }];
+            case ESS[1]:
+              return [{ e: 'draw', count: 3, who: 'self', pool: { type: 'SPELL' } }];
+            case ESS[2]:
+              return [{ e: 'mana', kind: 'refresh', amount: 8 }];
+            case ESS[3]:
+              return [{ e: 'armor', amount: 12 }];
+            case ESS[4]:
+              return [{ e: 'summon', card: 'CATA_EVENT_110t6t', count: 1, who: 'self' }];
+            default:
+              return [{ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, amount: 4, spell: true }];
+          }
+        };
+        // 相鄰的龍族精華會一起施放（連鎖）
+        const idx = ctx.handIndex ?? 0;
+        const chain: HandCard[] = [];
+        for (let i = idx - 1; i >= 0 && ESS.includes(me.hand[i]?.cardId); i--) chain.push(me.hand[i]);
+        for (let i = idx; i < me.hand.length && ESS.includes(me.hand[i]?.cardId); i++) chain.push(me.hand[i]);
+        me.hand = me.hand.filter((h) => !chain.includes(h));
+        yield* this.runEffects(fx(ctx.sourceCardId, true), ctx);
+        for (const h of chain) yield* this.runEffects(fx(h.cardId, false), { ...ctx, chosen: null });
+        break;
+      }
+      case 'coCommissary': {
+        const n = me.mana;
+        me.mana = 0;
+        yield* this.runEffects([{ e: 'summonRandom', pool: { type: 'MINION', cost: n, anyClass: true }, count: 1, who: 'self' }], ctx);
+        break;
+      }
+      case 'coLookout': {
+        const [hc] = yield* this.draw(me, 1);
+        if (hc) hc.costTurn = { turn: s.turn, amount: 1 };
+        break;
+      }
+      case 'coWatfin': {
+        const opts = this.discoverOptions({ type: 'MINION', anyClass: true }, me.id);
+        if (!opts.length) break;
+        const sus = pick(s, opts)!;
+        const id = yield* this.choose(ctx, opts, `發現一個手下（「${getCard(sus).name}」看起來很可疑）`);
+        const hc = this.addToHand(me, id);
+        if (hc && id === sus) {
+          hc.atkBuff += 1;
+          hc.hpBuff += 1;
+        }
+        break;
+      }
+      case 'coSoulImmo':
+        if (me.heroPower.id === 'JAIL_EVENT_101hp') me.starDmg = (me.starDmg ?? 2) + 1;
+        else {
+          me.starDmg = 2;
+          this.setHeroPower(me, 'JAIL_EVENT_101hp');
+        }
+        break;
+      case 'coCollapse':
+        yield* this.runEffects([{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: me.starDmg ?? 2 }], ctx);
+        break;
+      case 'coDesperateBribe': {
+        for (const pl of s.players) yield* this.runEffects([{ e: 'summonRandom', pool: { type: 'MINION', cost: 2, anyClass: true }, count: 2, who: pl.id === me.id ? 'self' : 'opponent' }], ctx);
+        for (const m of me.board.filter((x) => this.alive(x))) {
+          const c = pick(s, this.randomPool({ type: 'MINION', cost: getCard(m.cardId).cost + 1, anyClass: true }, me.id, false));
+          if (c) this.transform(m.uid, c.id);
+        }
+        break;
+      }
+      case 'coDisciple': {
+        const n = 1 + me.hand.filter((h) => this.isRace(h.cardId, 'DRAGON')).length;
+        for (let i = 0; i < n; i++) {
+          const m = pick(s, [...me.board, ...foe.board].filter((x) => this.alive(x) && x !== self));
+          if (m) m.dead = true;
+        }
+        break;
+      }
+      case 'coWelcomeHome': {
+        const locs = me.locations ?? [];
+        if (!locs.length) break;
+        const cd = locs.filter((l) => l.cooldown > 0);
+        const cand = cd.length ? cd : locs;
+        const id = cand.length > 1 ? yield* this.choose(ctx, cand.map((l) => l.cardId), '選擇要重新開啟的地點') : cand[0].cardId;
+        const loc = cand.find((l) => l.cardId === id)!;
+        loc.cooldown = 0;
+        (loc.deathrattle ??= []).push({ e: 'summonRandom', pool: { type: 'MINION', cost: 3, anyClass: true }, count: 1, who: 'self' });
+        break;
+      }
+      case 'coSendFuture': {
+        const sent = me.hand.filter((h) => this.handDef(h).type === 'MINION');
+        me.hand = me.hand.filter((h) => !sent.includes(h));
+        for (const h of sent) (me.delayed ??= []).push({ turns: 2, sourceCardId: ctx.sourceCardId, effects: [{ e: 'custom', fn: 'coReturnFuture', args: { card: h.cardId, atk: h.atkBuff, hp: h.hpBuff, cost: h.costMod } }] });
+        break;
+      }
+      case 'coReturnFuture': {
+        const hc = this.addToHand(me, args.card as string);
+        if (hc) {
+          hc.atkBuff += (args.atk as number) + 5;
+          hc.hpBuff += (args.hp as number) + 5;
+          hc.costMod += args.cost as number;
+        }
+        break;
+      }
+      case 'coSands': {
+        // 重新倒轉後只能發現自己職業的法術
+        const rewound = (ctx.playedCard?.rewinds ?? 1) < 1;
+        yield* this.runEffects([{ e: 'discover', pool: rewound ? { type: 'SPELL' } : { type: 'SPELL', anyClass: true } }], ctx);
         break;
       }
       default:

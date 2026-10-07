@@ -650,3 +650,11 @@ reg('RLK_752', { abilities: play(summon('EDR_T_RIME', 2)) });
 reg('TTN_851', { objective: 2, abilities: [...play(fn('objective')), ...atEndOfTurn({ e: 'spellTax', amount: 1 })] });
 // 十字軍光環：每當一個友方手下攻擊，使它 +2/+1。持續 3 個回合
 reg('TTN_908', { objective: 3, abilities: [...play(fn('objective')), { on: { k: 'attack', subject: 'friendlyMinion' }, effects: [{ e: 'buff', target: { t: 'it' }, atk: 2, hp: 1 }] }] });
+
+// ============================================================== 其他核心卡（原始版本 ID）
+reg('RLK_086', { abilities: dr(fn('frostmourne')) });
+reg('RLK_087', { abilities: play(fn('destroyHighestAttack')) });
+reg('RLK_122', { abilities: play(fn('fillBoardRandom', { race: 'UNDEAD' })) });
+reg('MAW_028', { keywords: ['TAUNT'], abilities: play(cond({ c: 'armor', n: 4 }, [{ e: 'buff', target: { t: 'self' }, atk: 4, hp: 4 }])) });
+// 瓦許女爵：被變形成手下時，改為直接召喚（沒有需要額外處理的效果）
+reg('REV_925', {});

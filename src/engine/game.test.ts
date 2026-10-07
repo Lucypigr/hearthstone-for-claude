@@ -987,7 +987,7 @@ describe('死亡騎士：第二批機制', () => {
   it('霜之哀傷：摧毀時召喚被它消滅的手下', () => {
     const g = dk();
     const me = g.s.players[0];
-    play(g, 'CORE_RLK_086');
+    play(g, 'RLK_086');
     const wisp = put(g, 'CS2_231', 1);
     expect(g.apply({ type: 'attack', attacker: me.hero.uid, target: wisp.uid })).toBe(true);
     me.weapon!.durability = 1;

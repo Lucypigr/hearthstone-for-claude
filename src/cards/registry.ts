@@ -75,7 +75,7 @@ export function cardClasses(c: CardDef): CardClass[] {
 
 /** 依卡池條件篩選可收藏卡（發現 / 隨機產生卡牌用） */
 /** 目前的標準模式系列（不在其中的就是「來自過去」的卡） */
-export const STANDARD_SETS = new Set([1810, 1637, 1946, 1952, 1957, 1980, 1988, 9999]);
+export const STANDARD_SETS = new Set([1810, 1637, 1946, 1952, 1957, 1980, 1988, 1941, 9999]);
 /** 這張卡在標準模式嗎（標準系列，或核心系列收錄的卡） */
 export const isStandardCard = (c: CardDef): boolean => STANDARD_SETS.has(c.set) || !!c.core;
 
@@ -105,6 +105,7 @@ export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass):
     if (pool.minCost !== undefined && c.cost < pool.minCost) return false;
     if (pool.past && isStandardCard(c)) return false;
     if (pool.rewind && !c.rewind) return false;
+    if (pool.colossal && !c.colossal) return false;
     if (pool.multiRace && (c.races?.length ?? 0) < 2) return false;
     if (pool.outcast && c.outcastCost === undefined && !JSON.stringify(c.abilities ?? []).includes('"c":"outcast"')) return false;
     if (pool.attack !== undefined && (c.type !== 'MINION' || c.attack !== pool.attack)) return false;
