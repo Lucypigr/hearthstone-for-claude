@@ -150,6 +150,7 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   LOOTA_BOSS_51p: { target: { filter: { type: 'minion', side: 'enemy', maxAttack: 2 } }, effects: [{ e: 'steal', target: { t: 'chosen' } }] },
   LOOTA_BOSS_54p: { effects: [] },
   LOOTA_BOSS_99p: { effects: [{ e: 'custom', fn: 'dunTreasure', args: { pool: ACTIVE_TREASURES } }] },
+  GDB_846hp: { effects: [{ e: 'custom', fn: 'gdTracking' }] },
   JAIL_EVENT_101hp: { effects: [{ e: 'custom', fn: 'coCollapse' }] },
   TLC_632t: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },

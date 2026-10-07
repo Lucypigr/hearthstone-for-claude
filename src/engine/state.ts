@@ -48,6 +48,16 @@ export interface HandCard {
   rewinds?: number;
   /** 永久費用變化（例如「其消耗減少(2)」） */
   costMod: number;
+  /** 向對手牌堆借來的牌：這個回合沒打出就放回去（末日少女） */
+  borrowed?: PlayerId;
+  /** 哈塔魯：這個回合打出它就重複 */
+  hataaru?: number;
+  /** 手牌中相鄰的牌在這個回合被打出過 */
+  adjPlayedTurn?: number;
+  /** 火焰法術傷害 */
+  fireDmg?: number;
+  /** 納垕蟲洞：這個回合打出它，英雄 +2 攻擊力 */
+  nydus?: number;
   /** 只在這個回合有效的費用減少 */
   costTurn?: { turn: number; amount: number };
   /** 手牌中的手下增益 */
@@ -142,6 +152,10 @@ export interface Minion {
   abilities: Ability[];
   auras: Aura[];
   spellDamage: number;
+  /** 火焰法術傷害 */
+  fireDmg?: number;
+  /** 受到的傷害加倍（幻象） */
+  doubleDmg?: boolean;
   enrageAtk: number;
   silenced: boolean;
   frozen: boolean;
@@ -225,6 +239,8 @@ export interface Location {
   cooldown: number;
   /** 啟用過的次數（艾梅達希爾每次使用都會提升） */
   uses?: number;
+  /** 星系之鏡吸收的法術 */
+  absorbed?: string;
   /** 自訂地點（導航員艾莉絲製作）：啟用時的效果與耐久度用完時的亡語 */
   effects?: Effect[];
   deathrattle?: Effect[];
@@ -295,6 +311,33 @@ export interface PlayerState {
   passives?: string[];
   /** 地城探險：這一輪已經擊敗的 Boss 數 */
   dungeonWins?: number;
+  /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
+  draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
+  libramDiscount?: number;
+  /** 本場對戰中你發現的牌數 */
+  discoverCount?: number;
+  /** 不是開局在牌堆裡的惡魔消耗減少 / 本場對戰打出過的這類惡魔 */
+  nonStartDemonDiscount?: number;
+  nonStartDemons?: string[];
+  playedDraenei?: string[];
+  cardEvents?: number;
+  /** 天界光環：還剩幾個回合 */
+  celestial?: { left: number };
+  /** 基爾加丹：牌堆換成無盡的惡魔傳送門，開啟的回合 */
+  portal?: { turn: number };
+  asteroidBonus?: number;
+  /** 繁衍孢子：之後的孢子會一起召喚的卡 */
+  sporeCard?: string;
+  protossMinionDiscount?: number;
+  /** 這個回合你的蟲族手下具有突襲（孵化池） */
+  zergRushTurn?: number;
+  protossSpells?: number;
+  zergAtk?: number;
+  comboDouble?: boolean;
+  /** 下個回合開始時發現一張法術 */
+  discoverNextTurn?: boolean;
+  /** 下一次發射星艦的消耗減少 */
+  launchDiscount2?: number;
   /** 迅捷之靴：這個回合你的手下消耗 (0) */
   freeMinionsTurn?: number;
   /** 這名玩家（後攻時）不會得到幸運幣 */
