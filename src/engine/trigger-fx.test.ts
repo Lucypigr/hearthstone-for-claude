@@ -106,3 +106,24 @@ describe('旗標稽核', () => {
     expect(getCard(FILLER)).toBeTruthy();
   });
 });
+
+describe('夢魘之王薩維斯', () => {
+  it('黑暗禮物賦予牌堆中的那張手下，它留在牌堆裡', () => {
+    const deck = Array(30).fill('CS2_182');
+    const g = Game.create({ decks: [deck, deck], classes: ['MAGE', 'WARRIOR'], names: ['玩家', '電腦'], ai: [false, false], seed: 3, first: 0 });
+    g.apply({ type: 'mulligan', player: 0, replace: [] });
+    g.apply({ type: 'mulligan', player: 1, replace: [] });
+    const p = g.s.players[0];
+    p.mana = 10;
+    p.maxMana = 10;
+    const hc = g.newHandCard('EDR_856');
+    p.hand.push(hc);
+    const deckBefore = p.deck.length;
+    const handBefore = p.hand.length;
+    g.apply({ type: 'play', handUid: hc.uid });
+    if (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    expect(p.deck.length).toBe(deckBefore);
+    expect(p.hand.length).toBe(handBefore - 1);
+    expect(p.deck.some((h) => h.gifted)).toBe(true);
+  });
+});
