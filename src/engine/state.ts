@@ -633,6 +633,8 @@ export type FxKind =
   | 'secret'
   | 'armor'
   | 'burn'
+  /** 某個能力觸發了（手下 / 武器 / 手牌 / 英雄能力發光並顯示文字） */
+  | 'trigger'
   | 'attack'
   | 'shield'
   | 'fatigue'
@@ -653,6 +655,10 @@ export interface Fx {
   from?: number;
   /** 召喚：從手牌打出（而不是效果召喚） */
   played?: boolean;
+  /** 觸發特效：浮動顯示的文字 */
+  text?: string;
+  /** 觸發特效：發光的是英雄能力（player 的） */
+  power?: boolean;
 }
 
 export interface ChoiceRequest {

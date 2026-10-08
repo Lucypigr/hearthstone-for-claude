@@ -1176,6 +1176,11 @@ textarea {
   color: #dfe7ee;
 }
 
+.fx-float.trigger {
+  color: #ffd34e;
+  font-size: 20px;
+}
+
 .fx-float.shield {
   color: #ffe27a;
   font-size: 22px;
@@ -3340,4 +3345,46 @@ body {
   gap: 6px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* 即將發動的能力 */
+.minion.burst-ready {
+  animation: burst-ready-pulse 1.6s ease-in-out infinite;
+}
+
+.minion.turn-pending {
+  box-shadow: 0 0 10px 2px #ffd34e88;
+}
+
+@keyframes burst-ready-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px #7fd9ff66);
+  }
+  50% {
+    filter: drop-shadow(0 0 10px #7fd9ffee);
+  }
+}
+
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+  margin-top: 4px;
+}
+
+.status-chip {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #2a2216;
+  border: 1px solid #c9a24a;
+  color: #ffe9a8;
+  cursor: help;
+}
+
+.status-chip:hover {
+  background: #3d3220;
 }

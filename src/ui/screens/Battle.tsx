@@ -1289,12 +1289,17 @@ function MinionView({
   const kw = (k: Parameters<Game['hasKw']>[1]) => g.hasKw(m, k);
   const hasDeathrattle = !m.silenced && m.abilities.some((a) => a.on.k === 'deathrattle');
   const hasTrigger = !m.silenced && (m.abilities.some((a) => a.on.k !== 'play' && a.on.k !== 'deathrattle') || m.auras.length > 0);
+  // 即將發動的能力：法術迸發、回合開始 / 結束的效果、休眠
+  const burstReady = !m.silenced && m.abilities.some((a) => a.once && a.on.k === 'spellCast');
+  const turnPending =
+    !m.silenced &&
+    m.abilities.some((a) => (a.on.k === 'turnEnd' || a.on.k === 'turnStart') && (a.on.whose === 'each' || (a.on.whose === 'mine') === (a.on.k === 'turnEnd' ? g.s.current === m.owner : g.s.current !== m.owner)));
   const hpClass = m.hp < m.maxHp ? 'damaged' : m.maxHp > (def.health ?? 0) ? 'buffed' : '';
   const atkClass = atk > (def.attack ?? 0) ? 'buffed' : atk < (def.attack ?? 0) ? 'damaged' : '';
   return (
     <div
       data-uid={m.uid}
-      className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${kw('DORMANT') ? 'dormant' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
+      className={`minion ${kw('TAUNT') ? 'taunt' : ''} ${kw('DIVINE_SHIELD') ? 'shield' : ''} ${kw('STEALTH') ? 'stealth' : ''} ${kw('DORMANT') ? 'dormant' : ''} ${burstReady ? 'burst-ready' : ''} ${turnPending ? 'turn-pending' : ''} ${m.frozen ? 'frozen' : ''} ${def.rarity === 'LEGENDARY' ? 'legendary' : ''} ${className}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -1317,6 +1322,9 @@ function MinionView({
         {kw('REBORN') && <span title="復生">👼</span>}
         {m.spellDamage > 0 && !m.silenced && <span title="法術傷害">🔮</span>}
         {m.silenced && <span title="已沉默">🔇</span>}
+        {burstReady && <span title="法術迸發：你下一次施放法術時發動">✨</span>}
+        {turnPending && <span title="這個回合會發動回合開始 / 結束的效果">⏳</span>}
+        {kw('DORMANT') && m.dormantTurns !== undefined && <span title={`休眠中：還要 ${m.dormantTurns} 個回合甦醒`}>💤{m.dormantTurns}</span>}
       </div>
       {m.sleeping && !kw('CHARGE') && m.owner === g.s.current && <div className="zzz">z z</div>}
       {children}
@@ -1448,6 +1456,7 @@ function HeroPowerView({
   return (
     <button
       data-power={slot.id}
+      data-power-owner={second ? undefined : p.id}
       className={`hero-power ${slot.used && !usable ? 'used' : ''} ${usable ? 'usable' : ''} ${active ? 'active' : ''}`}
       onClick={(e) => {
         e.stopPropagation();
@@ -1538,6 +1547,56 @@ function PlayerInfo({ p }: { p: PlayerState }) {
           </span>
         </div>
       )}
+      <StatusChips p={p} />
+    </div>
+  );
+}
+
+/** 「即將發動」的效果：延遲效果、目標、下一張牌的折扣、吉的力量的計數…… */
+function statusChips(p: PlayerState): { text: string; title: string }[] {
+  const out: { text: string; title: string }[] = [];
+  const nameOf = (id: string) => (hasCard(id) ? getCard(id).name : id);
+  if (p.zee) {
+    const left = 5 - (p.zee.minions % 5);
+    out.push({ text: `吉的力量：再打 ${left} 個手下`, title: '整場對戰中每打出第 5 個手下，它的戰吼會觸發兩次' });
+  }
+  for (const d of p.delayed ?? []) out.push({ text: `${d.turns} 回合後：${nameOf(d.sourceCardId)}`, title: '延遲的效果，時間到就會發動' });
+  const seen = new Set<string>();
+  for (const e of p.eternal ?? []) {
+    const key = `${e.sourceCardId}|${e.until ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ text: `${e.objective ? '目標' : '持續'}：${nameOf(e.sourceCardId)}`, title: e.objective ? '目標：在接下來的幾個回合內有效' : '本場對戰持續有效的效果' });
+  }
+  for (const d of p.pendingDiscounts ?? []) {
+    const what = [d.protoss ? '神族' : '', d.zerg ? '蟲族' : '', d.libram ? '聖契' : '', d.race ? ({ DEMON: '惡魔', DRAENEI: '德萊尼', BEAST: '野獸', DRAGON: '龍' } as Record<string, string>)[d.race] ?? '' : '', d.type === 'SPELL' ? '法術' : d.type === 'MINION' ? '手下' : d.type === 'WEAPON' ? '武器' : '', d.battlecry ? '戰吼' : '', d.combo ? '連擊' : ''].filter(Boolean).join('');
+    out.push({ text: `下一張${what || '牌'}${d.amount ? `消耗 -${d.amount}` : d.set !== undefined ? `消耗 ${d.set}` : ''}`, title: '你打出的下一張符合條件的牌' });
+  }
+  for (const fx of p.draeneiFx ?? []) {
+    const label = { buff: `+${fx.atk ?? 0}/${fx.hp ?? 0}${fx.kw?.length ? ' 與關鍵字' : ''}`, refresh: '恢復法力', attack: '立刻攻擊', heroAtk: '英雄獲得攻擊力', overload: '超載 (2)', copy: '召喚複製', bonus2: '兩個額外效果' }[fx.k];
+    out.push({ text: `下一個德萊尼：${label}`, title: '你打出的下一個德萊尼會獲得的效果' });
+  }
+  if (p.comboDouble) out.push({ text: '下一個連擊手下：連擊 ×2', title: '你打出的下一個連擊手下，連擊會觸發兩次' });
+  if (p.discoverNextTurn) out.push({ text: '下回合開始：發現一張法術', title: '下個回合開始時發現一張法術' });
+  if (p.libramDiscount) out.push({ text: `聖契 -${p.libramDiscount}`, title: '這場對戰中你的聖契消耗減少' });
+  if (p.nonStartDemonDiscount) out.push({ text: `非開局惡魔 -${p.nonStartDemonDiscount}`, title: '不是開局在牌堆中的惡魔，消耗減少' });
+  if (p.protossMinionDiscount) out.push({ text: `神族手下 -${p.protossMinionDiscount}`, title: '這場對戰中你的神族手下消耗減少' });
+  if (p.zergAtk) out.push({ text: `蟲族 +${p.zergAtk} 攻擊力`, title: '這場對戰中你的蟲族手下攻擊力提升' });
+  if (p.asteroidBonus) out.push({ text: `小行星 +${p.asteroidBonus} 傷害`, title: '這場對戰中你的小行星傷害提升' });
+  if (p.zergRushTurn !== undefined) out.push({ text: '蟲族：本回合突襲', title: '這個回合你的蟲族手下具有突襲' });
+  return out;
+}
+
+function StatusChips({ p }: { p: PlayerState }) {
+  const chips = statusChips(p);
+  if (!chips.length) return null;
+  return (
+    <div className="status-chips">
+      {chips.map((c, i) => (
+        <span key={i} className="status-chip" title={c.title}>
+          {c.text}
+        </span>
+      ))}
     </div>
   );
 }

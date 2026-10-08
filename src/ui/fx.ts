@@ -515,6 +515,25 @@ function floatText(root: HTMLElement, r: DOMRect, text: string, kind: string, de
   ]);
 }
 
+/** 能力觸發：卡牌（或英雄能力）發出金光並跳出文字，讓玩家知道這個能力發動了 */
+function triggerGlow(root: HTMLElement, el: HTMLElement | null, r: DOMRect | null, text: string | undefined, delay: number) {
+  if (el && typeof el.animate === 'function') {
+    el.animate(
+      [
+        { boxShadow: '0 0 0 0 #ffd34e00', filter: 'none', transform: 'none' },
+        { boxShadow: '0 0 22px 10px #ffd34ecc', filter: 'brightness(1.45) saturate(1.3)', transform: 'scale(1.1)', offset: 0.35 },
+        { boxShadow: '0 0 10px 4px #ffd34e66', filter: 'brightness(1.2)', transform: 'scale(1.04)', offset: 0.7 },
+        { boxShadow: '0 0 0 0 #ffd34e00', filter: 'none', transform: 'none' },
+      ],
+      { duration: 780, delay, easing: 'ease-out' },
+    );
+  }
+  if (r) {
+    burst(root, center(r), '#ffd34e', delay, Math.min(r.width, 90), 8);
+    if (text) floatText(root, r, text, 'trigger', delay + 60);
+  }
+}
+
 /** 震動整個戰場 */
 function shake(root: HTMLElement, delay: number, strength: number) {
   const target = root.querySelector<HTMLElement>('.boards');
@@ -613,6 +632,11 @@ export function direct(root: HTMLElement, fresh: Fx[], snap: Map<number, Snap>, 
       else if (f.kind === 'heal') float(f.uid, `+${f.amount}`, 'heal', 0);
       else if (f.kind === 'armor') float(f.uid, `+${f.amount}🛡`, 'armor', 0);
       else if (f.kind === 'shield') float(f.uid, '聖盾！', 'shield', 0);
+      else if (f.kind === 'trigger' && f.text) {
+        const el = f.power ? root.querySelector<HTMLElement>(`[data-power-owner="${f.player}"]`) : root.querySelector<HTMLElement>(`[data-uid="${f.uid}"], [data-hand-uid="${f.uid}"]`);
+        const r = el?.getBoundingClientRect() ?? (f.uid !== undefined ? snap.get(f.uid)?.rect : null) ?? null;
+        if (r) floatText(root, r, f.text, 'trigger', 0);
+      }
     }
     return 0;
   }
@@ -639,7 +663,7 @@ export function direct(root: HTMLElement, fresh: Fx[], snap: Map<number, Snap>, 
           t += 470;
         } else if (!def && f.player !== undefined) {
           // 英雄能力
-          const el = root.querySelector<HTMLElement>(`[data-power="${f.player}"]`);
+          const el = root.querySelector<HTMLElement>(`[data-power-owner="${f.player}"]`);
           if (el) powerFlip(el, t);
           t += 260;
         }
@@ -704,6 +728,15 @@ export function direct(root: HTMLElement, fresh: Fx[], snap: Map<number, Snap>, 
         }
         if (group.some((x) => (x.amount ?? 0) >= 6)) shake(root, last, 6);
         t = last + 120;
+        break;
+      }
+      case 'trigger': {
+        let el: HTMLElement | null = null;
+        if (f.power) el = root.querySelector<HTMLElement>(`[data-power-owner="${f.player}"]`);
+        else if (f.uid !== undefined) el = root.querySelector<HTMLElement>(`[data-uid="${f.uid}"], [data-hand-uid="${f.uid}"]`);
+        const r = el?.getBoundingClientRect() ?? (f.uid !== undefined ? (snap.get(f.uid)?.rect ?? null) : null);
+        triggerGlow(root, el, r, f.text, t);
+        t += 170;
         break;
       }
       case 'heal': {
