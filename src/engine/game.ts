@@ -10121,12 +10121,23 @@ export class Game {
     // 甜蜜的夢：把這張牌放到你牌堆的頂端
     if (g.top) {
       for (const p of this.s.players) {
-        if (p.hand.includes(hc)) {
+        if (p.hand.includes(hc) || p.deck.includes(hc)) {
           p.hand = p.hand.filter((h) => h !== hc);
+          p.deck = p.deck.filter((h) => h !== hc);
           p.deck.push(hc);
         }
       }
     }
+  }
+
+  /** 有些黑暗禮物只能給符合條件的手下：短爪要攻擊力至少 3，魯莽的覺醒要有戰吼 */
+  private giftFits(hc: HandCard | string, g: ReturnType<Game['giftList']>[number]): boolean {
+    const cardId = typeof hc === 'string' ? hc : hc.cardId;
+    const def = getCard(cardId);
+    const bonus = typeof hc === 'string' ? 0 : hc.atkBuff;
+    if (g.atk !== undefined && g.atk < 0 && def.attack! + bonus + g.atk < 1) return false;
+    if (g.twice && !def.abilities?.some((a) => a.on.k === 'play')) return false;
+    return true;
   }
 
   private wallowGain(pid: PlayerId, g: ReturnType<Game['giftList']>[number], except?: HandCard) {
@@ -10240,9 +10251,14 @@ export class Game {
       case 'discoverGift': {
         const opts = pickDistinct(this.randomPool(args.pool as Pool, me.id, true), 3);
         if (!opts.length) break;
-        const gifts = shuffle(s, this.giftList());
+        const giftPool0 = shuffle(s, this.giftList());
+        const gifts = opts.map((o) => {
+          const g = giftPool0.find((x) => this.giftFits(o, x)) ?? giftPool0[0];
+          giftPool0.splice(giftPool0.indexOf(g), 1);
+          return g;
+        });
         const id = yield* this.choose(ctx, opts, '發現一個帶有黑暗禮物的手下');
-        const gift = gifts[opts.indexOf(id) % gifts.length];
+        const gift = gifts[opts.indexOf(id)];
         const hc = this.addToHand(me, id);
         if (hc) {
           this.giftHand(hc, gift, me.id);
@@ -13832,15 +13848,40 @@ export class Game {
       }
       case 'coGiftPick': {
         // 發現一個帶有黑暗禮物的手下：三個選項各自帶著一個隨機的禮物
+        if (args.filter === 'deck') {
+          // 夢魘之王薩維斯：從牌堆發現一個手下，禮物直接賦予牌堆中的那張牌（它留在牌堆裡）
+          const optIds = pickDistinct(
+            me.deck.map((h) => getCard(h.cardId)).filter((c) => c.type === 'MINION'),
+            3,
+          );
+          if (!optIds.length) break;
+          const giftPool = shuffle(s, this.giftList());
+          const gifts = optIds.map((cid) => {
+            const dh = me.deck.find((h) => h.cardId === cid)!;
+            const g = giftPool.find((x) => this.giftFits(dh, x)) ?? giftPool[0];
+            giftPool.splice(giftPool.indexOf(g), 1);
+            return g;
+          });
+          const title = `發現牌堆中的一個手下並賦予黑暗禮物（${gifts.map((g) => g.name).join('／')}）`;
+          const id = yield* this.choose(ctx, optIds, title);
+          const gift = gifts[optIds.indexOf(id)];
+          const target = me.deck.find((h) => h.cardId === id)!;
+          this.giftHand(target, gift, me.id);
+          this.log(me.id, `牌堆中的${this.name(id)}獲得黑暗禮物：${gift.name}`);
+          break;
+        }
         let cards = args.pool ? this.randomPool(args.pool as Pool, me.id, !(args.pool as Pool).anyClass && !(args.pool as Pool).cls) : this.randomPool({ type: 'MINION', anyClass: true }, me.id, false);
         if (args.filter === 'comboBcStealth') {
           cards = cards.filter((c) => c.keywords?.includes('STEALTH') || !!c.abilities?.some((a) => a.on.k === 'play') || JSON.stringify(c.abilities ?? []).includes('"c":"combo"'));
-        } else if (args.filter === 'deck') {
-          cards = me.deck.map((h) => getCard(h.cardId)).filter((c) => c.type === 'MINION');
         } else if (args.filter === 'undead') cards = cards.filter((c) => this.isRace(c.id, 'UNDEAD'));
         const opts = pickDistinct(cards, 3);
         if (!opts.length) break;
-        const gifts = shuffle(s, this.giftList()).slice(0, opts.length);
+        const giftPool = shuffle(s, this.giftList());
+        const gifts = opts.map((o) => {
+          const g = giftPool.find((x) => this.giftFits(o, x)) ?? giftPool[0];
+          giftPool.splice(giftPool.indexOf(g), 1);
+          return g;
+        });
         const title = `發現一個帶有黑暗禮物的手下（${gifts.map((g) => g.name).join('／')}）`;
         const id = yield* this.choose(ctx, opts, title);
         const gift = gifts[opts.indexOf(id)];
@@ -14186,7 +14227,7 @@ export class Game {
         const id = yield* this.choose(ctx, opts, '發現對手牌堆中的一個手下');
         const hc = this.addToHand(me, id);
         if (hc && ctx.combo) {
-          const g = pick(s, this.giftList())!;
+          const g = pick(s, this.giftList().filter((x) => this.giftFits(hc, x)))!;
           this.giftHand(hc, g, me.id);
         }
         break;
@@ -14227,7 +14268,7 @@ export class Game {
         if (!opts.length) break;
         const id = yield* this.choose(ctx, opts, '發現一個不死族');
         const hc = this.addToHand(me, id);
-        if (hc && this.spendCorpses(me, 2)) this.giftHand(hc, pick(s, this.giftList())!, me.id);
+        if (hc && this.spendCorpses(me, 2)) this.giftHand(hc, pick(s, this.giftList().filter((x) => this.giftFits(hc, x)))!, me.id);
         break;
       }
       case 'coRuneblade': {
