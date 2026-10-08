@@ -199,6 +199,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
         else setBanner({ id: f.id, text: `${s.players[AI].name}使用了英雄能力：${g.powerInfo(s.players[AI]).name}` });
       }
       if (f.kind === 'secret' && f.cardId) setBanner({ id: f.id, cardId: f.cardId, text: '奧秘揭露！' });
+      // 手牌已滿：超抽的牌被燒掉（高佛雷則是暫時收起來），讓玩家看到是哪一張
+      if (f.kind === 'burn' && f.cardId && hasCard(f.cardId) && f.player !== undefined) {
+        const who = f.player === ME ? '你' : s.players[f.player].name;
+        setBanner({ id: f.id, cardId: f.cardId, text: f.amount === 1 ? `${who}的手牌已滿，這張牌被暫時收起來了` : `${who}的手牌已滿，這張牌被燒掉了` });
+      }
     }
   });
 
