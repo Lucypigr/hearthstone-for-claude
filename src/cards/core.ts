@@ -261,7 +261,7 @@ reg('MAW_010', secretOn('enemyThirdCard', { e: 'damage', target: theirHero, amou
 // 辯護律師納薩諾斯：戰吼：發現一個本場對戰中死亡的友方亡語手下，獲得並觸發它的亡語
 reg('MAW_011', { abilities: play(fn('coNathanos')) });
 // 魔化釋放：召喚一個本場對戰中死亡的友方惡魔
-reg('MAW_012', { abilities: play(fn('coSummonDead', { race: 'DEMON', count: 1 })) });
+reg('MAW_012', { abilities: play(fn('coSummonDead', { race: 'DEMON', count: 1 })), infuse: { n: 3, into: 'MAW_012t', race: 'DEMON' }, tokens: ['MAW_012t'] });
 reg('MAW_012t', { abilities: play(fn('coSummonDead', { race: 'DEMON', count: 3 })) });
 // 終身監禁：將一個手下從遊戲中移除
 reg('MAW_013', { target: anyMinion, abilities: play(fn('coRemove')) });

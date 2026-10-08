@@ -2,7 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { getCard, hasCard } from '../../cards/registry';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardDef } from '../../engine/types';
-import { artUrl, CLASS_COLORS, formatCardText, RACE_NAMES, RARITY_COLORS, renderUrl, tileUrl } from '../cardText';
+import { artUrl, CLASS_COLORS, formatCardText, RACE_NAMES, RARITY_COLORS, renderUrl, staticCardDef, tileUrl } from '../cardText';
 
 /** 卡圖（載入失敗時以職業色塊代替） */
 export function Art({
@@ -102,7 +102,7 @@ export function CardView(p: CardViewProps) {
 
 /** 自繪卡面（官方卡面無法載入或自訂卡牌時使用） */
 function DrawnCard(p: CardViewProps) {
-  const def = p.def ?? getCard(p.cardId);
+  const def = staticCardDef(p.def ?? getCard(p.cardId));
   const width = p.width ?? 160;
   const cost = p.cost ?? def.cost;
   const attack = p.attack ?? def.attack;
