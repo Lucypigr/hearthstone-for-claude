@@ -53,3 +53,29 @@ export const ACTIVE_TREASURES = [
   'LOOTA_843',
   'LOOTA_847',
 ];
+
+/**
+ * 「事件型」的場上規則旗標：在效果實際套用的那一刻會發光並顯示文字。
+ * 其餘旗標都是持續性的規則修改（例如費用、免疫、限制），不需要觸發提示。
+ */
+export const EVENT_FLAGS: Record<string, string> = {
+  doubleBattlecries: '戰吼 ×2！',
+  doubleDeathrattle: '亡語 ×2！',
+  endTurnTriggerDeathrattle: '觸發亡語！',
+  doubleEndTurn: '回合結束效果 ×2！',
+  heroPowerKillDraw: '抽牌！',
+  khadgar: '召喚 ×2！',
+  toreth: '聖盾加強',
+  goldrinn: '野獸傷害 ×2！',
+  bralma: '元素傷害 +',
+  pirateBonus: '海盜傷害 +',
+  extraShot: '額外射擊！',
+  shuffleExtra: '洗入 ×2！',
+  leechBoost: '強化！',
+  niri: '觸發！',
+  doubleOtherSpells: '法術 ×2！',
+  vaultBreaker: '消耗減少',
+  courier: '信使！',
+  fandral: '兩個都選！',
+  chogallDeck: '觸發！',
+};
