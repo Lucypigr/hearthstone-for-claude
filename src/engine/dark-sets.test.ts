@@ -255,3 +255,23 @@ describe('黑暗帝國霸業（先行公布的卡）', () => {
     expect(cons[0].shaped).toBe(15);
   });
 });
+
+describe('瑪格吉：吉的力量', () => {
+  it('整場對戰中每打出第 5 個手下，它的戰吼觸發兩次（只算那一個）', () => {
+    const deck = ['JAIL_800', ...Array(29).fill('EX1_015')];
+    const g = newGame({ deck, classes: ['MAGE', 'WARRIOR'] });
+    const p = g.s.players[0];
+    expect(p.zee).toBeTruthy();
+    const drawsFor = () => {
+      const before = p.hand.length;
+      const hc = give(g, 'EX1_015');
+      p.deck.push(g.newHandCard(FILLER), g.newHandCard(FILLER), g.newHandCard(FILLER));
+      expect(g.apply({ type: 'play', handUid: hc.uid })).toBe(true);
+      return p.hand.length - before;
+    };
+    const results = [1, 2, 3, 4, 5].map(() => drawsFor());
+    // 新手工程師抽 1 張：打出時手牌 +1（自己 -1 再 +1）→ 第 5 個抽 2 張
+    expect(results.slice(0, 4)).toEqual([1, 1, 1, 1]);
+    expect(results[4]).toBe(2);
+  });
+});

@@ -2071,7 +2071,8 @@ export class Game {
     }
     // 瑪格的魔法 / 吉的力量
     if (def.type === 'MINION') {
-      if (p.zee && ++p.zee.minions % 5 === 0) p.doubleBattlecry = { turn: s.turn, all: false };
+      // 吉的力量：整場對戰中每打出第 5 個手下，它的戰吼就觸發兩次（只算這一個手下）
+      if (p.zee && ++p.zee.minions % 5 === 0) hc.twiceBC = true;
     }
     if (p.nextCardCorpsesTurn === s.turn) p.nextCardCorpsesTurn = undefined;
     if (def.type === 'SPELL' && p.nextSpellDiscount?.turn === s.turn) p.nextSpellDiscount = undefined;
