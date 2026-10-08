@@ -2937,6 +2937,7 @@ export class Game {
         if (p.godfrey) {
           p.godfrey.push(card);
           this.log(p.id, `${p.name}的手牌已滿，${this.name(card.cardId)}被暫時收起來了`);
+          this.fx({ kind: 'burn', cardId: card.cardId, player: p.id, amount: 1 });
           continue;
         }
         this.log(p.id, `${p.name}的手牌已滿，${this.name(card.cardId)}被燒掉了`);
