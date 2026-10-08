@@ -3,7 +3,7 @@
 // 這個檔案的內容會併入 overrides.ts 的 OVERRIDES。
 // ============================================================================
 import type { Override } from './overrides';
-import type { Ability, Condition, Effect, TargetReq } from '../engine/types';
+import type { Ability, Condition, Effect, Keyword, TargetReq } from '../engine/types';
 
 const play = (...effects: Effect[]): Ability[] => [{ on: { k: 'play' }, effects }];
 const dr = (...effects: Effect[]): Ability[] => [{ on: { k: 'deathrattle' }, effects }];
@@ -28,9 +28,14 @@ const reg = (id: string, ov: Override) => {
 };
 
 // ------------------------------------------------------------------ 衍生卡（沒有效果的）
-for (const id of ['GDB_118t', 'GDB_118t2', 'GDB_124t2', 'GDB_139t', 'GDB_237t', 'GDB_331t3', 'GDB_840t', 'GDB_882t', 'GDB_100e']) reg(id, {});
+for (const id of ['GDB_118t', 'GDB_118t2', 'GDB_331t3', 'GDB_840t', 'GDB_100e']) reg(id, {});
+reg('GDB_124t2', { keywords: ['TAUNT'] });
+reg('GDB_139t', { keywords: ['DIVINE_SHIELD'] });
+reg('GDB_237t', { keywords: ['TAUNT'] });
+reg('GDB_882t', { keywords: ['TAUNT'] });
 // 船員：嘲諷 / 聖盾 / 突襲…，戰吼：召喚所有相鄰的船員
-for (const id of CREW) reg(id, { abilities: play(fn('gdAdjoining')) });
+const CREW_KW: Keyword[] = ['DIVINE_SHIELD', 'TAUNT', 'RUSH', 'WINDFURY', 'ELUSIVE', 'POISONOUS', 'LIFESTEAL', 'REBORN'];
+CREW.forEach((id, i) => reg(id, { keywords: [CREW_KW[i]], abilities: play(fn('gdAdjoining')) }));
 
 // ------------------------------------------------------------------ 中立 / 各職業
 // 艾卓奇異生物：流放與法術迸發：洗入手牌

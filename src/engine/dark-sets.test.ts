@@ -1,6 +1,6 @@
 // 深暗領域：德萊尼、聖契、小行星、船員、蟲族與神族
 import { describe, expect, it } from 'vitest';
-import { COLLECTIBLE } from '../cards/registry';
+import { COLLECTIBLE, getCard } from '../cards/registry';
 import { Game } from './game';
 import type { HandCard, Minion, PlayerId, PlayerState } from './state';
 
@@ -273,5 +273,16 @@ describe('瑪格吉：吉的力量', () => {
     // 新手工程師抽 1 張：打出時手牌 +1（自己 -1 再 +1）→ 第 5 個抽 2 張
     expect(results.slice(0, 4)).toEqual([1, 1, 1, 1]);
     expect(results[4]).toBe(2);
+  });
+});
+
+describe('衍生卡的關鍵字（稽核補上的）', () => {
+  it('船員與深暗領域衍生卡帶有卡面上的關鍵字', () => {
+    const want: Record<string, string> = {
+      GDB_471t: 'DIVINE_SHIELD', GDB_471t2: 'TAUNT', GDB_471t3: 'RUSH', GDB_471t4: 'WINDFURY',
+      GDB_471t5: 'ELUSIVE', GDB_471t6: 'POISONOUS', GDB_471t7: 'LIFESTEAL', GDB_471t8: 'REBORN',
+      GDB_139t: 'DIVINE_SHIELD', GDB_124t2: 'TAUNT', GDB_237t: 'TAUNT', GDB_882t: 'TAUNT',
+    };
+    for (const [id, kw] of Object.entries(want)) expect(getCard(id).keywords, id).toContain(kw);
   });
 });
