@@ -341,7 +341,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     const hc = me.hand.find((h) => h.uid === handUid)!;
     const def = g.handDef(hc);
     if (!myTurn) {
-      setInspect({ cardId: hc.cardId, def: hc.parts || hc.potion || hc.trial ? def : undefined });
+      setInspect({ cardId: hc.cardId, def: g.liveDef(ME, hc) });
       return;
     }
     setPrepPick(def.prepare || hc.canPrepare ? handUid : null);
@@ -438,7 +438,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       st.timer = window.setTimeout(() => {
         if (press.current === st && !st.dragging) {
           st.long = true;
-          setInspect({ cardId: hc.cardId, def: hc.parts || hc.potion || hc.trial ? g.handDef(hc) : undefined });
+          setInspect({ cardId: hc.cardId, def: g.liveDef(ME, hc) });
         }
       }, 420);
     }
@@ -545,7 +545,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     let timer = 0;
     if (!isHero(c) && e.pointerType !== 'mouse') {
       timer = window.setTimeout(() => {
-        setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts || c.starship ? g.minionDef(c) : undefined });
+        setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: g.liveMinionDef(c) });
         suppressClick.current = true;
         window.setTimeout(() => (suppressClick.current = false), 400);
       }, 420);
@@ -613,7 +613,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       setMode({ k: 'idle' });
       return;
     }
-    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: c.parts || c.starship ? g.minionDef(c) : undefined });
+    if (!isHero(c)) setInspect({ cardId: c.cardId, atk: g.atkOf(c), hp: c.hp, uid: c.uid, def: g.liveMinionDef(c) });
   };
 
   const onLocationClick = (l: Location) => {
@@ -723,7 +723,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       g={g}
       className={charClasses(m)}
       onClick={() => onCharClick(m)}
-      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: m.parts || m.starship ? g.minionDef(m) : undefined } : null)}
+      onHover={(on) => setInspect(on ? { cardId: m.cardId, atk: g.atkOf(m), hp: m.hp, uid: m.uid, def: g.liveMinionDef(m) } : null)}
       onPointerDown={charPress(m)}
     />
   );
@@ -935,7 +935,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
               >
                 <CardView
                   cardId={h.cardId}
-                  def={h.parts || h.potion || h.trial ? def : undefined}
+                  def={g.liveDef(ME, h)}
                   width={cw}
                   cost={g.costOf(me, h)}
                   attack={def.type === 'MINION' || def.type === 'WEAPON' ? g.handStats(ME, h).atk : undefined}
@@ -991,10 +991,9 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       {drag && (() => {
         const hc = me.hand.find((h) => h.uid === drag.handUid);
         if (!hc) return null;
-        const def = g.handDef(hc);
         return (
           <div className="drag-ghost" style={{ left: drag.x, top: drag.y } as CSSProperties}>
-            <CardView cardId={hc.cardId} def={hc.parts || hc.potion || hc.trial ? def : undefined} width={Math.round(cw * 1.1)} cost={g.costOf(me, hc)} />
+            <CardView cardId={hc.cardId} def={g.liveDef(ME, hc)} width={Math.round(cw * 1.1)} cost={g.costOf(me, hc)} />
           </div>
         );
       })()}
@@ -1050,7 +1049,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 <div key={h.uid} className={`mulligan-card ${mulliganPick.has(h.uid) ? 'replace' : ''}`}>
                   <CardView
                     cardId={h.cardId}
-                    def={h.parts || h.potion || h.trial ? g.handDef(h) : undefined}
+                    def={g.liveDef(ME, h)}
                     width={150}
                     onClick={() => {
                       const next = new Set(mulliganPick);

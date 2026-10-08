@@ -12,7 +12,7 @@ import { trialDef } from '../cards/trial';
 import { COLLECTIBLE, cardClasses, getCard, hasCard, HEROES, poolCards, POWER_INFO } from '../cards/registry';
 import { LAUNCH_COST, starshipDef, starshipIdFor } from '../cards/starship';
 import { ZOMBEAST_ID, ZOMBEAST_PARTS, zombeastDef } from '../cards/zombeast';
-import { BASIC_TOTEMS, EXTRA_POWERS, HERO_POWERS, RAGNAROS_HERO, RAGNAROS_POWER, UPGRADED_POWER_IDS } from './heroes';
+import { BASIC_TOTEMS, CLASS_NAMES, EXTRA_POWERS, HERO_POWERS, RAGNAROS_HERO, RAGNAROS_POWER, UPGRADED_POWER_IDS } from './heroes';
 import { nextRandom, pick, randomInt, shuffle } from './rng';
 import { PASSIVE_FLAGS } from './dungeon';
 import { EVENT_FLAGS } from './dungeon';
@@ -84,6 +84,11 @@ const HERALD_SOLDIERS: Partial<Record<CardClass, string>> = {
   SHAMAN: 'CATA_565t',
   WARLOCK: 'CATA_725t',
   WARRIOR: 'CATA_580t',
+};
+/** 關鍵字的中文名稱（卡面文字用） */
+const KEYWORD_ZH: Partial<Record<Keyword, string>> = {
+  TAUNT: '嘲諷', DIVINE_SHIELD: '聖盾術', CHARGE: '衝鋒', RUSH: '衝刺', WINDFURY: '風怒', STEALTH: '潛行',
+  POISONOUS: '致命劇毒', LIFESTEAL: '生命竊取', REBORN: '重生', ELUSIVE: '飄渺',
 };
 /** 法師的三張地脈 */
 const LEYLINES = ['MEND_500', 'MEND_502', 'MEND_504'];
@@ -671,6 +676,299 @@ export class Game {
     if (hc.potion) return potionDef(hc.cardId, hc.potion);
     if (hc.trial) return trialDef(hc.cardId, hc.trial);
     return hc.parts ? zombeastDef(hc.parts) : getCard(hc.cardId);
+  }
+
+  // ==========================================================================
+  // 卡面文字：把 @ 與 {n} 占位換成目前的數值（例如感染餐具室依英雄攻擊次數強化）
+  // ==========================================================================
+
+  /** 手牌中的卡牌目前的卡面；沒有動態內容、也不是合成卡時回傳 undefined（用原本的卡面） */
+  liveDef(pid: PlayerId, hc: HandCard): CardDef | undefined {
+    const def = this.handDef(hc);
+    const text = this.liveText(def, { pid, hc });
+    const special = !!(hc.parts || hc.potion || hc.trial || hc.starship || hc.carved?.length);
+    if (text === def.text) return special ? def : undefined;
+    return { ...def, text };
+  }
+
+  /** 場上手下目前的卡面 */
+  liveMinionDef(m: Minion): CardDef | undefined {
+    const def = this.minionDef(m);
+    const text = this.liveText(def, { pid: m.owner, m });
+    if (text === def.text) return m.parts || m.starship ? def : undefined;
+    return { ...def, text };
+  }
+
+  /** 收藏、卡包這類沒有對戰狀態的場合：用卡牌的基本數值 */
+  staticDef(def: CardDef): CardDef {
+    const text = this.liveText(def, {});
+    return text === def.text ? def : { ...def, text };
+  }
+
+  private liveText(def: CardDef, src: { pid?: PlayerId; hc?: HandCard; m?: Minion }): string {
+    const rawText = def.text ?? '';
+    if (!rawText.includes('@') && !/\{\d+\}/.test(rawText)) return rawText;
+    // 官方文字裡的換行只是排版：@ 前後的換行拿掉，才好判斷
+    const raw = rawText.replace(/\n(?=@)/g, '').replace(/@\n/g, '@').replace(/(<i>)\n/g, '$1');
+    // 1. 以 @ 切成幾個版本：夾在句子裡的 @ 是數值占位，其餘的 @ 是「版本分隔」（後面是進度備註或另一種文字）
+    const variants: string[] = [];
+    let cur = '';
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i] !== '@') {
+        cur += raw[i];
+        continue;
+      }
+      const prev = raw[i - 1] ?? '';
+      if ('$(（為共+/'.includes(prev) || /^[點個張回次的/）)顆]/.test(raw.slice(i + 1))) cur += '\u0001';
+      else {
+        variants.push(cur);
+        cur = '';
+      }
+    }
+    variants.push(cur);
+    const r = this.liveValues(def, src);
+    const nums = [...r.nums];
+    const fill = (t: string): string => t.replace(/\u0001/g, () => (nums.length ? String(nums.shift()) : '\u0002')).replace(/\{(\d+)\}/g, (m0, n) => (r.brace[Number(n)] !== undefined ? r.brace[Number(n)] : m0));
+    const dropUnresolved = (t: string): string => t.replace(/(?:<i>)?[(（][^()（）]*(?:\{\d+\}|\u0002)[^()（）]*[)）](?:<\/i>)?/g, '').replace(/\{\d+\}/g, '').replace(/\u0002/g, 'X');
+    // 2. 挑出要顯示的版本
+    let out = variants[0];
+    const note = (v: string) => /^\s*(<i>)?\s*[(（]/.test(v);
+    if (r.variant !== undefined && variants[r.variant] !== undefined && !note(variants[r.variant])) out = variants[r.variant];
+    const extras = variants.slice(1).filter(note);
+    if (r.progress !== undefined && extras.length >= 2) out += r.progress > 0 ? extras[0] : extras[1];
+    else if (r.progress === undefined || r.progress > 0) {
+      // 進度備註（例如法術石的「獲得3點護甲值後升級」）：只有不含未知數值時才顯示
+      for (const v of extras) if (!/\u0001/.test(v) || nums.length >= (v.match(/\u0001/g) ?? []).length) out += v;
+    }
+    return dropUnresolved(fill(out));
+  }
+
+  /** 各張卡片的即時數值：nums 依序填入夾在句子裡的 @；brace 是 {n}；progress 是還差多少（0 = 已達成） */
+  private liveValues(def: CardDef, src: { pid?: PlayerId; hc?: HandCard; m?: Minion }): { nums: (number | string)[]; brace: Record<number, string>; progress?: number; variant?: number } {
+    const pid = src.pid ?? 0;
+    const p = this.s.players[pid];
+    const hc = src.hc;
+    const m = src.m;
+    const counter = hc?.counter ?? m?.counter ?? 0;
+    const ctx: Ctx = { ...this.baseCtx(pid), handCounter: counter, playedCard: hc };
+    const gy = (name: string) => p.graveyard.filter((id) => getCard(id).nameEn === name).length;
+    const res: { nums: (number | string)[]; brace: Record<number, string>; progress?: number; variant?: number } = { nums: [], brace: {} };
+    const playedIds = p.playedThisTurn?.turn === this.s.turn ? p.playedThisTurn.ids : [];
+    const raw = def.text ?? '';
+    // 預兆：顯示會召喚哪個士兵
+    if (/預兆<\/b>\{0\}|預兆\{0\}/.test(raw) && !/^CATA_\d+t$/.test(def.id)) {
+      const cls = (hc || m ? p.heroClass : def.cardClass) as CardClass;
+      const sid = HERALD_SOLDIERS[cls];
+      res.brace[0] = sid && hasCard(sid) ? `<i>（召喚${getCard(sid).name}）</i>` : '';
+    }
+    if (def.id === 'CATA_497') res.brace[1] = String(this.heraldPower(p));
+    // 預兆士兵：依預兆次數強化
+    if (/^CATA_\d+t$/.test(def.id) && /預兆/.test(raw)) {
+      const n = this.heraldPower(p);
+      res.brace[0] = String(n);
+      res.variant = n >= 4 ? 2 : n >= 2 ? 1 : 0;
+      if (m || hc) res.variant = n >= 4 ? 2 : n >= 2 ? 1 : 0;
+    }
+    // 白銀之手新兵 / 翡翠魔像的大小
+    if (/\{0\}白銀之手新兵|\{1\}\{0\}白銀之手新兵/.test(raw)) {
+      res.brace[0] = '1/1';
+      res.brace[1] = '';
+    }
+    if (/\{0\}<b>翠玉魔像/.test(raw)) {
+      const n = Math.min(30, (p.jade ?? 0) + 1);
+      res.brace[0] = `${n}/${n}`;
+    }
+    const left = (goal: number, have: number) => Math.max(0, goal - have);
+    switch (def.id) {
+      case 'EDR_421':
+        res.nums = [1 + counter];
+        break;
+      case 'EDR_940':
+        res.nums = [1 + p.board.filter((x) => this.alive(x) && getCard(x.cardId).nameEn.includes('Wisp')).length];
+        break;
+      case 'EDR_941':
+        res.nums = [1 + p.graveyard.filter((id) => getCard(id).type === 'MINION').length];
+        break;
+      case 'TLC_517':
+        res.nums = [1 + (p.shuffleCount ?? 0)];
+        break;
+      case 'SC_758':
+        res.nums = [1 + (p.protossSpells ?? 0)];
+        break;
+      case 'JAIL_501':
+        res.nums = [p.mana];
+        break;
+      case 'JAIL_732':
+        res.nums = [Math.min(10, 1 + (p.voidSouls ?? 0))];
+        break;
+      case 'REV_508':
+        res.nums = [1 + (p.relics ?? 0)];
+        break;
+      case 'REV_834':
+        res.nums = [1 + (p.relics ?? 0)];
+        break;
+      case 'REV_943':
+        res.nums = [1 + (p.relics ?? 0), 1 + (p.relics ?? 0)];
+        break;
+      case 'REV_750': {
+        const n = 1 + playedIds.length;
+        res.nums = [n, n];
+        break;
+      }
+      case 'REV_940':
+        res.nums = [Math.min(10, (getCard('REV_940t').attack ?? 1) + playedIds.length)];
+        break;
+      case 'JAIL_470':
+        res.nums = [1 + counter];
+        break;
+      case 'JAIL_474':
+        res.nums = [p.twoManaPlayed ?? 0];
+        break;
+      case 'EDR_526':
+        res.nums = [1 + (p.renferalPlayed ?? 0)];
+        break;
+      case 'CATA_585':
+        res.nums = [hc?.counter ?? 8];
+        break;
+      case 'JAIL_909':
+        res.nums = [Math.max(0, playedIds.length)];
+        break;
+      case 'JAIL_974':
+        res.nums = [Math.min(4, gy('Captured Archmage'))];
+        break;
+      case 'GDB_125':
+        res.nums = [this.dyn('heroDamageThisTurn', ctx)];
+        break;
+      case 'TIME_103': {
+        const ids = new Set(p.playedCards ?? []);
+        res.nums = [new Set(p.deck.filter((h) => ids.has(h.cardId)).map((h) => h.cardId)).size];
+        break;
+      }
+      case 'END_009':
+        res.nums = [gy('Treant')];
+        break;
+      case 'REV_514':
+        res.nums = [p.graveyard.filter((id) => id === 'REV_845' || id === 'CORE_REV_845').length];
+        break;
+      case 'GDB_435':
+        res.nums = [2 + (p.asteroidBonus ?? 0)];
+        break;
+      case 'EDR_259':
+        res.nums = [2];
+        break;
+      case 'CATA_480':
+      case 'JAIL_327':
+        res.nums = [3 + (counter > 1 ? counter - 1 : 0)];
+        break;
+      case 'CATA_210': {
+        const t = getCard('CATA_210t');
+        res.brace[0] = String((t.attack ?? 0) + counter);
+        res.brace[1] = String((t.health ?? 0) + counter);
+        break;
+      }
+      case 'CATA_206':
+        res.brace[0] = KEYWORD_ZH[hc?.bonus?.[0] ?? 'TAUNT'] ?? '嘲諷';
+        res.brace[1] = KEYWORD_ZH[hc?.bonus?.[1] ?? 'ELUSIVE'] ?? '飄渺';
+        break;
+      case 'CATA_614':
+        if (hc?.cls) {
+          res.variant = 1;
+          res.brace[0] = CLASS_NAMES[hc.cls];
+        }
+        break;
+      case 'CATA_131':
+        res.brace[0] = String(left(4, hc?.spent ?? 0));
+        break;
+      case 'CATA_132':
+        res.brace[0] = String(left(8, hc?.spent ?? 0));
+        break;
+      case 'CATA_140':
+        res.brace[0] = String(left(25, hc?.spent ?? 0));
+        break;
+      case 'EDR_430':
+        res.progress = left(20, p.graveyard.filter((id) => getCard(id).type === 'MINION').length);
+        res.brace[0] = String(res.progress);
+        break;
+      case 'TIME_005':
+        res.progress = left(10, (p.playedCards ?? []).filter((id) => getCard(id).nameEn.includes('Rafaam')).length);
+        res.brace[0] = String(res.progress);
+        break;
+      case 'TRL_316':
+        res.progress = left(8, p.heroPowerDamage ?? 0);
+        res.brace[0] = String(res.progress);
+        break;
+      case 'TRL_545':
+        res.progress = left(10, p.healedTotal ?? 0);
+        res.brace[0] = String(res.progress);
+        break;
+      case 'JAIL_735':
+        res.progress = left(3, playedIds.filter((id) => getCard(id).type === 'SPELL').length);
+        res.brace[0] = String(res.progress);
+        break;
+      case 'FIR_911':
+      case 'FIR_914':
+      case 'FIR_916': {
+        const amt = 1 + counter;
+        res.brace[0] = String(amt);
+        const turnsLeft = Math.max(0, (def.immolate ?? 3) - counter);
+        res.brace[1] = String(turnsLeft);
+        res.progress = turnsLeft;
+        break;
+      }
+      case 'MEND_500':
+      case 'MEND_502':
+      case 'MEND_504': {
+        const bonus = p.leyline?.bonus ?? 0;
+        const times = 1 + (p.leyline?.extra ?? 0);
+        res.brace[0] = String(def.id === 'MEND_500' ? 4 + bonus : def.id === 'MEND_502' ? Math.min(10, 6 + bonus) : 1 + bonus);
+        res.brace[1] = String(times);
+        if (times > 1) res.variant = 1;
+        break;
+      }
+      case 'EDR_843':
+        res.nums = [Math.max(0, 2 - counter)];
+        break;
+      case 'MEND_046t':
+        res.brace[0] = hc?.carved?.length ? hc.carved.map((id) => `「${getCard(id).name}」`).join('、') : '雕刻的法術';
+        break;
+      default:
+        break;
+    }
+    if (def.transformAfterSpells) res.nums = [Math.max(0, def.transformAfterSpells.n - counter)];
+    if (def.infuse && /灌注/.test(raw)) {
+      const need = Math.max(0, def.infuse.n - (hc?.infuseProgress ?? 0));
+      if (/灌注\(@/.test(raw) || /灌注\（@/.test(raw)) res.nums = [need];
+      if (/灌注\(\{0\}\)/.test(raw)) {
+        res.brace[0] = String(need);
+        res.brace[1] = String(def.infuse.n * 2);
+      }
+    }
+    if (!res.nums.length && /\u0001|@/.test(raw)) {
+      // 依卡牌效果裡的「動態數值」（例如本賽局英雄攻擊次數）推算
+      const found: Amount[] = [];
+      const walk = (o: unknown) => {
+        if (!o || typeof o !== 'object') return;
+        if (Array.isArray(o)) return o.forEach(walk);
+        const rec = o as Record<string, unknown>;
+        if (typeof rec.dyn === 'string') found.push(rec as unknown as Amount);
+        for (const v of Object.values(rec)) walk(v);
+      };
+      walk(def.abilities);
+      res.nums = found.map((a) => Math.max(0, this.amount(a, ctx)));
+      // 召喚指定消耗的手下：最多 10
+      if (def.id === 'JAIL_200' || def.id === 'BT_481') res.nums = res.nums.map((n) => Math.min(10, Number(n)));
+    }
+    if (def.id === 'FIR_907') {
+      const loc = m ? undefined : p.locations?.find((l) => l.cardId === def.id);
+      const n = 1 + (loc?.uses ?? 0);
+      res.nums = [n, n, n, n];
+    }
+    // 持續 N 回合的光環（目標型卡牌）
+    if (/持續\s*@/.test(raw) && !res.nums.length) {
+      const t = JSON.stringify(def.abilities ?? []).match(/"turns":(\d+)/);
+      res.nums = [def.objective ?? (t ? Number(t[1]) : 3)];
+    }
+    return res;
   }
 
   /** 場上手下的卡牌定義 */
@@ -9848,19 +10146,26 @@ export class Game {
         break;
       }
       case 'bashana': {
-        const pool = this.randomPool({ type: 'SPELL', spellSchool: 'NATURE' }, me.id, false).filter((c) => c.cost <= 4);
+        // 雕刻共 12 點法力的自然法術，平均刻在三個樹人身上
+        const pool = this.randomPool({ type: 'SPELL', spellSchool: 'NATURE' }, me.id, false).filter((c) => c.cost > 0);
+        const trees: HandCard[] = [];
         for (let i = 0; i < 3; i++) {
           const hc = this.addToHand(me, 'MEND_046t');
           if (!hc) continue;
           hc.carved = [];
-          let left = 4;
-          for (let g = 0; g < 8; g++) {
-            const fit = pool.filter((c) => c.cost <= left && c.cost > 0);
-            const c = pick(s, fit);
-            if (!c) break;
-            hc.carved.push(c.id);
-            left -= c.cost;
-          }
+          trees.push(hc);
+        }
+        if (!trees.length) break;
+        const total = new Map<HandCard, number>(trees.map((t) => [t, 0]));
+        let left = 12;
+        for (let g = 0; g < 24 && left > 0; g++) {
+          const c = pick(s, pool.filter((x) => x.cost <= left));
+          if (!c) break;
+          const low = Math.min(...[...total.values()]);
+          const hc = pick(s, trees.filter((t) => total.get(t) === low))!;
+          hc.carved!.push(c.id);
+          total.set(hc, (total.get(hc) ?? 0) + c.cost);
+          left -= c.cost;
         }
         break;
       }

@@ -1,5 +1,6 @@
 // 卡牌敘述的顯示格式
-import type { CardClass, Race } from '../engine/types';
+import { Game } from '../engine/game';
+import type { CardClass, CardDef, Race } from '../engine/types';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -79,4 +80,17 @@ export function renderUrl(cardId: string, cssWidth: number): string {
 /** 牌組清單用的橫條圖 */
 export function tileUrl(cardId: string): string {
   return `https://art.hearthstonejson.com/v1/tiles/${cardId}.png`;
+}
+
+let blankGame: Game | null = null;
+
+/** 收藏、卡包等沒有對戰狀態的場合：把卡面文字裡的 @ 與 {n} 換成基本數值 */
+export function staticCardDef(def: CardDef): CardDef {
+  if (!/@|\{\d+\}/.test(def.text ?? '')) return def;
+  try {
+    blankGame ??= Game.create({ decks: [Array(30).fill('CS2_182'), Array(30).fill('CS2_182')], classes: ['MAGE', 'WARRIOR'], names: ['', ''], ai: [false, false], seed: 1, first: 0 });
+    return blankGame.staticDef(def);
+  } catch {
+    return def;
+  }
 }
