@@ -1720,7 +1720,7 @@ export class Game {
       this.setHeroPower(me, id);
       me.heroPower.used = used;
     }
-    this.log(me.id, `${me.name}灌注了英雄能力（${me.imbued}）`);
+    this.log(me.id, `${me.name}注能了英雄能力（${me.imbued}）`);
   }
 
 
