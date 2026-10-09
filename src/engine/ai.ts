@@ -361,7 +361,7 @@ export class AiBrain {
     const base = evaluate(g, me, this.weights);
 
     // 新手偶爾整個亂打、或還有法力就結束回合
-    const dumb = 0.3 * Math.pow(1 - skill, 2.2);
+    const dumb = 0.12 * Math.pow(1 - skill, 2.2);
     if (!newTurn && this.rand() < dumb * 0.35) {
       this.blundered = true;
       return { type: 'endTurn' };
@@ -374,19 +374,19 @@ export class AiBrain {
       }
     }
 
-    // 高手：規劃整個回合的出牌順序
-    if (skill >= 0.62) {
+    // 會算牌的玩家：規劃整個回合的出牌順序（技術越高看得越寬越深）
+    if (skill >= 0.45) {
       const width = Math.round(2 + skill * 3);
       const depth = Math.round(3 + skill * 5);
       if (this.rand() > 0.4 * Math.pow(1 - skill, 1.5)) return planTurn(g, me, width, depth, this.weights) ?? { type: 'endTurn' };
     }
 
     // 一般玩家：一步一步挑看起來最好的動作，但判斷會有誤差
-    const noise = (1 - skill) * 3.2;
+    const noise = (1 - skill) * 2;
     const judged = scored.map((x) => ({ ...x, score: x.score + this.gauss() * noise })).sort((x, y) => y.score - x.score);
     let choice = judged[0];
     // 手滑：選到第二、第三好的動作
-    const slip = 0.35 * Math.pow(1 - skill, 1.5);
+    const slip = 0.15 * Math.pow(1 - skill, 1.5);
     if (judged.length > 1 && this.rand() < slip) {
       choice = judged[1 + Math.floor(this.rand() * Math.min(2, judged.length - 1))];
       this.blundered = choice.score < judged[0].score - 3;
@@ -398,7 +398,7 @@ export class AiBrain {
   mulligan(g: Game, pid: PlayerId): number[] {
     const { skill, aggression } = this.persona;
     const hand = g.s.players[pid].hand;
-    if (skill < 0.2 && this.rand() < 0.6) return [];
+    if (skill < 0.3 && this.rand() < 0.4) return [];
     const max = aggression > 0.4 ? 2 : aggression < -0.4 ? 4 : 3;
     return hand.filter((h) => getCard(h.cardId).cost > max || (skill < 0.35 && this.rand() < 0.15)).map((h) => h.uid);
   }
