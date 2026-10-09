@@ -6,13 +6,14 @@ import { CLASS_NAMES } from '../../engine/heroes';
 import type { Action, Hero, Location, Minion, PlayerId, PlayerState } from '../../engine/state';
 import type { CardDef } from '../../engine/types';
 import { DIFFICULTY_NAMES } from '../../game/economy';
-import { RUNE_NAMES } from '../../game/decks';
 import { DECK_KIND_NAMES, recordLadderMatch, type LadderChange } from '../../game/ladder';
 import { makeAiDeck } from '../../game/opponents';
 import { recordMatch } from '../../game/profile';
 import { finishFight, gameOptions, newDungeonState } from '../../game/dungeon';
 import type { BattleConfig } from '../App';
 import { CLASS_COLORS, formatCardText } from '../cardText';
+import { GlossaryBrowser } from '../components/GlossaryBrowser';
+import { glossaryFor, playHint } from '../glossary';
 import { Art, CardBack, CardView } from '../components/Card';
 import { RankBadge, RankPips } from '../components/Rank';
 import { direct, type Snap } from '../fx';
@@ -83,6 +84,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   const lastTurn = useRef(0);
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
   const lastFx = useRef(0);
   const vp = useViewport();
   const cw = Math.round(vp.w < 600 ? clamp(Math.min(vp.w * 0.22, vp.h * 0.13), 64, 104) : clamp(Math.min(vp.w * 0.12, vp.h * 0.15), 64, 128));
@@ -698,9 +700,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (s.phase === 'mulligan') return '';
     if (!myTurn) return s.pendingChoice ? '' : `${foe.name}的回合…`;
     if (mode.k === 'card') {
-      if (mode.stage === 'place') return selectedDef?.disguised ? '點選我方戰場放置手下（偽裝手下也可以點對手的戰場，Esc 取消）' : '點選戰場放置手下（Esc 取消）';
-      if (mode.stage === 'target') return '選擇目標（Esc 取消）';
-      if (mode.stage === 'select') return '再點一次卡牌或點戰場使用';
+      const tip = selectedDef ? playHint(selectedDef) : '';
+      const more = tip ? `　💡${tip}` : '';
+      if (mode.stage === 'place') return (selectedDef?.disguised ? '點選我方戰場放置手下（偽裝手下也可以點對手的戰場，Esc 取消）' : '點選戰場放置手下（Esc 取消）') + more;
+      if (mode.stage === 'target') return '選擇目標（Esc 取消）' + more;
+      if (mode.stage === 'select') return '再點一次卡牌或點戰場使用' + more;
     }
     if (mode.k === 'attack') return '選擇攻擊目標（Esc 取消）';
     if (mode.k === 'heroPower' || mode.k === 'heroPower2') return '選擇英雄能力的目標';
@@ -760,10 +764,23 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           )}
           ・第 {Math.max(1, Math.ceil(s.turn / 2))} 回合
         </span>
+        <button className="btn small" onClick={() => setShowHelp(true)}>
+          📖 機制
+        </button>
         <button className="btn small" onClick={() => setShowLog(!showLog)}>
           📜 紀錄
         </button>
       </div>
+      {showHelp && (
+        <div className="help-modal" onClick={() => setShowHelp(false)}>
+          <div className="help-box" onClick={(e) => e.stopPropagation()}>
+            <button className="btn small" onClick={() => setShowHelp(false)}>
+              ✕ 關閉
+            </button>
+            <GlossaryBrowser />
+          </div>
+        </div>
+      )}
       {menu && (
         <div className="battle-menu">
           <button
@@ -974,7 +991,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
       {inspect && 'cardId' in inspect && hasCard(inspect.cardId) && (
         <div className="inspect" onClick={() => setInspect(null)}>
           <CardView cardId={inspect.cardId} def={inspect.def} width={vp.w < 700 ? Math.round(Math.min(vp.w * 0.78, vp.h * 0.5, 340)) : 260} attack={inspect.atk} health={inspect.hp} />
-          <Glossary cardId={inspect.cardId} minion={inspect.uid !== undefined ? g.minion(inspect.uid) : null} g={g} />
+          <Glossary cardId={inspect.cardId} def={inspect.def} minion={inspect.uid !== undefined ? g.minion(inspect.uid) : null} g={g} />
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
@@ -1196,71 +1213,29 @@ function RankChangeView({ change }: { change: LadderChange }) {
   );
 }
 
-const KEYWORD_HELP: [string, string][] = [
-  ['TAUNT', '嘲諷：敵人必須先攻擊有嘲諷的角色'],
-  ['DIVINE_SHIELD', '聖盾：抵擋下一次受到的傷害'],
-  ['CHARGE', '衝鋒：上場當回合就能攻擊'],
-  ['RUSH', '突襲：上場當回合就能攻擊手下'],
-  ['WINDFURY', '風怒：每回合可以攻擊兩次'],
-  ['MEGA_WINDFURY', '超級風怒：每回合可以攻擊四次'],
-  ['STEALTH', '潛行：在攻擊前無法被敵人指定為目標'],
-  ['POISONOUS', '劇毒：對手下造成傷害時直接消滅它'],
-  ['LIFESTEAL', '生命竊取：造成傷害時為你的英雄恢復等量生命'],
-  ['REBORN', '復生：第一次死亡時以 1 點生命值復活'],
-  ['ELUSIVE', '法術免疫：無法成為法術或英雄能力的目標'],
-  ['CANT_ATTACK', '無法攻擊'],
-  ['FREEZE_ON_DAMAGE', '冰凍被它傷害的角色（下回合無法攻擊）'],
-  ['TRADEABLE', '可交易：花 1 法力把它洗回牌堆並抽一張牌'],
-  ['TWINSPELL', '雙生法術：施放後會把一張沒有雙生法術的複製放到你的手中'],
-  ['ECHO', '回音：打出後會把一張複製加入手牌，本回合可以重複使用（複製在回合結束時消失，消耗不會低於 1）'],
-];
+const KEYWORDS_SHOWN = ['TAUNT', 'DIVINE_SHIELD', 'CHARGE', 'RUSH', 'WINDFURY', 'MEGA_WINDFURY', 'STEALTH', 'POISONOUS', 'LIFESTEAL', 'REBORN', 'ELUSIVE', 'FREEZE_ON_DAMAGE'] as const;
 
-function Glossary({ cardId, minion, g }: { cardId: string; minion: Minion | null; g: Game }) {
-  const def = getCard(cardId);
-  const kws = new Set<string>(def.keywords ?? []);
-  if (minion) for (const k of KEYWORD_HELP) if (g.hasKw(minion, k[0] as Parameters<Game['hasKw']>[1])) kws.add(k[0]);
-  const lines = KEYWORD_HELP.filter(([k]) => kws.has(k)).map(([, t]) => t);
-  const kinds = new Set((def.abilities ?? []).map((a) => a.on.k));
-  if (kinds.has('deathrattle')) lines.push('亡語：死亡時觸發效果');
-  if (kinds.has('secret')) lines.push('奧秘：在對手回合滿足條件時才會揭露並觸發');
-  if (def.starshipPiece) lines.push('星艦組件：上場時組裝進你的星艦。花 5 點法力發射星艦，它會擁有所有組件的攻擊力、生命值與效果');
-  if (kinds.has('launch')) lines.push('發射時：星艦發射時觸發');
-  if (kinds.has('overkill')) lines.push('滅殺：在你的回合造成的傷害超過消滅手下所需時觸發');
-  if (def.runes) {
-    const need = (['blood', 'frost', 'unholy'] as const).filter((k) => def.runes?.[k]).map((k) => `${RUNE_NAMES[k]}×${def.runes![k]}`).join('、');
-    lines.push(`符文：套牌需要 ${need}（一副套牌最多 3 個符文）`);
-  }
-  if (def.castsWhenDrawn) lines.push('抽中時施放：抽到這張牌時會立即施放，然後再抽一張牌');
-  if (def.prepare) lines.push('預備：把這張卡拖進牌堆，花光你剩餘的法力，之後抽到它時消耗減少（花費的法力 + 1）');
-  if (def.disguised) lines.push('偽裝：可以打在任何一方的戰場上');
-  if (def.rewind) lines.push(`倒轉（${def.rewind}）：打出後可以選擇保留結果，或回到打出前重來（這張牌回到手牌，少一次倒轉，亂數結果會不同）`);
-  if (def.fabled) lines.push('傳說：對戰開始時，這張卡的組合卡會一起洗入你的牌堆');
-  if (def.objective) lines.push(`目標：打出後在接下來 ${def.objective} 個回合持續生效`);
-  if (def.type === 'LOCATION') lines.push('地點：放在戰場上，點擊啟用（耐久度 -1），之後要等一個回合才能再啟用。耐久度用完就消失；有些地點啟用後會前進到下一個形態');
-  if (def.quest?.kind === 'fillHand') lines.push('任務進度：先填滿你的手牌（10 張），再把手牌打光');
-  if (/灌注/.test(def.text)) lines.push('灌注：強化你的英雄能力（盜賊與死亡騎士有灌注後的英雄能力），多次灌注效果更強');
-  if (/同族/.test(def.text)) lines.push('同族：如果你上個回合打出過同種族（或同法術派系）的牌，會有額外效果');
-  if (/地圖/.test(def.name)) lines.push('地圖：發現一張牌；如果你在本回合打出它，還可以從其他選項中再選一張');
-  if (/額外效果/.test(def.text)) lines.push('額外效果：隨機獲得一種關鍵字（嘲諷、聖盾、突襲、生命竊取、劇毒、風怒、復生、潛行）');
-  if (def.quest?.repeatable) lines.push('可重複任務：完成後獲得永久獎勵，然後任務重新開始');
-  if (def.summonedWhenDrawn) lines.push('抽到時召喚：被抽到時為放進牌堆的玩家召喚');
-  if (def.costsHealth) lines.push('消耗生命值而不是法力（生命值不夠就不能打出）');
-  if (def.costsHealthIf) lines.push('條件成立時改為消耗生命值而不是法力');
-  if (def.costsCorpses) lines.push('消耗屍體而不是法力');
-  if (def.flags?.includes('noTurnDraw')) lines.push('在場上時，你的回合開始時不會抽牌');
-  if (def.flags?.includes('enemyNoHeal')) lines.push('在場上時，敵方角色無法被治療');
-  if (def.flags?.includes('doubleCorpses')) lines.push('在場上時，你獲得的屍體加倍');
-  if (/屍體/.test(def.text)) lines.push('屍體：友方手下死亡時，死亡騎士獲得 1 個屍體，可以被卡牌消耗');
-  if (def.starship) lines.push('星艦：由組件組成，擁有所有組件的攻擊力、生命值與效果');
-  if (def.overload) lines.push(`超載：下回合鎖住 ${def.overload} 顆法力水晶`);
-  if (def.spellDamage) lines.push(`法術傷害 +${def.spellDamage}：你的法術多造成 ${def.spellDamage} 點傷害`);
-  if (minion?.frozen) lines.push('已被冰凍：錯過下一次攻擊');
-  if (minion?.silenced) lines.push('已被沉默：失去所有卡牌敘述的效果');
-  if (!lines.length) return null;
+function Glossary({ cardId, def: given, minion, g }: { cardId: string; def?: CardDef; minion: Minion | null; g: Game }) {
+  const def = given ?? getCard(cardId);
+  const extra = minion ? KEYWORDS_SHOWN.filter((k) => g.hasKw(minion, k)) : [];
+  const entries = glossaryFor(def, extra);
+  const status: string[] = [];
+  if (minion?.frozen) status.push('已被冰凍：錯過下一次攻擊');
+  if (minion?.silenced) status.push('已被沉默：失去所有卡牌敘述的效果');
+  if (def.flags?.includes('noTurnDraw')) status.push('在場上時，你的回合開始時不會抽牌');
+  if (def.flags?.includes('enemyNoHeal')) status.push('在場上時，敵方角色無法被治療');
+  if (def.flags?.includes('doubleCorpses')) status.push('在場上時，你獲得的屍體加倍');
+  if (!entries.length && !status.length) return null;
   return (
     <ul className="glossary">
-      {lines.map((l) => (
-        <li key={l}>{l}</li>
+      {entries.map((e) => (
+        <li key={e.term}>
+          <b>{e.term}</b>：{e.desc}
+          {e.how && <span className="gloss-how">　▸ {e.how}</span>}
+        </li>
+      ))}
+      {status.map((t) => (
+        <li key={t}>{t}</li>
       ))}
     </ul>
   );

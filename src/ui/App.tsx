@@ -11,10 +11,11 @@ import { Home } from './screens/Home';
 import { Ladder } from './screens/Ladder';
 import { PackOpen } from './screens/PackOpen';
 import { PlaySetup } from './screens/PlaySetup';
+import { GlossaryBrowser } from './components/GlossaryBrowser';
 import { Settings } from './screens/Settings';
 import { Shop } from './screens/Shop';
 
-export type Screen = 'home' | 'play' | 'ladder' | 'dungeon' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings';
+export type Screen = 'home' | 'play' | 'ladder' | 'dungeon' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings' | 'help';
 
 export interface BattleConfig {
   deckId: string;
@@ -79,6 +80,9 @@ export function App() {
           <button className={screen === 'packs' ? 'active' : ''} onClick={() => setScreen('packs')}>
             開卡包{unopened > 0 && <span className="badge">{unopened}</span>}
           </button>
+          <button className={screen === 'help' ? 'active' : ''} onClick={() => setScreen('help')}>
+            機制說明
+          </button>
           <button className={screen === 'settings' ? 'active' : ''} onClick={() => setScreen('settings')}>
             設定
           </button>
@@ -128,6 +132,7 @@ export function App() {
         {screen === 'collection' && <Collection />}
         {screen === 'shop' && <Shop go={setScreen} />}
         {screen === 'packs' && <PackOpen go={setScreen} />}
+        {screen === 'help' && <GlossaryBrowser />}
         {screen === 'settings' && <Settings />}
       </main>
     </div>

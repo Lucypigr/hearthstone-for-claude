@@ -8,6 +8,7 @@ import { decodeDeck, encodeDeck } from '../../game/deckstring';
 import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
 import { setName } from '../../game/sets';
 import { CLASS_COLORS, plainText, RACE_NAMES } from '../cardText';
+import { glossaryFor } from '../glossary';
 import { Art, CardView, Tile } from '../components/Card';
 import { setProfile, useProfile } from '../store';
 
@@ -558,6 +559,14 @@ export function CardDetail({ cardId, onClose }: { cardId: string; onClose: () =>
             {CLASS_NAMES[def.cardClass]}・{RARITY_NAMES[def.rarity]}・{setName(def.set)}
           </p>
           {def.flavor && <p className="flavor">{def.flavor.replace(/<[^>]+>/g, '')}</p>}
+          <ul className="glossary">
+            {glossaryFor(def).map((e) => (
+              <li key={e.term}>
+                <b>{e.term}</b>：{e.desc}
+                {e.how && <span className="gloss-how">　▸ {e.how}</span>}
+              </li>
+            ))}
+          </ul>
           <p>
             擁有：<b>{owned}</b> 張
           </p>
