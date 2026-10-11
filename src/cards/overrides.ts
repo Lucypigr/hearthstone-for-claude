@@ -13,6 +13,7 @@ import { EVENT_OVERRIDES } from './events';
 import { DUNGEON_OVERRIDES } from './dungeon';
 import { DARK_OVERRIDES } from './dark';
 import { TIMEWAYS_OVERRIDES } from './timeways';
+import { FESTIVAL_OVERRIDES } from './festival';
 import { VIOLET_OVERRIDES } from './violet';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
@@ -2884,6 +2885,7 @@ Object.assign(OVERRIDES, CATACLYSM_OVERRIDES);
 
 // 穿越時間流
 Object.assign(OVERRIDES, TIMEWAYS_OVERRIDES);
+Object.assign(OVERRIDES, FESTIVAL_OVERRIDES);
 
 // 核心系列
 Object.assign(OVERRIDES, CORE_OVERRIDES);

@@ -129,6 +129,8 @@ interface Ctx {
   eventAmount: number;
   combo: boolean;
   outcast: boolean;
+  /** 終章：這張牌用光了所有法力 */
+  finale?: boolean;
   position?: number;
   lifesteal: boolean;
   /** 比武揭露的我方牌堆卡牌（uid） */
@@ -1257,6 +1259,7 @@ export class Game {
       const ctx = this.baseCtx(p.id);
       ctx.combo = p.cardsPlayedThisTurn > 0;
       ctx.outcast = idx === 0 || idx === p.hand.length - 1;
+      ctx.finale = this.costKind(p, p.hand[idx]) === 'mana' && this.costOf(p, p.hand[idx]) === p.mana;
       if (!this.evalCond(req.when, ctx, p.hand[idx].uid)) return null;
     }
     return req;
@@ -2369,6 +2372,19 @@ export class Game {
     else if (kind === 'corpses') this.spendCorpses(p, cost);
     else if (kind === 'oppHealth') this.payHealth(s.players[opp(p.id)], Math.min(10, cost));
     else p.mana -= cost;
+    const finale = kind === 'mana' && p.mana === 0;
+    // 腐化：打出消耗比手牌中的腐化牌更高的牌，它們就會變成腐化版本
+    for (const h of p.hand) {
+      const cor = getCard(h.cardId).corrupt;
+      if (!cor || h === hc || !hasCard(cor.into) || cost <= this.costOf(p, h)) continue;
+      this.log(p.id, `${this.name(h.cardId)}腐化了`);
+      this.pulse(h.uid, cor.into, p.id, '腐化！');
+      if (getCard(cor.into).flags?.includes('corruptGainsStats')) {
+        h.atkBuff += 1;
+        h.hpBuff += 1;
+      }
+      h.cardId = cor.into;
+    }
     // 用掉「你的下一張…」的消耗變化
     const used = this.activeDiscounts(p, def, hc);
     if (used.length) {
@@ -2490,6 +2506,7 @@ export class Game {
       eventAmount: 0,
       combo,
       outcast,
+      finale,
       center,
       handIndex: idx,
       lifesteal: !!def.keywords?.includes('LIFESTEAL') || (def.type === 'SPELL' && p.spellLifestealTurn === s.turn),
@@ -4535,6 +4552,8 @@ export class Game {
         return ctx.combo;
       case 'outcast':
         return ctx.outcast;
+      case 'finale':
+        return !!ctx.finale;
       case 'selfCostZero':
         return !!ctx.playedCard && this.costOf(p, ctx.playedCard) === 0;
       case 'adjPlayed':
@@ -10655,6 +10674,89 @@ export class Game {
         for (const h of drawn) {
           h.atkBuff += args.atk as number;
           h.hpBuff += args.hp as number;
+        }
+        break;
+      }
+      // ------------------------------------------------------------ 腐化與終章（festival.ts）
+      case 'discoverSecretCast': {
+        // 投環遊戲：發現奧秘並施放
+        for (let i = 0; i < (args.count as number); i++) {
+          const pool = { isSecret: true } as Pool;
+          const opts = this.discoverOptions(pool, me.id, this.randomPool(pool, me.id, false).filter((c) => !me.secrets.some((x) => x.cardId === c.id)));
+          if (!opts.length) break;
+          const id = yield* this.choose(ctx, opts, '發現一張奧秘並施放');
+          yield* this.castRandomly(me.id, id);
+        }
+        break;
+      }
+      case 'removeTopCards': {
+        // 提卡圖斯：移除牌堆頂的牌
+        const owner = args.opponent ? foe : me;
+        const n = Math.min(args.count as number, owner.deck.length);
+        owner.deck.splice(owner.deck.length - n, n);
+        this.log(me.id, `${owner.name}的牌堆頂 ${n} 張牌被移除了`);
+        break;
+      }
+      case 'gemtosser':
+        // 食人魔寶石投擲者：每顆法力水晶對隨機敵人造成 1 點傷害
+        yield* this.runEffect({ e: 'repeat', times: me.maxMana, effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 1 }] }, ctx);
+        break;
+      case 'volumeUp': {
+        const drawn = yield* this.draw(me, 3, { type: 'SPELL' });
+        if (ctx.finale && drawn.length) {
+          const opts = [...new Set(drawn.map((h) => h.cardId))];
+          const id = yield* this.choose(ctx, opts, '發現其中一張法術的複製');
+          this.addToHand(me, id);
+        }
+        break;
+      }
+      case 'syncChord': {
+        const target = ctx.chosen !== null ? this.minion(ctx.chosen) : undefined;
+        if (!target) break;
+        yield* this.runEffect({ e: 'addCopy', target: { t: 'chosen' }, count: 1 }, ctx);
+        if (ctx.finale) {
+          const copy = me.hand[me.hand.length - 1];
+          if (copy && copy.cardId === target.cardId) {
+            copy.atkBuff += 1;
+            copy.hpBuff += 2;
+          }
+          yield* this.runEffect({ e: 'buff', target: { t: 'chosen' }, atk: 1, hp: 2 }, ctx);
+        }
+        break;
+      }
+      case 'playLastRiff': {
+        // 段落：打出你上一個打出的段落（不含終章）
+        const riffs = ['ETC_363', 'ETC_364', 'ETC_365'];
+        const played = me.playedCards ?? [];
+        let id: string | undefined;
+        for (let i = played.length - 2; i >= 0; i--) if (riffs.includes(played[i])) {
+          id = played[i];
+          break;
+        }
+        if (!id) break;
+        this.log(me.id, `${me.name}再次打出了${this.name(id)}`);
+        const sub: Ctx = { ...ctx, sourceCardId: id, finale: false };
+        for (const ab of getCard(id).abilities ?? []) if (ab.on.k === 'play') yield* this.runEffects(ab.effects, sub);
+        break;
+      }
+      case 'flowerchild': {
+        const drawn = yield* this.draw(me, 2, { minCost: 6 } as Pool);
+        if (ctx.finale) for (const h of drawn) h.costMod -= 1;
+        break;
+      }
+      case 'copyOpponentDeck':
+        // 海盜之王東尼：用對手牌堆的複製取代你的牌堆
+        me.deck = foe.deck.map((h) => this.newHandCard(h.cardId));
+        break;
+      case 'forceAttackSelf': {
+        // 慶典保全：所有敵方手下攻擊這個手下
+        const uid = ctx.sourceUid;
+        if (uid === null) break;
+        for (const m of [...foe.board]) {
+          const self = this.minion(uid);
+          if (!self || !this.alive(self) || !this.alive(m)) continue;
+          yield* this.doAttack(m.uid, uid);
+          if (this.over) return;
         }
         break;
       }

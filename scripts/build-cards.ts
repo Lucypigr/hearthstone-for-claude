@@ -86,7 +86,6 @@ const UNSUPPORTED_TAGS = [
   'SIDE_QUEST',
   'QUESTLINE',
   'MAGNETIC',
-  'CORRUPT',
   'DORMANT',
   'FORGE',
   'COLOSSAL',
@@ -107,7 +106,6 @@ const UNSUPPORTED_TAGS = [
   'KINDRED',
   'REWIND',
   'EMPOWER',
-  'FINALE',
   'PREPARE',
   'LIBRAM',
   'HONORABLE_KILL',
@@ -294,6 +292,17 @@ async function main() {
       const infuse: NonNullable<CardDef['infuse']> = { n: r.tags.TAG_SCRIPT_DATA_NUM_1 ?? 3, into: tokenId };
       if (raceWord && ['BEAST', 'TOTEM', 'MURLOC', 'DEMON', 'UNDEAD', 'MECH', 'ELEMENTAL', 'DRAGON', 'PIRATE'].includes(raceWord)) infuse.race = (raceWord === 'MECH' ? 'MECHANICAL' : raceWord) as Race;
       if (!manual) def.infuse = infuse;
+    }
+    // 腐化：手牌中的這張卡，在你打出消耗更高的牌後變成腐化版本
+    if (r.tags.CORRUPT) {
+      const tokenId = [`${r.id}t`, `${r.id}a`, `${r.id}ts`, `${r.id}2`].find((id) => byId.has(id));
+      if (tokenId && buildToken(tokenId)) def.corrupt = { into: tokenId };
+      // 可以無限腐化的卡：腐化版本再腐化成自己
+      else if (!tokenId && /t$/.test(r.id)) def.corrupt = { into: r.id };
+      else if (!OVERRIDES[r.id]) {
+        if (collectible) failures.push({ id: r.id, name: r.strs.CARDNAME.enUS, set: r.tags.CARD_SET, reason: `腐化版本不支援` });
+        return null;
+      }
     }
     const ov = OVERRIDES[r.id];
     if (ov) {
