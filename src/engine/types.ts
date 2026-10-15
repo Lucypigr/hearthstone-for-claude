@@ -290,6 +290,8 @@ export type Condition =
   | { c: 'control'; race?: Race; keyword?: Keyword; min?: number; side?: 'enemy'; minAtk?: number; minHp?: number; nameIncludes?: string; damaged?: boolean; hp?: number; frozen?: boolean }
   | { c: 'combo' }
   | { c: 'outcast' }
+  /** 終章：打出這張牌時剛好用光所有法力 */
+  | { c: 'finale' }
   /** 這張牌現在的消耗是 (0) */
   | { c: 'selfCostZero' }
   /** 本回合你打出過一張與這張牌相鄰的牌 */
@@ -960,6 +962,8 @@ export interface CardDef {
   rewind?: number;
   /** 注入：手牌中時，每有一個友方手下死亡就累積一次，累積到 n 次後變成 into（race：只計算這個種族） */
   infuse?: { n: number; into: string; race?: Race };
+  /** 腐化：手牌中的這張牌，每當你打出一張消耗更高的牌，就會變成腐化版本 */
+  corrupt?: { into: string };
   /** 傳說：開局時，這張卡的組合卡會一起洗入牌堆 */
   fabled?: string[];
   /** 目標（Aura）：打出後持續這麼多個你的回合 */
@@ -1070,6 +1074,8 @@ export type MinionFlag =
   | 'khadgar'
   | 'secretsLocked'
   | 'infuseGainsStats'
+  /** 腐化後獲得 +1/+1（可以無限腐化的卡） */
+  | 'corruptGainsStats'
   | 'takesDoubleDamage'
   | 'natureFeeds'
   | 'natureSummons'

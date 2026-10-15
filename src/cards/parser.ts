@@ -149,6 +149,9 @@ export function normalizeText(en: string): string {
     // 注入：效果由「注入後的衍生卡」表達，原卡不解析注入的敘述
     .replace(/\s*(Endlessly )?Infuse ?\(.*$/i, '')
     .replace(/^Infused\s*/i, '')
+    // 腐化：腐化後的效果由「腐化版本」的衍生卡表達，原卡不解析腐化的敘述
+    .replace(/\s*Corrupt(?: Again)?:.*$/i, '')
+    .replace(/^(Tradeable )?Corrupted\.?\s*/i, '$1')
     .trim();
   return t;
 }
@@ -1262,6 +1265,7 @@ const TRIGGERS: TriggerRule[] = [
   { re: /^Battlecry: /, build: () => ({ on: { k: 'play' }, play: true }) },
   { re: /^Combo: /, build: () => ({ on: { k: 'play' }, cond: { c: 'combo' }, play: true }) },
   { re: /^Outcast: /, build: () => ({ on: { k: 'play' }, cond: { c: 'outcast' }, play: true }) },
+  { re: /^Finale: /, build: () => ({ on: { k: 'play' }, cond: { c: 'finale' }, play: true }) },
   { re: /^Deathrattle: /, build: () => ({ on: { k: 'deathrattle' } }) },
   { re: /^Spellburst: /, build: () => ({ on: { k: 'spellCast', side: 'friendly' }, once: true }) },
   { re: /^Inspire: /, build: () => ({ on: { k: 'heroPower', side: 'friendly' } }) },

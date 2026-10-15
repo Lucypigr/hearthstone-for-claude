@@ -366,10 +366,10 @@ export function findOpponent(l: Pick<LadderState, 'stars' | 'legend'>, seed = Ma
 
   // 套牌：高牌階多半是網路上的強力套牌，低牌階什麼都有
   const weights: [DeckKind, number][] = [
-    ['netdeck', 0.12 + 0.72 * t],
-    ['homebrew', 0.35 - 0.15 * t],
-    ['meme', 0.23 - 0.17 * t],
-    ['random', 0.3 - 0.28 * t],
+    ['netdeck', 0.3 + 0.6 * t],
+    ['homebrew', 0.3 - 0.15 * t],
+    ['meme', 0.15 - 0.1 * t],
+    ['random', 0.08 - 0.07 * t],
   ];
   let roll = r() * weights.reduce((x, [, w]) => x + w, 0);
   let deckKind: DeckKind = 'netdeck';
@@ -383,8 +383,8 @@ export function findOpponent(l: Pick<LadderState, 'stars' | 'legend'>, seed = Ma
   const heroClass = PLAYABLE_CLASSES[Math.floor(r() * PLAYABLE_CLASSES.length)];
   const cls = CLASS_NAMES[heroClass];
   // 低牌階的玩家收藏比較少
-  const rarities: CardDef['rarity'][] | undefined = t < 0.15 ? ['FREE', 'COMMON', 'RARE'] : undefined;
-  const maxLegendary = t < 0.15 ? 0 : t < 0.4 ? 2 : 5;
+  const rarities: CardDef['rarity'][] | undefined = t < 0.05 ? ['FREE', 'COMMON', 'RARE', 'EPIC'] : undefined;
+  const maxLegendary = t < 0.05 ? 1 : t < 0.25 ? 3 : 5;
   const deckSeed = Math.floor(r() * 1e9);
 
   let recipe: Recipe;
@@ -401,7 +401,7 @@ export function findOpponent(l: Pick<LadderState, 'stars' | 'legend'>, seed = Ma
     const keys = ['aggro', 'midrange', 'control', 'spells', 'tribe'];
     archetype = keys[Math.floor(r() * keys.length)];
     recipe = (archetype === 'tribe' ? tribeRecipe(heroClass, r, false) : null) ?? ARCHETYPES[archetype === 'tribe' ? 'midrange' : archetype];
-    noise = deckKind === 'netdeck' ? 0.5 + r() * 0.7 : 2.5 + r() * 2.5;
+    noise = deckKind === 'netdeck' ? 0.3 + r() * 0.5 : 1.5 + r() * 2;
   }
   const deck = buildDeck(heroClass, {
     seed: deckSeed,
@@ -416,10 +416,10 @@ export function findOpponent(l: Pick<LadderState, 'stars' | 'legend'>, seed = Ma
   const deckName = recipe.name === '亂組的' ? `亂組的${cls}` : `${recipe.name}${cls}`;
 
   // 技術：牌階越高越強，但每個人都不一樣（有人被高估、有人被低估）
-  let skill = 0.15 + 0.75 * t + legendBonus + gauss() * 0.11;
-  if (deckKind === 'random') skill -= 0.12;
+  let skill = 0.4 + 0.55 * t + legendBonus + gauss() * 0.09;
+  if (deckKind === 'random') skill -= 0.08;
   if (deckKind === 'netdeck') skill += 0.04;
-  skill = clamp(skill, 0.03, 1);
+  skill = clamp(skill, 0.25, 1);
 
   let aggression = clamp(gauss() * 0.4, -1, 1);
   if (archetype === 'aggro') aggression = clamp(0.6 + gauss() * 0.2, 0, 1);

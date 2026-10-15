@@ -1320,8 +1320,9 @@ describe('倒轉與時光（TIME_ 100 ~ 449）', () => {
     expect(g.s.pendingChoice).not.toBeNull();
     const n = g.s.players[0].hand.length;
     g.apply({ type: 'choose', index: 0 });
-    expect(g.s.players[0].board).toHaveLength(1);
-    expect(g.s.players[0].hand.length).toBe(n + 1);
+    // 發現到的龍可能自己會再召喚衍生物
+    expect(g.s.players[0].board.length).toBeGreaterThanOrEqual(1);
+    expect(g.s.players[0].hand.length).toBeGreaterThanOrEqual(n + 1);
   });
 
   it('狂怒獵犬 / 時光遺失的戰刃 / 永恆牢籠 / 孤獨 / 持久的遺產', () => {
