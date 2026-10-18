@@ -80,6 +80,8 @@ export interface Filter {
   keyword?: Keyword;
   /** 排除玩家選擇的目標（例如「對其他敵人造成 1 點傷害」） */
   excludeChosen?: boolean;
+  /** 被凍結的角色 */
+  frozen?: boolean;
   /** 星艦或星艦組件 */
   starship?: boolean;
   terran?: boolean;
@@ -1125,6 +1127,7 @@ export interface CardDef {
  * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
+  | 'attackIfHeroAttacked'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'
