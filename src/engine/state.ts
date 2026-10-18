@@ -371,6 +371,11 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 『分裂者』克蘇恩：打出過的碎片 / 已經重新組合 */
+  cthunPieces?: string[];
+  cthunWhole?: boolean;
+  /** 空中特技：這個回合還要打出幾張抽到的牌 */
+  acrobatics?: { turn: number; left: number };
   /** 秘密通道：從牌堆拿進手牌的牌（回合結束時放回去） */
   passageUids?: number[];
   /** 本場對戰中你對友方角色施放的法術數 / 英雄生命值在你的回合改變的次數 */

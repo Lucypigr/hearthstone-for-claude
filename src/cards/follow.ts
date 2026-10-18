@@ -30,4 +30,8 @@ export const FOLLOW_EFFECTS: Record<string, Effect[]> = {
   // 仙人掌切割者：本回合施放抽到的法術後，切割者獲得 +1/+2 與嘲諷
   cactus: [fn('blCactusFire')],
   ghosts: [{ e: 'summon', card: 'CAP_802t', count: 1, who: 'self' }, fn('followGive', { id: 'ghosts' })],
+  // 高蹺手：本回合打出抽到的牌後，英雄本回合 +4 攻擊力
+  stilt: [{ e: 'heroAttack', amount: 4 }],
+  // 空中特技：本回合打出抽到的兩張牌後，再抽 2 張
+  acro: [fn('dmAcrobatics')],
 };
