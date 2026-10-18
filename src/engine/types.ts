@@ -206,6 +206,8 @@ export type DynAmount =
   | 'holyManaSpent'
   /** 本場對戰中你打出的流放卡數 */
   | 'outcastPlayed'
+  /** 本場對戰中你裝備過的武器數 */
+  | 'weaponsEquipped'
   /** 你目前剩餘的法力 */
   | 'remainingMana'
   /** 預兆的力量倍率：預兆 0~1 次 = 1，2~3 次 = 2，4 次以上 = 4 */
@@ -1123,6 +1125,11 @@ export interface CardDef {
  * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
+  | 'damagedEvenIfDead'
+  | 'spellLifestealAura'
+  | 'heroLifestealAura'
+  | 'felstringHarp'
+  | 'costDeckSize'
   | 'thaddius'
   | 'spellbender'
   | 'enchanter'
