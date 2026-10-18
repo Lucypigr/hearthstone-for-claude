@@ -100,6 +100,8 @@ export interface Filter {
   maxHp?: number;
   /** 有種族的手下 */
   hasRace?: boolean;
+  /** 不是泰坦的手下 */
+  notTitan?: boolean;
 }
 
 export type TargetExpr =
@@ -225,7 +227,13 @@ export type DynAmount =
   /** 本場對戰中你打出的、並非一開始就在牌堆中的牌數 */
   | 'nonStartingPlayed'
   /** 本場對戰中你把牌洗入牌堆的次數 */
-  | 'shuffleCount';
+  | 'shuffleCount'
+  /** 泰坦時代：本場對戰召喚過的樹人數 / 觸發過的友方奧秘數 / 施放過的法術派系數 / 本回合施放的自然法術數 / 在你的回合受到的傷害 */
+  | 'treantsSummoned'
+  | 'secretsTriggered'
+  | 'schoolsCast'
+  | 'natureThisTurn'
+  | 'ownTurnDamage';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -633,6 +641,10 @@ export type Trig =
   | { k: 'lastMana' }
   /** 你每回合第一次用法術造成傷害時 */
   | { k: 'firstSpellDamage' }
+  /** 你鍛造一張牌之後（it = 鍛造後的手牌） */
+  | { k: 'forge' }
+  /** 你把一個磁力手下吸附到手下上時（it = 被吸附的手下） */
+  | { k: 'magnetize' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -931,7 +943,7 @@ export interface CardDef {
   /** 只有條件成立時才能攻擊 */
   attackIf?: Condition;
   /** 在手牌中時，每個你的回合開始時變形：swap = 換成 into；opponentCard = 對手手牌中的一張；randomSpell = 隨機一張 cls 法術 */
-  handShift?: { kind: 'swap' | 'opponentCard' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
+  handShift?: { kind: 'swap' | 'opponentCard' | 'opponentDeck' | 'randomSpell' | 'randomWeapon'; into?: string; cls?: CardClass };
   /** 磁力：打出在友方機械左邊時，吸附到那個機械上 */
   magnetic?: boolean;
   /** 在手牌中時，相鄰的牌消耗增加（破壞！） */
@@ -976,6 +988,18 @@ export interface CardDef {
   immolate?: number;
   /** 地點牌：啟用後（耐久度 -1）變成這張卡（「前進到現在 / 未來」） */
   advanceTo?: string;
+  /** 鍛造：在手牌中花費 (2) 變成這張卡（等於自己 = 可以無限鍛造，每次消耗減少 (2)） */
+  forge?: string;
+  /** 泰坦：三個泰坦能力（法術衍生卡的 id）；全部用完之前無法攻擊 */
+  titan?: string[];
+  /** 泰坦使用能力後觸發的效果（it 卡 = 用掉的能力） */
+  titanAfter?: Effect[];
+  /** 磁力：也可以吸附到這些種族上（預設只有機械） */
+  magnetRaces?: Race[];
+  /** 休眠：抽這麼多張牌後甦醒 */
+  awakenDraws?: number;
+  /** 綻放：在手牌中這麼多個回合後變成另一張卡 */
+  blossom?: { turns: number; into: string };
 }
 
 /**
@@ -1134,4 +1158,11 @@ export type MinionFlag =
   | 'noHealFoe'
   | 'courier'
   | 'fandral'
-  | 'mirrorSpell';
+  | 'mirrorSpell'
+  /** 泰坦時代 */
+  | 'razorscale'
+  | 'amitus'
+  | 'argus'
+  | 'kologarn'
+  | 'minotauren'
+  | 'sif';

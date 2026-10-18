@@ -30,6 +30,20 @@ export function legalActions(g: Game): Action[] {
     if (def.disguised && g.canPlay(hc.uid, undefined, 'enemy').ok) out.push({ type: 'play', handUid: hc.uid, side: 'enemy' });
     // 預備：把卡拖進牌堆，花光剩餘法力
     if ((def.prepare || hc.canPrepare) && g.check({ type: 'prepare', handUid: hc.uid }).ok) out.push({ type: 'prepare', handUid: hc.uid });
+    // 鍛造
+    if (def.forge && g.check({ type: 'forge', handUid: hc.uid }).ok) out.push({ type: 'forge', handUid: hc.uid });
+  }
+  // 泰坦能力
+  for (const m of p.board) {
+    const list = getCard(m.cardId).titan;
+    if (!list) continue;
+    list.forEach((_id, index) => {
+      if (!g.canTitan(m.uid, index).ok) return;
+      const req = g.titanTargetReq(m.uid, index);
+      const targets = req ? g.validTargets(req, s.current, true, m.uid) : [];
+      if (req && targets.length) for (const t of targets) out.push({ type: 'titan', uid: m.uid, index, target: t });
+      else if (!req || req.optional) out.push({ type: 'titan', uid: m.uid, index });
+    });
   }
   if (g.canHeroPower()) {
     const options = g.heroPowerOptions() ? g.heroPowerOptions()!.map((_o, i) => i) : [undefined];
@@ -137,6 +151,8 @@ export function evaluate(g: Game, me: PlayerId, w: EvalWeights = DEFAULT_WEIGHTS
   // 預備好的卡在牌堆裡，之後會以折扣抽到
   const prepared = (p: typeof a) => p.deck.reduce((x, h) => x + (h.prepared ? 1.2 + Math.min(10, -h.costMod) * 0.35 : 0), 0);
   score += prepared(a) - prepared(b) * 0.3;
+  // 鍛造過的手牌（之後打出時效果更強）
+  score += a.hand.filter((h) => h.forged).length * 2.2;
   // 對手場上的攻擊力威脅
   const threat = b.board.reduce((x, m) => x + (m.hp > 0 && !m.dead ? g.atkOf(m) : 0), 0);
   if (threat >= a.hero.hp + a.hero.armor) score -= 50;

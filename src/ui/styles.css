@@ -3441,3 +3441,8 @@ body {
 .status-chip:hover {
   background: #3d3220;
 }
+
+/* 鍛造按鈕（和交易按鈕同時出現時往上疊） */
+.forge-btn.stacked {
+  bottom: calc(var(--cw) * 1.05 + 46px);
+}

@@ -2,7 +2,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/master/CardDefs.xml';
+// 固定在已驗證的版本（master 的新版本可能讓既有的卡牌解析失敗）
+export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/253932/CardDefs.xml';
 
 export interface RawCard {
   id: string;

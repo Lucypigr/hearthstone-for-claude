@@ -82,6 +82,7 @@ const STATIC_FLAGS = new Set([
   'doubleHeroDamage', 'heroDamageCap1', 'heroElusive', 'ashWorm', 'takesDoubleDamage', 'heroPowerEffectTwice',
   'heroPowerFreeSmallHand', 'noTurnDraw', 'sindragosaArcane', 'petrified', 'osk', 'tarTyrant', 'heroPowerAdjacent',
   'rushImmune', 'redirectAttackers', 'adjacentBodyguard', 'heroPowerDamage2', 'malygosArcane', 'doubleSpellPower', 'rift',
+  'sif', 'amitus', 'argus', 'razorscale',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([

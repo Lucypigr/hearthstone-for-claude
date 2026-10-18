@@ -122,6 +122,10 @@ export interface HandCard {
   lockedUntil?: number;
   /** 畸變怪物：目前的兩種加成效果 */
   bonus?: Keyword[];
+  /** 抽到時施放（符文裝飾洗入的複製） */
+  castOnDraw?: boolean;
+  /** 鍛造過的次數（暴風巨人） */
+  forged?: number;
   /** 雕刻進這張牌的法術（巴珊娜的樹人） */
   carved?: string[];
   /** 暗影告密者：目前的職業 */
@@ -202,6 +206,17 @@ export interface Minion {
   elusiveOpp?: boolean;
   /** 巨型手下的附肢（附肢的 uid） */
   limbs?: number[];
+  /** 泰坦：已用過的能力，以及最近一次使用能力的回合 */
+  titanUsed?: string[];
+  titanTurn?: number;
+  /** 諾甘農：各能力的威力倍率 */
+  titanPower?: Record<string, number>;
+  /** 攻擊造成的溢出傷害會擊中敵方英雄 */
+  trample?: boolean;
+  /** 寇格拉朗抓進手牌的手下（手牌的 uid） */
+  grabbed?: number[];
+  /** 吸附到這個手下的磁力手下（X-21 修理機器人） */
+  magnetized?: string[];
   /** 這個附肢屬於哪個本體 */
   limbOf?: number;
   /** 還沒召喚出來的附肢數（熔喉） */
@@ -260,6 +275,10 @@ export interface Weapon {
   killed?: string[];
   /** 在這個回合具有生命竊取（吸血毒藥） */
   lifestealTurn?: number;
+  /** 伊格尼斯打造時選擇的效果 */
+  ignis?: string[];
+  /** 你的英雄在攻擊時免疫（阿格拉瑪的迅捷斬擊） */
+  immuneAttack?: boolean;
   /** 小夥伴選擇的元素彈藥（0 ~ 3） */
   ammo?: number;
 }
@@ -603,6 +622,13 @@ export interface PlayerState {
   geddon?: boolean;
   /** 傑爾賓的凱旋等光環 */
   rafaam?: number;
+  /** 泰坦時代：本場對戰鍛造過的牌數 / 打出過的混沌觸手數 / 召喚過的大地之子與星界自動機數 */
+  forgedCount?: number;
+  tendrils?: number;
+  earthen?: number;
+  automatons?: number;
+  /** 泰坦時代的各種持續效果 */
+  titans?: TitansState;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
@@ -616,6 +642,55 @@ export interface PlayerState {
   summonedRaces: Record<string, number>;
   /** 是否為電腦 */
   ai: boolean;
+}
+
+/** 泰坦時代卡牌的玩家狀態 */
+export interface TitansState {
+  /** 霍迪爾：接下來打出的這麼多個手下屬性值設為 8/8 */
+  hodir?: number;
+  /** 奧丁：英雄獲得護甲時也獲得等量的攻擊力 */
+  odyn?: boolean;
+  /** 尤頓：每回合抽到的第一張法術對敵人施放複製 */
+  jotun?: boolean;
+  jotunTurn?: number;
+  /** 下一次治療改為造成傷害（暗影觸碰的克瓦迪爾） */
+  healToDamage?: boolean;
+  /** 下一張法術具有法術傷害（天體射擊） */
+  nextSpellDmg?: number;
+  /** 本回合下一張法術也會指定相鄰手下（傳導） */
+  conductTurn?: number;
+  /** 你下一張二選一卡牌兩種效果合一（伊歐娜門徒） */
+  chooseBothNext?: boolean;
+  /** 本回合施放過的自然法術數 */
+  natureTurn?: { turn: number; n: number };
+  /** 已經發現過異象的英雄能力 */
+  anomalyPower?: boolean;
+  /** 本場對戰召喚過的樹人數 */
+  treants?: number;
+  /** 血肉詛咒：這個回合手下消耗生命值 */
+  fleshTurn?: number;
+  /** 下回合自然法術消耗減少 */
+  natureDiscountTurn?: number;
+  /** 本場對戰中觸發過的奧秘數 */
+  secretsTriggered?: number;
+  /** 在你的回合受到的傷害總數 */
+  ownTurnDamage?: number;
+  /** 本回合護甲值有變化 */
+  armorChangedTurn?: number;
+  /** 薩格拉斯：從扭曲虛空召喚的惡魔 +2 生命值與嘲諷 */
+  legion?: boolean;
+  /** 赫利亞：抽到的瘟疫不會消失（無盡） */
+  unendingPlagues?: boolean;
+  /** 本場對戰打出過、不在起始牌堆中的手下 */
+  nonStartMinions?: string[];
+  /** 上個回合打出過的牌（對手的上一張牌：命運分割者） */
+  lastPlayed?: string;
+  /** 回合結束時，下一張超載卡消耗減少（高嘉納斯門徒） */
+  frozenOverTurn?: number;
+  /** 對手下回合無法打出這些牌（冰封之地） */
+  lockedCards?: number[];
+  /** 本回合抽到第二張牌時摧毀（草率的機械技師） */
+  drawsThisTurn?: { turn: number; n: number };
 }
 
 export interface LogEntry {
@@ -683,6 +758,10 @@ export interface GameState {
   fxSeq: number;
   pendingChoice: ChoiceRequest | null;
   deathsThisTurn: number;
+  /** 焦油潑灑：這個回合手下受到雙倍傷害 */
+  tarSlickTurn?: number;
+  /** 秋高爾帶來的異象（TTN_002t*），雙方整場對戰都有效 */
+  anomaly?: string;
   /** 接下來輪到的玩家（額外回合，例如坦普拉斯） */
   turnQueue?: PlayerId[];
 }
@@ -697,6 +776,10 @@ export type Action =
   /** 使用第二個英雄能力（消耗屍體） */
   | { type: 'heroPower2'; target?: number }
   | { type: 'trade'; handUid: number }
+  /** 鍛造手牌中的卡 */
+  | { type: 'forge'; handUid: number }
+  /** 使用泰坦的能力 */
+  | { type: 'titan'; uid: number; index: number; target?: number }
   /** 發射星艦 */
   | { type: 'launch' }
   /** 啟用地點牌 */
