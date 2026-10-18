@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDeck } from './decks';
+import { buildDeck, validateDeck } from './decks';
 import { decodeDeck, encodeDeck } from './deckstring';
 
 describe('牌組代碼', () => {
@@ -22,5 +22,14 @@ describe('牌組代碼', () => {
 
   it('無效的代碼會拋出錯誤', () => {
     expect(() => decodeDeck('hello')).toThrow();
+  });
+});
+
+describe('特殊套牌', () => {
+  it('斬魂者阿薩琳娜 + 『聖者』麥迪文：20 張的套牌，顯赫附帶卡不算未支援', () => {
+    const d = decodeDeck('AAECAa0GBPypB4CqB4SqB+fYBwjwnwSg+wbD/waFhgedrQevyQeq2Qes2QcAAA==');
+    expect(d.unsupported).toBe(0);
+    expect(d.cards.length).toBe(18);
+    expect(validateDeck({ id: '', name: '', heroClass: d.heroClass, freeform: false, cards: d.cards }).ok).toBe(true);
   });
 });

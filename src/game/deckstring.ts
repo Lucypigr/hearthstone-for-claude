@@ -96,8 +96,11 @@ export function decodeDeck(input: string): DecodedDeck {
 
   const cards: string[] = [];
   let unsupported = 0;
+  // 顯赫卡（例如『聖者』麥迪文）的附帶卡會一起寫在代碼裡，遊戲會自動放入牌堆，不算未支援
+  const fabledParts = new Set(entries.flatMap(([dbf]) => cardByDbf(dbf)?.fabled ?? []));
   for (const [dbf, n] of entries) {
     const def = cardByDbf(dbf);
+    if (def && !def.collectible && fabledParts.has(def.id)) continue;
     if (!def || !def.collectible) {
       unsupported += n;
       continue;
