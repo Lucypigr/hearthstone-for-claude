@@ -85,6 +85,8 @@ const STATIC_FLAGS = new Set([
   'sif', 'amitus', 'argus', 'razorscale',
   'permaFrozen', 'customsEnforcer', 'concierge', 'aranna', 'lynessa', 'damageCap1', 'climbingHook', 'octuple', 'temporaryCard',
   'clumsySteward', 'growInHand', 'serviceAce',
+  'exactLethalDraw', 'heroPowerFree', 'tradeUpgrade', 'corridorSleeper', 'bountyBoard', 'popgar', 'howdyfin', 'slagmaw', 'ogreRider',
+  'taethelan', 'morphingCard', 'mirage',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([

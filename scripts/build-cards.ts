@@ -306,13 +306,25 @@ async function main() {
     }
     const ov = OVERRIDES[r.id];
     if (ov) {
-      const { tokens, heroPower, ...rest } = ov;
+      const { tokens, heroPower, chooseOneIds, ...rest } = ov;
       // 鍛造版本、泰坦能力、綻放後的卡也要一起收錄
-      const linked = [ov.forge, ...(ov.titan ?? []), ov.blossom?.into].filter((t): t is string => !!t && t !== r.id);
+      const linked = [ov.forge, ...(ov.titan ?? []), ov.blossom?.into, ov.mini, ov.gigantic, ov.spellstone?.into].filter((t): t is string => !!t && t !== r.id);
       for (const t of [...(tokens ?? []), ...linked]) {
         if (!buildToken(t)) throw new Error(`覆寫 ${r.id} 引用的衍生卡 ${t} 無法建立`);
       }
       const out: CardDef = { ...def, ...rest, heroPower: undefined };
+      // 有手動定義的二選一卡：選項仍由子卡（及子卡的手動定義）組成
+      if ((r.tags.CHOOSE_ONE || chooseOneIds) && !ov.chooseOne) {
+        const options: ChooseOneOption[] = [];
+        for (const suffix of chooseOneIds ?? ['a', 'b']) {
+          const sub = chooseOneIds ? byId.get(suffix) : (byId.get(r.id + suffix) ?? byId.get(r.id + suffix.toUpperCase()));
+          const subOv = sub && OVERRIDES[sub.id];
+          if (!sub || !subOv) throw new Error(`二選一卡 ${r.id} 的子卡沒有手動定義`);
+          for (const t of subOv.tokens ?? []) if (!buildToken(t)) throw new Error(`衍生卡 ${t} 無法建立`);
+          options.push({ id: sub.id, name: clean(sub.strs.CARDNAME.zhTW), text: clean(sub.strs.CARDTEXT?.zhTW), abilities: subOv.abilities ?? [], target: subOv.target && type === 'MINION' ? { ...subOv.target, optional: true } : subOv.target });
+        }
+        out.chooseOne = options;
+      }
       if (type === 'HERO') {
         const bp = byId.get(r.refs.HERO_POWER);
         if (!bp || !heroPower) throw new Error(`英雄卡 ${r.id} 缺少英雄能力`);

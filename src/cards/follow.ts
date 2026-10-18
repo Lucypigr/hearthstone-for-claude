@@ -23,5 +23,9 @@ export const FOLLOW_EFFECTS: Record<string, Effect[]> = {
   // 跟隨鬼魂：召喚一個 2/1 重生鬼魂，賦予手中一張可打出的卡牌此效果
   // 閃電反射：本回合打出發現的自然法術後，再發現一個
   reflexes: [{ e: 'discover', pool: { type: 'SPELL', spellSchool: 'NATURE' } }],
+  // 燧石火器：本回合打出拿到的快槍卡後，再拿一張
+  flint: [fn('blFlintFirearm')],
+  // 仙人掌切割者：本回合施放抽到的法術後，切割者獲得 +1/+2 與嘲諷
+  cactus: [fn('blCactusFire')],
   ghosts: [{ e: 'summon', card: 'CAP_802t', count: 1, who: 'self' }, fn('followGive', { id: 'ghosts' })],
 };

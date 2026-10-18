@@ -1,7 +1,8 @@
 import { useMemo, useState, type CSSProperties } from 'react';
-import { cardClasses, COLLECTIBLE, getCard, HEROES, PLAYABLE_CLASSES } from '../../cards/registry';
+import { cardClasses, COLLECTIBLE, getCard, hasCard, HEROES, PLAYABLE_CLASSES } from '../../cards/registry';
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardClass, CardDef, Rarity } from '../../engine/types';
+import { ZILLIAX_MODULES } from '../../cards/whizbang';
 import { buildDeck, cardAllowed, deckCurve, deckRunes, DECK_SIZE, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
 import { CRAFT_COST, DISENCHANT_VALUE, RARITY_NAMES } from '../../game/economy';
 import { decodeDeck, encodeDeck } from '../../game/deckstring';
@@ -485,6 +486,31 @@ function DeckEditor({
           </li>
         ))}
       </ul>
+      {deck.cards.includes('TOY_330') && (
+        <div className="zilliax-box" title="齊利亞斯豪華版 3000：選兩個功能模組，合體後的消耗、屬性值與效果是兩個模組相加">
+          <span className="muted small">齊利亞斯模組（選 2 個）</span>
+          <div className="zilliax-mods">
+            {ZILLIAX_MODULES.filter((id) => hasCard(id)).map((id) => {
+              const on = (deck.zilliax ?? []).includes(id);
+              const m = getCard(id);
+              return (
+                <button
+                  key={id}
+                  className={`btn small ${on ? 'selected' : ''}`}
+                  title={`${m.cost} 費 ${m.attack}/${m.health}　${m.text.replace(/<[^>]+>/g, '')}`}
+                  onClick={() => {
+                    const cur = deck.zilliax ?? [];
+                    const next = on ? cur.filter((x) => x !== id) : [...cur, id].slice(-2);
+                    onChange({ ...deck, zilliax: next });
+                  }}
+                >
+                  {m.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {!problems.ok && deck.cards.length > 0 && (
         <ul className="problems">
           {problems.errors.slice(0, 4).map((e) => (

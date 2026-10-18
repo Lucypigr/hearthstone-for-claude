@@ -14,6 +14,8 @@ export interface Deck {
   /** 不限職業：可以放入任何職業的卡 */
   freeform: boolean;
   cards: string[];
+  /** 齊利亞斯豪華版 3000 的兩個模組 */
+  zilliax?: string[];
 }
 
 export function maxCopies(def: CardDef): number {

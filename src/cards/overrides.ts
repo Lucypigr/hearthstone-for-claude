@@ -17,12 +17,16 @@ import { FESTIVAL_OVERRIDES } from './festival';
 import { VIOLET_OVERRIDES } from './violet';
 import { TITANS_OVERRIDES } from './titans';
 import { PARADISE_OVERRIDES } from './paradise';
+import { WHIZBANG_OVERRIDES } from './whizbang';
+import { BADLANDS_OVERRIDES } from './badlands';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
 export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' | 'text' | 'heroPower'>> & {
   /** 英雄卡的新英雄能力（名稱、敘述、費用會自動從卡牌資料帶入） */
   heroPower?: HeroPowerSpec;
+  /** 二選一的子卡 id（子卡不是 a / b 結尾時） */
+  chooseOneIds?: string[];
   /** 覆寫中引用的衍生卡，需一起收錄 */
   tokens?: string[];
   /** 這張卡雖然有注入標籤，但沒有（或不需要自動產生）注入版本 */
@@ -2903,3 +2907,7 @@ Object.assign(OVERRIDES, TITANS_OVERRIDES);
 
 // 天堂島
 Object.assign(OVERRIDES, PARADISE_OVERRIDES);
+
+// 威茲班的工作坊、決戰荒蕪之地
+Object.assign(OVERRIDES, WHIZBANG_OVERRIDES);
+Object.assign(OVERRIDES, BADLANDS_OVERRIDES);

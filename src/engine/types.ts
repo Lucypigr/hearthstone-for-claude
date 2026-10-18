@@ -239,7 +239,13 @@ export type DynAmount =
   | 'elementalStreak'
   | 'ownTurnHits'
   | 'spellsOnChars'
-  | 'otherClassPlayed';
+  | 'otherClassPlayed'
+  /** 決戰荒蕪之地 / 威茲班：連續打出元素的回合數（含這個回合）/ 手牌中的龍 / 打出的 1 費卡 / 本場對戰抽的牌 / 施放的神聖法術 */
+  | 'elementalStreakNow'
+  | 'dragonsInHand'
+  | 'oneCostPlayed'
+  | 'drawnThisGame'
+  | 'holySpellsCast';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -490,6 +496,21 @@ export type Condition =
   | { c: 'castHolyAndShadow' }
   | { c: 'deckTenCosts' }
   | { c: 'deckSameType' }
+  /** 快槍：打出的這張牌是在這個回合進入手牌的 / 手牌中的這張牌是在這個回合進入手牌的 */
+  | { c: 'quickdraw' }
+  | { c: 'quickdrawHand' }
+  /** 你的牌堆在開始時沒有重複的卡 */
+  | { c: 'startedNoDupes' }
+  /** 本場對戰中你至少挖掘過 n 次 */
+  | { c: 'excavated'; n: number }
+  /** 你持有另一張消耗為 n 的卡 */
+  | { c: 'holdingOtherCost'; n: number }
+  /** 這張牌在你手牌中時你施放過法術（或觸發過條件） */
+  | { c: 'heldSpell' }
+  /** 你本回合施放過神聖法術 */
+  | { c: 'castHolyThisTurn' }
+  /** 觸發事件的卡是從手牌最左或最右打出的 */
+  | { c: 'edgeCard' }
   /** 這張卡一開始不在牌堆中 */
   | { c: 'notStarting' }
   /** 你在自己的回合受到過至少 n 點傷害 */
@@ -683,7 +704,11 @@ export type SecretEvent =
   /** 一個敵方手下造成 3 點以上的傷害之後 */
   | 'enemyBigHit'
   /** 對手花光所有法力之後 */
-  | 'enemyAllMana';
+  | 'enemyAllMana'
+  /** 對手打出一張手下、法術或武器之後 */
+  | 'afterEnemyCard'
+  /** 對手打出在這個回合進入手牌的卡 */
+  | 'enemyQuickdraw';
 
 export interface Ability {
   on: Trig;
@@ -740,6 +765,8 @@ export interface CostAura {
   everyThird?: boolean;
   /** 只影響你每回合打出的第一個這個種族的手下 */
   firstOfRace?: boolean;
+  /** 只影響這個派系的法術 */
+  school?: string;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -816,6 +843,8 @@ export interface PendingDiscount {
   oppHealth?: boolean;
   /** 只適用於有亡語的手下 */
   deathrattle?: boolean;
+  /** 只適用於這個派系的法術 */
+  school?: string;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -1012,6 +1041,11 @@ export interface CardDef {
   magnetRaces?: Race[];
   /** 休眠：抽這麼多張牌後甦醒 */
   awakenDraws?: number;
+  /** 微縮 / 巨大化：抽到時獲得的迷你（1 費 1/1）/ 巨大（8 費 8/8）複製 */
+  mini?: string;
+  gigantic?: string;
+  /** 法術石：達成條件後升級成另一張 */
+  spellstone?: { into: string; kind: 'corpses' | 'heroAttacks'; n: number };
   /** 觀光客：這個職業的套牌可以放入此卡，並因此可以放入此卡所屬職業的卡 */
   tourist?: CardClass;
   /** 綻放：在手牌中這麼多個回合後變成另一張卡 */
@@ -1194,4 +1228,17 @@ export type MinionFlag =
   | 'damageCap1'
   | 'clumsySteward'
   | 'growInHand'
-  | 'temporaryCard';
+  | 'temporaryCard'
+  /** 威茲班 / 荒蕪之地 */
+  | 'exactLethalDraw'
+  | 'tradeUpgrade'
+  | 'corridorSleeper'
+  | 'heroPowerFree'
+  | 'bountyBoard'
+  | 'howdyfin'
+  | 'ogreRider'
+  | 'taethelan'
+  | 'mirage'
+  | 'popgar'
+  | 'slagmaw'
+  | 'morphingCard';
