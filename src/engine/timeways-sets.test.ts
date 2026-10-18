@@ -432,7 +432,7 @@ describe('終結（END_）卡牌', () => {
     expect(me.hand.length).toBe(before + 1);
     const g2 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
     play(g2, 'END_027');
-    for (const id of g2.s.pendingChoice!.options) expect(getCard(id).races).toContain('DRAGON');
+    for (const id of g2.s.pendingChoice!.options) expect(getCard(id).races?.some((r) => r === 'DRAGON' || r === 'ALL')).toBe(true);
   });
 
   it('同步火花：敵人死亡時，隨機友方手下 +3/+3', () => {

@@ -134,6 +134,8 @@ export interface HandCard {
   handGrant?: Ability[];
   /** 縈繞夢魘：打出時召喚一個 4/3 士兵 */
   haunted?: boolean;
+  /** DJ 魔暴：施放其中一張後，其他的消耗增加 (1) */
+  dj?: boolean;
   /** 潮池學徒：在手牌中時施放的法術 / 卡瑞絲：施放過的法術派系 */
   held?: string[];
   /** 抽到時施放（符文裝飾洗入的複製） */
@@ -194,6 +196,8 @@ export interface Minion {
   killed?: string[];
   /** 被此手下吞掉、亡語時要還回去的手下（護城河潛伏者） */
   captured?: { cardId: string; owner: PlayerId }[];
+  /** 粉絲：連結的手下 */
+  linkTo?: number;
   /** 在這個回合可以正常攻擊（銀白巡邏兵） */
   canAttackTurn?: number;
   /** 暫時控制：回合結束時還給原本的玩家 */
@@ -301,6 +305,8 @@ export interface Weapon {
   immuneAttack?: boolean;
   /** 小夥伴選擇的元素彈藥（0 ~ 3） */
   ammo?: number;
+  /** 樂器武器：裝備時累積的數值 */
+  counter?: number;
 }
 
 export interface SecretInst {
@@ -308,6 +314,8 @@ export interface SecretInst {
   cardId: string;
   /** 哈基亞：被存放在這個奧秘裡的靈魂（觸發時重新召喚） */
   souls?: string[];
+  /** 時光盡頭的迪斯可：在你的回合開始時摧毀 */
+  disco?: boolean;
 }
 
 export interface PlayerState {
@@ -655,6 +663,20 @@ export interface PlayerState {
   /** 威茲班的工作坊 / 決戰荒蕪之地的各種持續效果 */
   whizbang?: { zarimiUsed?: boolean; shudder?: number; labPatronTurn?: number; jadeDisplay?: number; secretsTriggered?: string[]; goldbeardBusy?: boolean };
   badlands?: { excavates?: number; pileOfBones?: number; dryscale?: number; brann?: boolean; frogs?: number; cactusUid?: number };
+  handCapBonus?: number;
+  weaponsEquipped?: number;
+  fl?: {
+    noOverloadTurn?: number;
+    fizzle?: boolean;
+    mosh?: number;
+    powerArmor?: number;
+    powerAtk?: number;
+    armorTurn?: { turn: number; n: number };
+    lightshows?: number;
+    starlight?: boolean;
+    love?: boolean;
+    inzah?: number;
+  };
   lk?: {
     noHeroTurn?: number;
     outcasts?: number;

@@ -511,6 +511,7 @@ function DeckEditor({
           </div>
         </div>
       )}
+      {deck.cards.includes('ETC_080') && <BandPicker deck={deck} onChange={onChange} />}
       {!problems.ok && deck.cards.length > 0 && (
         <ul className="problems">
           {problems.errors.slice(0, 4).map((e) => (
@@ -638,3 +639,39 @@ export function CardDetail({ cardId, onClose }: { cardId: string; onClose: () =>
   );
 }
 
+
+/** E.T.C.樂團經理：組一個 3 張牌的樂團（不佔牌組空間） */
+function BandPicker({ deck, onChange }: { deck: Deck; onChange: (d: Deck) => void }) {
+  const [q, setQ] = useState('');
+  const band = deck.band ?? [];
+  const found = q.trim()
+    ? COLLECTIBLE.filter((c) => c.id !== 'ETC_080' && c.type !== 'HERO' && cardAllowed(c, deck.heroClass, deck.freeform) && (c.name.includes(q.trim()) || c.nameEn.toLowerCase().includes(q.trim().toLowerCase()))).slice(0, 8)
+    : [];
+  return (
+    <div className="zilliax-box" title="E.T.C.樂團經理：選 3 張牌組成樂團，戰吼時發現其中一張">
+      <span className="muted small">E.T.C. 的樂團（選 3 張）</span>
+      <div className="zilliax-mods">
+        {band.map((id) => (
+          <button key={id} className="btn small selected" title="點擊移除" onClick={() => onChange({ ...deck, band: band.filter((x) => x !== id) })}>
+            {getCard(id).name}
+          </button>
+        ))}
+      </div>
+      {band.length < 3 && <input className="search" placeholder="搜尋卡牌加入樂團" value={q} onChange={(e) => setQ(e.target.value)} />}
+      <div className="zilliax-mods">
+        {found.map((c) => (
+          <button
+            key={c.id}
+            className="btn small"
+            onClick={() => {
+              onChange({ ...deck, band: [...band.filter((x) => x !== c.id), c.id].slice(-3) });
+              setQ('');
+            }}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

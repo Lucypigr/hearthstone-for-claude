@@ -16,6 +16,8 @@ export interface Deck {
   cards: string[];
   /** 齊利亞斯豪華版 3000 的兩個模組 */
   zilliax?: string[];
+  /** E.T.C.樂團經理的樂團（3 張牌） */
+  band?: string[];
 }
 
 export function maxCopies(def: CardDef): number {
