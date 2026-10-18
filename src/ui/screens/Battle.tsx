@@ -989,8 +989,8 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
                 {echo && <span className="echo-badge">回音</span>}
                 {h.prepared && <span className="echo-badge prepared-badge">已預備</span>}
                 {g.costKind(me, h) !== 'mana' && (
-                  <span className={`cost-kind ${g.costKind(me, h)}`} title={g.costKind(me, h) === 'health' ? '消耗生命值而不是法力' : '消耗屍體而不是法力'}>
-                    {g.costKind(me, h) === 'health' ? '❤' : '💀'}
+                  <span className={`cost-kind ${g.costKind(me, h)}`} title={g.costKind(me, h) === 'health' ? '消耗生命值而不是法力' : g.costKind(me, h) === 'armor' ? '消耗護甲而不是法力' : '消耗屍體而不是法力'}>
+                    {g.costKind(me, h) === 'health' ? '❤' : g.costKind(me, h) === 'armor' ? '🛡' : '💀'}
                   </span>
                 )}
               </div>
