@@ -14,6 +14,7 @@ import { EXCAVATE_LEGENDARY, EXCAVATE_TIERS } from '../cards/badlands';
 import { LK_CONCOCTIONS, LK_MIXES } from '../cards/lichking';
 import { CHROMIE_EPOCHS, IMPOSTERS, RUNI_LOCATIONS } from '../cards/caverns';
 import { HARMONIC_PAIRS, INSTRUMENTS, MOVEMENTS, REMIXES } from '../cards/legends';
+import { OG_TOXINS } from '../cards/oldgods';
 import { trialDef } from '../cards/trial';
 import { COLLECTIBLE, cardClasses, getCard, hasCard, HEROES, poolCards, POWER_INFO } from '../cards/registry';
 import { LAUNCH_COST, starshipDef, starshipIdFor } from '../cards/starship';
@@ -1623,6 +1624,8 @@ export class Game {
     if (c.attacks >= this.maxAttacks(c)) return false;
     if (!isHero(c)) {
       if (this.hasKw(c, 'CANT_ATTACK') && c.canAttackTurn !== s.turn) return false;
+      // 異種蟲群：只有在你的英雄本回合攻擊過時才能攻擊
+      if (!c.silenced && getCard(c.cardId).flags?.includes('attackIfHeroAttacked') && !s.players[c.owner].heroAttackedThisTurn) return false;
       if (this.hasKw(c, 'DORMANT')) return false;
       const def = getCard(c.cardId);
       // 泰坦：三個能力全部用完之前無法攻擊；用過能力的回合也不能攻擊
@@ -5040,6 +5043,7 @@ export class Game {
     if (f.side === 'enemy' && c.owner === ctx.controller) return false;
     if (f.excludeSelf && c.uid === ctx.sourceUid) return false;
     if (f.excludeChosen && c.uid === ctx.chosen) return false;
+    if (f.frozen && !c.frozen) return false;
     if (f.race) {
       if (hero) return false;
       const races = getCard(c.cardId).races ?? [];
@@ -16068,6 +16072,7 @@ export class Game {
         if (yield* this.customLichKing(fn, args, ctx)) break;
         if (yield* this.customFestival(fn, args, ctx)) break;
         if (yield* this.customClassicRest(fn, args, ctx)) break;
+        if (yield* this.customOldGods(fn, args, ctx)) break;
         throw new Error(`未知的自訂效果：${fn}`);
     }
   }
@@ -20313,6 +20318,15 @@ export class Game {
       hc.cardId = list[(i + 1) % list.length] ?? hc.cardId;
       return;
     }
+    // 變形者澤魯斯：每個回合變成一個隨機手下
+    if ((hc.origin ?? hc.cardId) === 'OG_123') {
+      const c = pick(this.s, COLLECTIBLE.filter((d) => d.type === 'MINION'));
+      if (c) {
+        hc.origin = 'OG_123';
+        hc.cardId = c.id;
+      }
+      return;
+    }
     const imp = IMPOSTERS[hc.origin ?? hc.cardId];
     if (imp) {
       const c = pick(this.s, this.randomPool({ type: 'MINION', cost: imp.cost, anyClass: true }, p.id, false));
@@ -21378,6 +21392,203 @@ export class Game {
         return true;
       case 'cxCommandingShout':
         me.shoutTurn = s.turn;
+        return true;
+    }
+    return false;
+  }
+
+  // ==========================================================================
+  // 古神碎碎念剩下的卡
+  // ==========================================================================
+
+  /** 古神碎碎念的自訂效果；回傳 false 表示不認得這個名稱 */
+  private *customOldGods(fn: string, args: Record<string, unknown>, ctx: Ctx): Gen<boolean> {
+    const s = this.s;
+    const me = s.players[ctx.controller];
+    const foe = s.players[opp(ctx.controller)];
+    const self = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
+    const chosenM = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+    const sd = ctx.isSpell ? this.spellDamage(me.id) * (this.doublesSpells(me) ? 2 : 1) : 0;
+    const live = (p: PlayerState) => p.board.filter((m) => this.alive(m));
+    const randomMinion = (cost: number) => pick(s, this.randomPool({ type: 'MINION', cost: Math.max(0, Math.min(10, cost)), anyClass: true }, me.id, false));
+    switch (fn) {
+      case 'ogIfKilled': {
+        const d = this.attackDefender !== null ? this.minion(this.attackDefender) : null;
+        if (d && !isHero(d) && (d.hp <= 0 || d.dead)) yield* this.runEffects(args.effects as Effect[], ctx);
+        return true;
+      }
+      case 'ogAttackAgain':
+        if (self) self.attacks = Math.max(0, self.attacks - 1);
+        return true;
+      case 'ogRecruit': {
+        const h = pick(s, me.deck.filter((x) => getCard(x.cardId).type === 'MINION'));
+        if (h && me.board.length < MAX_BOARD) {
+          me.deck = me.deck.filter((x) => x !== h);
+          yield* this.summon(me.id, h.cardId, undefined, h);
+        }
+        return true;
+      }
+      case 'ogDarkspeaker':
+        if (self && chosenM && chosenM !== self) {
+          const a = [this.atkOf(self), self.hp];
+          const b = [this.atkOf(chosenM), chosenM.hp];
+          this.setStats(self, b[0], b[1]);
+          this.setStats(chosenM, a[0], a[1]);
+        }
+        return true;
+      case 'ogNzoth': {
+        const ids = me.graveyard.filter((id) => hasCard(id) && getCard(id).type === 'MINION' && getCard(id).abilities?.some((a) => a.on.k === 'deathrattle'));
+        for (const id of ids) if (!(yield* this.summon(me.id, id))) break;
+        return true;
+      }
+      case 'ogYogg': {
+        const n = (me.playedCards ?? []).filter((id) => hasCard(id) && getCard(id).type === 'SPELL').length;
+        for (let i = 0; i < n; i++) {
+          const c = pick(s, this.randomPool({ type: 'SPELL', anyClass: true }, me.id, false).filter((d) => !d.quest));
+          if (c) yield* this.castRandomly(me.id, c.id);
+          yield* this.processDeaths();
+          if (this.over || (self && !this.alive(self))) break;
+        }
+        return true;
+      }
+      case 'ogProphet': {
+        const h = ctx.handSource !== undefined ? me.hand.find((x) => x.uid === ctx.handSource) : undefined;
+        if (h) h.costMod -= 1;
+        return true;
+      }
+      case 'ogCorruptedSeer':
+        for (const m of [...live(me), ...live(foe)]) if (m.uid !== ctx.sourceUid && !this.isRace(m.cardId, 'MURLOC')) yield* this.damage(this.dmgSource(ctx), m.uid, 2);
+        return true;
+      case 'ogAncientOne': {
+        const bloods = live(me).filter((m) => m.cardId === 'OG_173');
+        if (bloods.length < 2) return true;
+        const [a, b] = bloods;
+        const i = me.board.indexOf(a);
+        me.board = me.board.filter((x) => x !== a && x !== b);
+        this.recalcAuras();
+        yield* this.summon(me.id, 'OG_173a', Math.min(i, me.board.length));
+        return true;
+      }
+      case 'ogShambler':
+        if (self && chosenM && chosenM !== self) this.setStats(self, this.atkOf(chosenM), chosenM.hp);
+        return true;
+      case 'ogHarbinger':
+        yield* this.drawWhere(me, (h) => getCard(h.cardId).type === 'MINION' && getCard(h.cardId).cost === 10);
+        return true;
+      case 'ogDeathwing':
+        for (const h of me.hand.filter((x) => this.handDef(x).type === 'MINION' && this.isRace(x.cardId, 'DRAGON'))) {
+          if (me.board.length >= MAX_BOARD) break;
+          me.hand = me.hand.filter((x) => x !== h);
+          yield* this.summon(me.id, h.cardId, undefined, h);
+        }
+        return true;
+      case 'ogNat':
+        // 黑暗漁人納特：在對手的回合開始時（這裡的 me 是納特的控制者）
+        if (nextRandom(s) < 0.5) yield* this.draw(foe, 1);
+        return true;
+      case 'ogForbidden': {
+        const n = me.mana;
+        me.mana = 0;
+        switch (args.kind) {
+          case 'ancient':
+            if (self && n) this.addStats(self, n, n);
+            break;
+          case 'flame':
+            if (chosenM) yield* this.damage(this.dmgSource(ctx), chosenM.uid, n + sd);
+            break;
+          case 'healing':
+            if (ctx.chosen !== null) yield* this.runEffect({ e: 'heal', target: { t: 'chosen' }, amount: 2 * n }, ctx);
+            break;
+          case 'shaping': {
+            const c = randomMinion(n);
+            if (c && n > 0) yield* this.summon(me.id, c.id);
+            break;
+          }
+          case 'ritual':
+            for (let i = 0; i < n; i++) if (!(yield* this.summon(me.id, 'OG_114a'))) break;
+            break;
+        }
+        return true;
+      }
+      case 'ogForlorn':
+        for (const h of me.hand) {
+          if (this.handDef(h).type !== 'MINION' || !getCard(h.cardId).abilities?.some((a) => a.on.k === 'deathrattle')) continue;
+          h.atkBuff += 1;
+          h.hpBuff += 1;
+        }
+        return true;
+      case 'ogHuhuran':
+        if (chosenM && chosenM.owner === me.id) yield* this.runDeathrattles(chosenM);
+        return true;
+      case 'ogVolazj':
+        for (const m of live(me).filter((x) => x.uid !== ctx.sourceUid)) {
+          const c = yield* this.summon(me.id, m.cardId);
+          if (c) this.setStats(c, 1, 1);
+        }
+        return true;
+      case 'ogThistleTea': {
+        const [h] = yield* this.draw(me, 1);
+        if (h) for (let i = 0; i < 2; i++) this.addToHand(me, h.cardId);
+        return true;
+      }
+      case 'ogToxin':
+        this.addToHand(me, pick(s, OG_TOXINS.filter((x) => hasCard(x)))!);
+        return true;
+      case 'ogShadowcaster': {
+        if (!chosenM) return true;
+        const h = this.addToHand(me, chosenM.cardId);
+        if (h) {
+          const d = getCard(chosenM.cardId);
+          h.atkBuff = 1 - (d.attack ?? 0);
+          h.hpBuff = 1 - (d.health ?? 0);
+          h.costMod = 1 - d.cost;
+        }
+        return true;
+      }
+      case 'ogPrimalFusion': {
+        const n = live(me).filter((m) => this.isRace(m.cardId, 'TOTEM')).length;
+        if (chosenM && n) this.addStats(chosenM, n, n);
+        return true;
+      }
+      case 'ogUnlockOverload':
+        me.overloadLocked = 0;
+        me.overloadOwed = 0;
+        return true;
+      case 'ogEvolve':
+        for (const m of args.all ? live(me) : chosenM && chosenM.owner === me.id ? [chosenM] : []) {
+          const c = randomMinion(getCard(m.cardId).cost + 1);
+          if (c) this.transform(m.uid, c.id);
+        }
+        return true;
+      case 'ogRenounce': {
+        const cls = pick(s, (Object.keys(HEROES) as CardClass[]).filter((c) => c !== 'WARLOCK' && c !== me.heroClass))!;
+        this.setHeroPower(me, HEROES[cls as keyof typeof HEROES].power.id);
+        const pool = poolCards({}, cls, cls).filter((d) => d.collectible && d.type !== 'HERO' && d.cardClass === cls);
+        for (const h of [...me.hand, ...me.deck]) {
+          if (h.uid === ctx.playedCard?.uid || getCard(h.cardId).cardClass !== 'WARLOCK') continue;
+          const c = pick(s, pool);
+          if (!c) continue;
+          h.cardId = c.id;
+          h.costMod = -1;
+          h.atkBuff = 0;
+          h.hpBuff = 0;
+        }
+        return true;
+      }
+      case 'ogDoom': {
+        const all = [...live(me), ...live(foe)];
+        for (const m of all) m.dead = true;
+        yield* this.processDeaths();
+        yield* this.draw(me, all.length);
+        return true;
+      }
+      case 'ogMalkorok': {
+        const c = pick(s, this.randomPool({ type: 'WEAPON', anyClass: true }, me.id, false));
+        if (c) yield* this.equip(me.id, c.id);
+        return true;
+      }
+      case 'ogBloodWarriors':
+        for (const m of live(me)) if (m.hp < m.maxHp) this.addToHand(me, m.cardId);
         return true;
     }
     return false;

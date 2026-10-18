@@ -77,6 +77,7 @@ const STATIC_FLAGS = new Set([
   'neptulon', 'colaque', 'kelpkeeper', 'inkveil', 'fireSpellDamage2', 'zaqul',
   // 巫妖王的進軍
   // 經典
+  'attackIfHeroAttacked',
   'spitefulSmith', 'pintSized', 'velen', 'enrageWindfury', 'eaglehorn', 'nozdormu', 'healIsDamage', 'spellbenderSecret',
   // 時光之穴 / 傳奇音樂節
   'felstringHarp', 'heroLifestealAura', 'costDeckSize', 'spellLifestealAura', 'damagedEvenIfDead',

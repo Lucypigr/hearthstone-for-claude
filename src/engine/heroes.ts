@@ -74,6 +74,7 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   HERO_10bp2: { effects: [{ e: 'heroAttack', amount: 2 }] },
   HERO_11bp2: { effects: [{ e: 'summon', card: 'HERO_11bp2t', count: 1, who: 'self' }], needsBoardSpace: true },
   AT_050t: { effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 2 }], target: { filter: { type: 'character', side: 'any' } } },
+  OG_006b: { effects: [{ e: 'summon', card: 'OG_006a', count: 1, who: 'self' }], needsBoardSpace: true },
   BRM_027p: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   // 奧丹姆的任務獎勵
   ULD_140p: { effects: [{ e: 'draw', count: 1, who: 'self' }, { e: 'costMod', amount: -99, scope: 'it' }] },
