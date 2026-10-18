@@ -636,6 +636,8 @@ export class Game {
       if (k === 'IMMUNE' && def.flags?.includes('minionImmuneAlone') && !this.s.players[m.owner].board.some((x) => x !== m && !x.dead && x.hp > 0)) return true;
       // 綴鱗矛兵：所有敵方手下具有嘲諷
       if (k === 'TAUNT' && this.flagOnBoard('enemyTaunt', opp(m.owner))) return true;
+      // 狂暴狼人：受傷時具有風怒
+      if (k === 'WINDFURY' && m.hp < m.maxHp && def.flags?.includes('enrageWindfury')) return true;
       // 幻光逐夢馬：在對手的回合具有法術免疫
       if (k === 'ELUSIVE' && (def.flags?.includes('elusiveOnOppTurn') || m.elusiveOpp) && this.s.current !== m.owner) return true;
       // 翡翠之星阿古斯：左邊的手下具有突襲，右邊的手下具有生命竊取
@@ -680,7 +682,9 @@ export class Game {
     if (!p.weapon) return 0;
     const def = getCard(p.weapon.cardId);
     // 克拉巴托亞：你的克拉巴托亞之爪 +2 攻擊力
-    const crab = def.id === 'TSC_937t2' && p.board.some((m) => m.cardId === 'TSC_937' && !m.silenced && this.alive(m)) ? 2 : 0;
+    // 惡意鐵匠：此手下受傷時，你的武器 +2 攻擊力
+    const smith = 2 * p.board.filter((m) => !m.silenced && this.alive(m) && m.hp < m.maxHp && getCard(m.cardId).flags?.includes('spitefulSmith')).length;
+    const crab = smith + (def.id === 'TSC_937t2' && p.board.some((m) => m.cardId === 'TSC_937' && !m.silenced && this.alive(m)) ? 2 : 0);
     return Math.max(0, p.weapon.atk + crab + this.atkIfBonus(def, p.id) + this.atkPerBonus(def, p.id, p.weapon.uid));
   }
 
@@ -713,7 +717,7 @@ export class Game {
 
   /** 你裝備了「麥迪文的法杖」：你的法術的傷害與治療加倍 */
   private doublesSpells(p: PlayerState): boolean {
-    return !!p.weapon && !!getCard(p.weapon.cardId).flags?.includes('doubleSpellPower');
+    return (!!p.weapon && !!getCard(p.weapon.cardId).flags?.includes('doubleSpellPower')) || this.flagOnBoard('velen', p.id);
   }
 
   /** 辛德拉苟薩 / 瑪里苟斯：場上有此手下，而且你控制另一條龍 */
@@ -1285,6 +1289,7 @@ export class Game {
     cost = this.badlandsCost(p, def, hc, cost);
     cost = this.lichKingCost(p, cost);
     cost = this.festivalCost(p, def, cost);
+    cost = this.classicCost(p, def, cost);
     // 銳鱗：卡牌的消耗無法低於 (2)
     if (this.flagOnBoard('razorscale')) return Math.max(2, cost);
     // 回音卡的消耗不會低於 1
@@ -2892,6 +2897,17 @@ export class Game {
       const preDmgUsed = p.titans?.nextSpellDmg ?? 0;
       yield* this.checkSecrets(opp(p.id), 'enemyCastsSpell', { itCardId: def.id });
       if (!this.spellCountered) {
+        // 法術反制：對手以法術指定一個手下時，召喚一個 1/3 的手下作為新目標
+        const sbOwner = s.players[opp(p.id)];
+        const sb = target !== undefined && this.minion(target) && !this.flagOnBoard('secretsLocked') ? sbOwner.secrets.find((x) => x.cardId === 'tt_010') : undefined;
+        if (sb && sbOwner.board.length < MAX_BOARD) {
+          this.revealSecret(sbOwner.id, sb.uid);
+          const nm = yield* this.summon(sbOwner.id, 'tt_010a');
+          if (nm) {
+            target = nm.uid;
+            ctx.chosen = nm.uid;
+          }
+        }
         // 聖所法術扭曲者：對手以法術指定另一個手下時，改為指定它
         const bender = target !== undefined && this.minion(target) ? s.players[opp(p.id)].board.find((x) => this.alive(x) && !x.silenced && x.uid !== target && getCard(x.cardId).flags?.includes('spellbender')) : undefined;
         if (bender) {
@@ -3571,7 +3587,7 @@ export class Game {
       // 滅殺：在自己的回合造成超過消滅手下所需的傷害
       if (amount > t.hp && this.s.current === src.owner) overkill = true;
       if (t.stash === 'illusion') t.dead = true;
-      t.hp = t.undyingTurn === this.s.turn ? Math.max(Math.min(t.hp, 1), t.hp - amount) : t.hp - amount;
+      t.hp = t.undyingTurn === this.s.turn || this.s.players[t.owner].shoutTurn === this.s.turn ? Math.max(Math.min(t.hp, 1), t.hp - amount) : t.hp - amount;
       if (src.poisonous || (src.uid === null && !!src.cardId && hasCard(src.cardId) && getCard(src.cardId).type === 'SPELL' && this.s.players[src.owner].sunken?.urchin === this.s.turn)) t.dead = true;
       if ((t.hp <= 0 || t.dead) && src.uid !== null) t.killer = src.uid;
       // 懷舊地精：在你的回合造成剛好致命的傷害後，抽一張牌
@@ -3687,6 +3703,8 @@ export class Game {
     // 水晶工匠崗古：你的治療加倍；奧奇奈亡魂：本回合你的治療改為造成傷害
     amount *= 2 ** this.flagCount('doubleHealing', healer.id);
     amount += healer.healBonus ?? 0;
+    // 奧金尼靈魂祭司：你的治療改為造成傷害
+    if (this.flagOnBoard('healIsDamage', healer.id)) return yield* this.damage({ owner: healer.id, uid: null }, targetUid, amount);
     if (healer.healDamageTurn === this.s.turn) return yield* this.damage({ owner: healer.id, uid: null }, targetUid, amount);
     if (healer.healDamageOnceTurn === this.s.turn || healer.titans?.healToDamage) {
       healer.healDamageOnceTurn = undefined;
@@ -4763,6 +4781,8 @@ export class Game {
       // 有條件的奧秘（例如神聖試煉）：條件不成立時不會揭露
       if (ab.cond && !this.evalCond(ab.cond, ctx)) continue;
       this.revealSecret(owner, sec.uid);
+      // 鷹角弓：每當一個友方奧秘被揭露，獲得 +1 耐久度
+      if (p.weapon?.cardId === 'EX1_536') p.weapon.durability++;
       yield* this.runEffects(ab.effects, ctx);
       // 機關房間：每揭露一個奧秘，召喚一個 3/3 的鋸刃
       if (p.heroPower.id === 'LOOTA_BOSS_48p') {
@@ -16047,6 +16067,7 @@ export class Game {
         if (yield* this.customSunken(fn, args, ctx)) break;
         if (yield* this.customLichKing(fn, args, ctx)) break;
         if (yield* this.customFestival(fn, args, ctx)) break;
+        if (yield* this.customClassicRest(fn, args, ctx)) break;
         throw new Error(`未知的自訂效果：${fn}`);
     }
   }
@@ -21178,6 +21199,185 @@ export class Game {
           const m = this.minion(chosenM.uid);
           if (m) this.copyStats(self, m);
         }
+        return true;
+    }
+    return false;
+  }
+
+  // ==========================================================================
+  // 經典系列剩下的卡
+  // ==========================================================================
+
+  /** 經典的消耗修正：迷你召喚師、米歐浩斯‧法力風暴 */
+  private classicCost(p: PlayerState, def: CardDef, cost: number): number {
+    if (p.id !== this.s.current) return cost;
+    if (def.type === 'MINION' && !(p.playedThisTurn?.turn === this.s.turn && p.playedThisTurn.ids.some((id) => hasCard(id) && getCard(id).type === 'MINION'))) cost -= this.flagCount('pintSized', p.id);
+    if (def.type === 'SPELL' && p.freeSpellsTurn === this.s.turn) cost = Math.min(cost, 0);
+    return cost;
+  }
+
+  /** 把手下的控制權交給另一位玩家 */
+  private giveControl(m: Minion, to: PlayerId) {
+    const from = this.s.players[m.owner];
+    const dest = this.s.players[to];
+    if (m.owner === to) return;
+    from.board = from.board.filter((x) => x !== m);
+    if (dest.board.length >= MAX_BOARD) {
+      m.dead = true;
+      from.board.push(m);
+      return;
+    }
+    m.owner = to;
+    m.sleeping = true;
+    dest.board.push(m);
+    this.recalcAuras();
+  }
+
+  /** 經典系列剩下的卡的自訂效果；回傳 false 表示不認得這個名稱 */
+  private *customClassicRest(fn: string, args: Record<string, unknown>, ctx: Ctx): Gen<boolean> {
+    const s = this.s;
+    const me = s.players[ctx.controller];
+    const foe = s.players[opp(ctx.controller)];
+    const self = ctx.sourceUid !== null ? this.minion(ctx.sourceUid) : null;
+    const chosenM = ctx.chosen !== null ? this.minion(ctx.chosen) : null;
+    const sd = ctx.isSpell ? this.spellDamage(me.id) * (this.doublesSpells(me) ? 2 : 1) : 0;
+    const live = (p: PlayerState) => p.board.filter((m) => this.alive(m));
+    switch (fn) {
+      case 'cxAlarmBot': {
+        if (!self || !this.alive(self)) return true;
+        const h = pick(s, me.hand.filter((x) => this.handDef(x).type === 'MINION'));
+        if (!h) return true;
+        const pos = me.board.indexOf(self);
+        me.board = me.board.filter((x) => x !== self);
+        me.hand = me.hand.filter((x) => x !== h);
+        this.addToHand(me, self.cardId);
+        yield* this.summon(me.id, h.cardId, pos, h);
+        this.recalcAuras();
+        return true;
+      }
+      case 'cxNatPagle':
+        if (nextRandom(s) < 0.5) yield* this.draw(me, 1);
+        return true;
+      case 'cxAncientMage':
+        if (self) for (const m of this.adjacent(self)) m.spellDamage += 1;
+        return true;
+      case 'cxBloodKnight': {
+        let n = 0;
+        for (const m of [...live(me), ...live(foe)]) {
+          if (!this.hasKw(m, 'DIVINE_SHIELD')) continue;
+          m.keywords = m.keywords.filter((k) => k !== 'DIVINE_SHIELD');
+          m.tempKeywords = m.tempKeywords.filter((k) => k !== 'DIVINE_SHIELD');
+          n++;
+        }
+        if (self && n) this.addStats(self, 3 * n, 3 * n);
+        return true;
+      }
+      case 'cxCorsair':
+        if (foe.weapon) {
+          foe.weapon.durability--;
+          yield* this.processDeaths();
+        }
+        return true;
+      case 'cxMillhouse':
+        foe.freeSpellsTurn = s.turn + 1;
+        return true;
+      case 'cxMisdirection': {
+        const atk = this.currentAttack?.attacker;
+        const list = [...this.chars()].filter((c) => this.alive(c) && c.uid !== atk && c.uid !== me.hero.uid);
+        const t = pick(s, list);
+        if (t && this.currentAttack) this.currentAttack.defender = t.uid;
+        return true;
+      }
+      case 'cxFlare':
+        for (const m of [...s.players[0].board, ...s.players[1].board]) {
+          m.keywords = m.keywords.filter((k) => k !== 'STEALTH');
+          m.tempKeywords = m.tempKeywords.filter((k) => k !== 'STEALTH');
+          m.nextTurnKeywords = m.nextTurnKeywords.filter((k) => k !== 'STEALTH');
+        }
+        foe.secrets = [];
+        return true;
+      case 'cxIceLance': {
+        const t = ctx.chosen !== null ? this.char(ctx.chosen) : null;
+        if (!t) return true;
+        if (t.frozen) yield* this.damage(this.dmgSource(ctx), t.uid, 4 + sd);
+        else this.freeze(t);
+        return true;
+      }
+      case 'cxDivineFavor':
+        if (foe.hand.length > me.hand.length) yield* this.draw(me, foe.hand.length - me.hand.length);
+        return true;
+      case 'cxHolyWrath': {
+        const [h] = yield* this.draw(me, 1);
+        if (h && chosenM) yield* this.damage(this.dmgSource(ctx), chosenM.uid, getCard(h.cardId).cost + sd);
+        return true;
+      }
+      case 'cxSwordOfJustice': {
+        const t = ctx.it ? this.minion(ctx.it.uid) : null;
+        const w = me.weapon;
+        if (!t || !w || w.cardId !== 'EX1_366' || w.durability <= 0) return true;
+        this.addStats(t, 1, 1);
+        w.durability--;
+        yield* this.processDeaths();
+        return true;
+      }
+      case 'cxShadowMadness': {
+        if (!chosenM || chosenM.owner === me.id) return true;
+        this.giveControl(chosenM, me.id);
+        if (chosenM.owner === me.id) {
+          chosenM.sleeping = false;
+          chosenM.attacks = 0;
+          yield* this.runEffect({ e: 'atEndOfTurn', effects: [{ e: 'custom', fn: 'cxReturnUid', args: { uid: chosenM.uid } }] }, ctx);
+        }
+        return true;
+      }
+      case 'cxReturnUid': {
+        const m = this.minion(args.uid as number);
+        if (m && this.alive(m) && m.owner === me.id) this.giveControl(m, foe.id);
+        return true;
+      }
+      case 'cxThoughtsteal':
+        for (const h of shuffle(s, [...foe.deck]).slice(0, 2)) this.addToHand(me, h.cardId);
+        return true;
+      case 'cxLightwell': {
+        const t = pick(s, [me.hero, ...live(me)].filter((c) => c.hp < c.maxHp));
+        if (t) yield* this.heal(t.uid, 3);
+        return true;
+      }
+      case 'cxMindgames': {
+        const h = pick(s, foe.deck.filter((x) => getCard(x.cardId).type === 'MINION'));
+        yield* this.summon(me.id, h ? h.cardId : 'EX1_345t');
+        return true;
+      }
+      case 'cxBetrayal': {
+        if (!chosenM) return true;
+        const n = this.atkOf(chosenM);
+        for (const m of this.adjacent(chosenM)) yield* this.damage(this.charSource(chosenM), m.uid, n);
+        return true;
+      }
+      case 'cxEdwin': {
+        const n = Math.max(0, me.cardsPlayedThisTurn - 1);
+        if (self && n) this.addStats(self, 2 * n, 2 * n);
+        return true;
+      }
+      case 'cxResummon': {
+        const id = ctx.sourceSnapshot?.cardId;
+        if (id) yield* this.summon(me.id, id);
+        return true;
+      }
+      case 'cxShadowflame': {
+        if (!chosenM || chosenM.owner !== me.id) return true;
+        const n = this.atkOf(chosenM);
+        chosenM.dead = true;
+        for (const m of live(foe)) yield* this.damage(this.dmgSource(ctx), m.uid, n + sd);
+        return true;
+      }
+      case 'cxDemonfire':
+        if (!chosenM) return true;
+        if (chosenM.owner === me.id && this.isRace(chosenM.cardId, 'DEMON')) this.addStats(chosenM, 2, 2);
+        else yield* this.damage(this.dmgSource(ctx), chosenM.uid, 2 + sd);
+        return true;
+      case 'cxCommandingShout':
+        me.shoutTurn = s.turn;
         return true;
     }
     return false;

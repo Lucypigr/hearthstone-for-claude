@@ -1125,6 +1125,14 @@ export interface CardDef {
  * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
+  | 'spitefulSmith'
+  | 'pintSized'
+  | 'enrageWindfury'
+  | 'nozdormu'
+  | 'eaglehorn'
+  | 'spellbenderSecret'
+  | 'velen'
+  | 'healIsDamage'
   | 'damagedEvenIfDead'
   | 'spellLifestealAura'
   | 'heroLifestealAura'

@@ -664,6 +664,10 @@ export interface PlayerState {
   whizbang?: { zarimiUsed?: boolean; shudder?: number; labPatronTurn?: number; jadeDisplay?: number; secretsTriggered?: string[]; goldbeardBusy?: boolean };
   badlands?: { excavates?: number; pileOfBones?: number; dryscale?: number; brann?: boolean; frogs?: number; cactusUid?: number };
   handCapBonus?: number;
+  /** 米歐浩斯‧法力風暴：這個回合法術消耗為 (0) */
+  freeSpellsTurn?: number;
+  /** 命令怒吼：這個回合你的手下生命值不會低於 1 */
+  shoutTurn?: number;
   weaponsEquipped?: number;
   fl?: {
     noOverloadTurn?: number;

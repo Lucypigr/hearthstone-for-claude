@@ -23,6 +23,7 @@ import { SUNKEN_OVERRIDES } from './sunken';
 import { LICHKING_OVERRIDES } from './lichking';
 import { CAVERNS_OVERRIDES } from './caverns';
 import { LEGENDS_OVERRIDES } from './legends';
+import { CLASSIC_REST_OVERRIDES } from './classicrest';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -2919,3 +2920,4 @@ Object.assign(OVERRIDES, SUNKEN_OVERRIDES);
 Object.assign(OVERRIDES, LICHKING_OVERRIDES);
 Object.assign(OVERRIDES, CAVERNS_OVERRIDES);
 Object.assign(OVERRIDES, LEGENDS_OVERRIDES);
+Object.assign(OVERRIDES, CLASSIC_REST_OVERRIDES);
