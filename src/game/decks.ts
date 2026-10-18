@@ -1,9 +1,19 @@
 // 套牌規則與自動組牌（新手套牌 / 電腦套牌）
-import { cardClasses, COLLECTIBLE, getCard } from '../cards/registry';
+import { cardClasses, COLLECTIBLE, getCard, hasCard } from '../cards/registry';
 import { nextRandom, shuffle } from '../engine/rng';
 import type { Ability, Amount, CardClass, CardDef, Effect, Runes } from '../engine/types';
 
 export const DECK_SIZE = 30;
+
+/** 套牌需要的張數（斬魂者阿薩琳娜：20 張） */
+export function deckTarget(cards: string[]): number {
+  return cards.includes('JAIL_430') ? 20 : DECK_SIZE;
+}
+
+/** 套牌目前的張數：顯赫卡的附帶卡也佔牌堆空間 */
+export function deckCount(cards: string[]): number {
+  return cards.reduce((n, id) => n + 1 + ((hasCard(id) ? getCard(id).fabled?.length : 0) ?? 0), 0);
+}
 
 export type HeroClass = Exclude<CardClass, 'NEUTRAL'>;
 
@@ -98,7 +108,7 @@ export interface DeckProblem {
 
 export function validateDeck(deck: Deck, owned?: Record<string, number>): DeckProblem {
   const errors: string[] = [];
-  if (deck.cards.length !== DECK_SIZE) errors.push(`套牌需要剛好 ${DECK_SIZE} 張（目前 ${deck.cards.length} 張）`);
+  if (deckCount(deck.cards) !== deckTarget(deck.cards)) errors.push(`套牌需要剛好 ${deckTarget(deck.cards)} 張（目前 ${deckCount(deck.cards)} 張）`);
   const counts = new Map<string, number>();
   for (const id of deck.cards) counts.set(id, (counts.get(id) ?? 0) + 1);
   for (const [id, n] of counts) {
@@ -311,7 +321,7 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
   const add = (c: CardDef, respectCurve: boolean) => {
     if (!runesFit(runes, c)) return;
     const have = deck.filter((x) => x === c.id).length;
-    for (let i = have; i < copiesOf(c) && deck.length < DECK_SIZE; i++) {
+    for (let i = have; i < copiesOf(c) && deckCount(deck) < deckTarget(deck); i++) {
       const cost = Math.min(c.cost, 10);
       if (respectCurve && (perCost.get(cost) ?? 0) >= (curve[cost] ?? 1)) return;
       if (c.rarity === 'LEGENDARY') {
@@ -325,26 +335,26 @@ export function buildDeck(heroClass: HeroClass, opts: BuildOptions): string[] {
   };
   const fill = (cards: CardDef[]) => {
     for (const c of cards) {
-      if (deck.length >= DECK_SIZE) break;
+      if (deckCount(deck) >= deckTarget(deck)) break;
       add(c, true);
     }
     for (const c of cards) {
-      if (deck.length >= DECK_SIZE) break;
+      if (deckCount(deck) >= deckTarget(deck)) break;
       if (!deck.includes(c.id)) add(c, false);
     }
     // 卡不夠時（收藏太少）重複補滿
     for (const c of cards) {
-      if (deck.length >= DECK_SIZE) break;
+      if (deckCount(deck) >= deckTarget(deck)) break;
       const have = deck.filter((x) => x === c.id).length;
       const limit = copiesOf(c);
       if (have >= limit || !runesFit(runes, c)) continue;
       takeRunes(c);
-      for (let i = have; i < limit && deck.length < DECK_SIZE; i++) deck.push(c.id);
+      for (let i = have; i < limit && deckCount(deck) < deckTarget(deck); i++) deck.push(c.id);
     }
   };
   fill(scored);
   // 主題卡不夠 30 張時，用一般的卡補滿
-  if (deck.length < DECK_SIZE && opts.filter) fill(rank(base));
+  if (deckCount(deck) < deckTarget(deck) && opts.filter) fill(rank(base));
   return shuffle(rng, deck).sort((a, b) => getCard(a).cost - getCard(b).cost);
 }
 

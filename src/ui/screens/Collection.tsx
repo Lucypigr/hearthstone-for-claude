@@ -3,7 +3,7 @@ import { cardClasses, COLLECTIBLE, getCard, hasCard, HEROES, PLAYABLE_CLASSES } 
 import { CLASS_NAMES } from '../../engine/heroes';
 import type { CardClass, CardDef, Rarity } from '../../engine/types';
 import { ZILLIAX_MODULES } from '../../cards/whizbang';
-import { buildDeck, cardAllowed, deckCurve, deckRunes, DECK_SIZE, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
+import { buildDeck, cardAllowed, deckCount, deckTarget, deckCurve, deckRunes, DECK_SIZE, MAX_RUNES, maxCopies, RUNE_KINDS, RUNE_NAMES, runesFit, validateDeck, type Deck } from '../../game/decks';
 import { CRAFT_COST, DISENCHANT_VALUE, RARITY_NAMES } from '../../game/economy';
 import { decodeDeck, encodeDeck } from '../../game/deckstring';
 import { craftCard, deleteDeck, disenchantCard, disenchantExtras, newId, saveDeck, type Profile } from '../../game/profile';
@@ -63,7 +63,7 @@ export function Collection() {
     if (!editing) return;
     const owned = p.collection[c.id] ?? 0;
     const n = inDeck(c.id);
-    if (editing.cards.length >= DECK_SIZE) return setMessage('套牌已經有 30 張了');
+    if (deckCount(editing.cards) >= deckTarget(editing.cards)) return setMessage(`套牌已經有 ${deckTarget(editing.cards)} 張了`);
     if (n >= maxCopies(c)) return setMessage(`【${c.name}】最多只能放 ${maxCopies(c)} 張`);
     if (n >= owned) return setMessage(`你只有 ${owned} 張【${c.name}】`);
     if (!runesFit(deckRunes(editing.cards), c)) return setMessage(`符文最多 ${MAX_RUNES} 個，【${c.name}】的符文放不下`);
@@ -254,7 +254,7 @@ export function Collection() {
                   >
                     <Art cardId={HEROES[d.heroClass].hero} className="deck-row-art" label={CLASS_NAMES[d.heroClass].slice(0, 1)} color={CLASS_COLORS[d.heroClass]} />
                     <span className="deck-row-name">{d.name}</span>
-                    <span className={`deck-row-count ${ok ? '' : 'bad'}`}>{d.cards.length}/30</span>
+                    <span className={`deck-row-count ${ok ? '' : 'bad'}`}>{deckCount(d.cards)}/{deckTarget(d.cards)}</span>
                   </button>
                 );
               })}
@@ -423,7 +423,7 @@ function DeckEditor({
     });
     const cards = [...deck.cards];
     for (const id of extra) {
-      if (cards.length >= DECK_SIZE) break;
+      if (deckCount(cards) >= deckTarget(cards)) break;
       const def = getCard(id);
       if (cards.filter((x) => x === id).length >= Math.min(maxCopies(def), collection[id] ?? 0)) continue;
       if (!runesFit(deckRunes(cards), def)) continue;
@@ -464,8 +464,8 @@ function DeckEditor({
           })}
         </div>
       )}
-      <div className={`deck-count ${deck.cards.length === DECK_SIZE ? 'full' : ''}`}>
-        {deck.cards.length} / {DECK_SIZE}
+      <div className={`deck-count ${deckCount(deck.cards) === deckTarget(deck.cards) ? 'full' : ''}`}>
+        {deckCount(deck.cards)} / {deckTarget(deck.cards)}
       </div>
       <ul className="deck-cards">
         {grouped.map(({ def, n }) => (
@@ -520,7 +520,7 @@ function DeckEditor({
         </ul>
       )}
       <div className="deck-actions">
-        <button className="btn" onClick={autoFill} disabled={deck.cards.length >= DECK_SIZE}>
+        <button className="btn" onClick={autoFill} disabled={deckCount(deck.cards) >= deckTarget(deck.cards)}>
           🪄 自動補滿
         </button>
         <button className="btn" onClick={() => onChange({ ...deck, cards: [] })}>

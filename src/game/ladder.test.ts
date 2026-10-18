@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AiBrain, type AiPersona } from '../engine/ai';
 import { Game } from '../engine/game';
-import { buildDeck, validateDeck } from './decks';
+import { buildDeck, deckCount, deckTarget, validateDeck } from './decks';
 import { applyLadderResult, ensureSeason, findOpponent, LEGEND_STARS, newLadder, rankInfo, recordLadderMatch } from './ladder';
 import { newProfile, sanitizeProfile } from './profile';
 
@@ -88,7 +88,7 @@ describe('配對到的對手', () => {
       let netdeck = 0;
       for (let i = 0; i < 30; i++) {
         const o = findOpponent({ stars, legend }, 1000 + i * 17);
-        expect(o.deck.length).toBe(30);
+        expect(deckCount(o.deck)).toBe(deckTarget(o.deck));
         expect(validateDeck({ id: '', name: '', heroClass: o.heroClass, freeform: false, cards: o.deck }).ok).toBe(true);
         skill += o.persona.skill;
         if (o.deckKind === 'netdeck') netdeck++;
