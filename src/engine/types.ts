@@ -198,6 +198,14 @@ export type DynAmount =
   | 'twoManaPlayed'
   /** 本場對戰中你的英雄攻擊的次數 */
   | 'heroAttacksThisGame'
+  /** 本回合你施放的法術數 */
+  | 'spellsThisTurnN'
+  /** 本場對戰中你打出的本職業卡數 */
+  | 'classCardsPlayed'
+  /** 本場對戰中你花在神聖法術上的法力 */
+  | 'holyManaSpent'
+  /** 本場對戰中你打出的流放卡數 */
+  | 'outcastPlayed'
   /** 你目前剩餘的法力 */
   | 'remainingMana'
   /** 預兆的力量倍率：預兆 0~1 次 = 1，2~3 次 = 2，4 次以上 = 4 */
@@ -507,6 +515,14 @@ export type Condition =
   | { c: 'holdingOtherCost'; n: number }
   /** 這張牌在你手牌中時你施放過法術（或觸發過條件） */
   | { c: 'heldSpell' }
+  /** 持有這張牌時累積的計數至少 n（沉沒之城） */
+  | { c: 'heldCount'; n: number }
+  /** 本場對戰中你棄過牌 */
+  | { c: 'discardedAny' }
+  /** 你的手牌中有某派系的法術 */
+  | { c: 'holdingSchool'; school: string }
+  /** 本場對戰中你召喚過至少 n 個某種族的手下 */
+  | { c: 'summonedRace'; race: Race; n: number }
   /** 你本回合施放過神聖法術 */
   | { c: 'castHolyThisTurn' }
   /** 觸發事件的卡是從手牌最左或最右打出的 */
@@ -814,6 +830,10 @@ export interface QuestDef {
 
 /** 你下一張符合條件的牌的消耗變化 */
 export interface PendingDiscount {
+  /** 只適用於某職業的牌 */
+  cls?: CardClass;
+  /** 只適用於流放卡 */
+  outcast?: boolean;
   amount?: number;
   /** 消耗設為固定值 */
   set?: number;
@@ -1103,6 +1123,19 @@ export interface CardDef {
  * endTurnTriggerDeathrattle：回合結束時觸發你手下的亡語
  */
 export type MinionFlag =
+  | 'thaddius'
+  | 'spellbender'
+  | 'enchanter'
+  | 'sindragosa'
+  | 'vexallus'
+  | 'scourgeTroll'
+  | 'phoenixEgg'
+  | 'neptulon'
+  | 'colaque'
+  | 'kelpkeeper'
+  | 'inkveil'
+  | 'fireSpellDamage2'
+  | 'zaqul'
   | 'noTurnDraw'
   | 'enemyNoHeal'
   | 'doubleCorpses'

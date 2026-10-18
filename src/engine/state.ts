@@ -128,6 +128,12 @@ export interface HandCard {
   castTwiceTurn?: number;
   /** 打包進行李箱 / 夾進三明治的卡 */
   packed?: string[];
+  /** 深淵詛咒：傷害、剩餘回合、給予者 */
+  curse?: { lvl: number; left: number; from: PlayerId };
+  /** 額外的手牌能力（潮汐之戒變成的法術） */
+  handGrant?: Ability[];
+  /** 縈繞夢魘：打出時召喚一個 4/3 士兵 */
+  haunted?: boolean;
   /** 潮池學徒：在手牌中時施放的法術 / 卡瑞絲：施放過的法術派系 */
   held?: string[];
   /** 抽到時施放（符文裝飾洗入的複製） */
@@ -553,6 +559,7 @@ export interface PlayerState {
   /** 本場對戰中棄掉的卡 */
   discardedCards?: string[];
   spellManaSpent?: number;
+  holyManaSpent?: number;
   /** 你的英雄在這個回合結束前免疫（暫停！） */
   heroImmuneUntil?: number;
   /** 起手的手牌 */
@@ -648,6 +655,17 @@ export interface PlayerState {
   /** 威茲班的工作坊 / 決戰荒蕪之地的各種持續效果 */
   whizbang?: { zarimiUsed?: boolean; shudder?: number; labPatronTurn?: number; jadeDisplay?: number; secretsTriggered?: string[]; goldbeardBusy?: boolean };
   badlands?: { excavates?: number; pileOfBones?: number; dryscale?: number; brann?: boolean; frogs?: number; cactusUid?: number };
+  lk?: {
+    noHeroTurn?: number;
+    outcasts?: number;
+    anub?: { turn: number; left: number };
+    frostwhisper?: number;
+    undyingTurn?: number;
+    nonDeckSpells?: string[];
+    rommathUsed?: boolean;
+    undeadDeaths?: { id: string; turn: number }[];
+  };
+  sunken?: { curseLevel?: number; urchin?: number; healthTurn?: number; shatter?: boolean };
   /** 開局時牌堆中的卡（「你的牌堆在開始時……」） */
   startingDeck?: string[];
   /** 本場對戰中抽的牌數 */

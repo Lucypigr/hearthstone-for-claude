@@ -19,6 +19,8 @@ import { TITANS_OVERRIDES } from './titans';
 import { PARADISE_OVERRIDES } from './paradise';
 import { WHIZBANG_OVERRIDES } from './whizbang';
 import { BADLANDS_OVERRIDES } from './badlands';
+import { SUNKEN_OVERRIDES } from './sunken';
+import { LICHKING_OVERRIDES } from './lichking';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -2911,3 +2913,5 @@ Object.assign(OVERRIDES, PARADISE_OVERRIDES);
 // 威茲班的工作坊、決戰荒蕪之地
 Object.assign(OVERRIDES, WHIZBANG_OVERRIDES);
 Object.assign(OVERRIDES, BADLANDS_OVERRIDES);
+Object.assign(OVERRIDES, SUNKEN_OVERRIDES);
+Object.assign(OVERRIDES, LICHKING_OVERRIDES);

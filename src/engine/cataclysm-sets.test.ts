@@ -391,7 +391,7 @@ describe('德魯伊與獵人', () => {
     me.hand = [];
     play(g, 'CATA_140');
     expect(me.hand.length).toBe(10);
-    expect(me.hand.every((h) => getCard(h.cardId).races?.includes('DRAGON'))).toBe(true);
+    expect(me.hand.every((h) => getCard(h.cardId).races?.includes('DRAGON') || getCard(h.cardId).races?.includes('ALL'))).toBe(true);
   });
 
   it('年邁的荒野語者 / 心根石：上回合沒有打出手下', () => {

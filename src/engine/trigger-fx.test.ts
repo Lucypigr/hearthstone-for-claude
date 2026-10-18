@@ -73,6 +73,10 @@ describe('能力發動的視覺回饋', () => {
 
 // 這些旗標是「持續生效的規則修改」，沒有「發動」的瞬間，不需要閃光
 const STATIC_FLAGS = new Set([
+  // 探險沉沒之城
+  'neptulon', 'colaque', 'kelpkeeper', 'inkveil', 'fireSpellDamage2', 'zaqul',
+  // 巫妖王的進軍
+  'thaddius', 'sindragosa', 'vexallus', 'spellbender', 'scourgeTroll', 'enchanter', 'phoenixEgg',
   'heroPowerDamage', 'heroPowerUnlimited', 'heroPowerDrawsFree', 'heroPowerBuffsWeapon', 'heroPowerTwice', 'heroPowerCost1',
   'misdirect', 'bodyguard', 'doubleHealing', 'ignoreTaunt', 'weaponAbsorbs', 'heroWindfury', 'healthToMax', 'extraDamage',
   'minionImmuneAlone', 'enemyTaunt', 'randomTargets', 'heroImmune', 'doubleCorpses', 'atkEqualsHealth', 'gorehowl',

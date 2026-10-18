@@ -945,7 +945,7 @@ describe('死亡騎士：第二批機制', () => {
   it('亞歷山卓斯：之後每個你的回合結束時對對手造成 3 點傷害', () => {
     const g = dk();
     const foe = g.s.players[1].hero;
-    play(g, 'CORE_RLK_706');
+    play(g, 'RLK_706');
     g.s.players[0].board = []; // 就算它不在場上也有效
     const hp = foe.hp;
     g.apply({ type: 'endTurn' });
@@ -1039,11 +1039,11 @@ describe('死亡騎士：第二批機制', () => {
 
   it('死靈禮儀師：友方不死族在你上回合結束後死亡才發現', () => {
     const g = dk();
-    expect(g.apply({ type: 'play', handUid: give(g, 'CORE_RLK_116') })).toBe(true);
+    expect(g.apply({ type: 'play', handUid: give(g, 'RLK_116') })).toBe(true);
     expect(g.s.pendingChoice).toBeNull();
     const ghoul = put(g, 'HERO_11bpt', 0);
     play(g, 'CS2_029', ghoul.uid);
-    expect(g.apply({ type: 'play', handUid: give(g, 'CORE_RLK_116') })).toBe(true);
+    expect(g.apply({ type: 'play', handUid: give(g, 'RLK_116') })).toBe(true);
     expect(g.s.pendingChoice?.options.length).toBeGreaterThan(0);
   });
 });

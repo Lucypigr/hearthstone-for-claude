@@ -25,6 +25,8 @@ export const FOLLOW_EFFECTS: Record<string, Effect[]> = {
   reflexes: [{ e: 'discover', pool: { type: 'SPELL', spellSchool: 'NATURE' } }],
   // 燧石火器：本回合打出拿到的快槍卡後，再拿一張
   flint: [fn('blFlintFirearm')],
+  // 訓練課程：本回合打出發現的嘲諷手下後，再發現一個
+  training: [{ e: 'discover', pool: { type: 'MINION', keyword: 'TAUNT' }, then: [fn('followGive', { id: 'training', target: 'it' })] }],
   // 仙人掌切割者：本回合施放抽到的法術後，切割者獲得 +1/+2 與嘲諷
   cactus: [fn('blCactusFire')],
   ghosts: [{ e: 'summon', card: 'CAP_802t', count: 1, who: 'self' }, fn('followGive', { id: 'ghosts' })],
