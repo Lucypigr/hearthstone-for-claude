@@ -59,6 +59,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           classes: [deck!.heroClass, config.oppClass],
           names: ['你', ladder ? ladder.name : HEROES[config.oppClass].name],
           ai: [false, true],
+          zilliax: [deck!.zilliax, undefined],
         });
     g.apply({ type: 'mulligan', player: AI, replace: brain ? brain.mulligan(g, AI) : aiMulligan(g, AI, config.difficulty) });
     gameRef.current = g;

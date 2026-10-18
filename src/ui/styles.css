@@ -3446,3 +3446,17 @@ body {
 .forge-btn.stacked {
   bottom: calc(var(--cw) * 1.05 + 46px);
 }
+
+/* 齊利亞斯豪華版 3000 的模組選擇 */
+.zilliax-box {
+  margin: 6px 0;
+}
+.zilliax-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.zilliax-mods .btn.selected {
+  outline: 2px solid var(--gold);
+}

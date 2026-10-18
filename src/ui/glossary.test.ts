@@ -14,7 +14,7 @@ const terms = GLOSSARY.flatMap((g) => [g.term, ...(g.words ?? [])]).concat(['死
 terms.sort((a, b) => b.length - a.length);
 
 function leftover(chunk: string): string {
-  let s = chunk.replace(/[：:、，,。及和與\s()（）\d+@{}\/~！!]/g, '');
+  let s = chunk.replace(/[：:、，,。及和與或\s()（）\d+@{}\/~！!]/g, '');
   for (const t of terms) s = s.split(t).join('');
   return s;
 }

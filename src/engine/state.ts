@@ -122,6 +122,10 @@ export interface HandCard {
   lockedUntil?: number;
   /** 畸變怪物：目前的兩種加成效果 */
   bonus?: Keyword[];
+  /** 齊利亞斯豪華版 3000 的兩個模組 */
+  zilliax?: string[];
+  /** 觀星：這個回合打出它會施放兩次 */
+  castTwiceTurn?: number;
   /** 打包進行李箱 / 夾進三明治的卡 */
   packed?: string[];
   /** 潮池學徒：在手牌中時施放的法術 / 卡瑞絲：施放過的法術派系 */
@@ -215,6 +219,8 @@ export interface Minion {
   titanTurn?: number;
   /** 諾甘農：各能力的威力倍率 */
   titanPower?: Record<string, number>;
+  /** 齊利亞斯豪華版 3000 的兩個模組 */
+  zilliax?: string[];
   /** 一開始不在牌堆中（恐懼逃兵） */
   notStarting?: boolean;
   /** 食肉小隔間吃掉的手下 */
@@ -639,6 +645,17 @@ export interface PlayerState {
   titans?: TitansState;
   /** 天堂島的各種持續效果 */
   paradise?: ParadiseState;
+  /** 威茲班的工作坊 / 決戰荒蕪之地的各種持續效果 */
+  whizbang?: { zarimiUsed?: boolean; shudder?: number; labPatronTurn?: number; jadeDisplay?: number; secretsTriggered?: string[]; goldbeardBusy?: boolean };
+  badlands?: { excavates?: number; pileOfBones?: number; dryscale?: number; brann?: boolean; frogs?: number; cactusUid?: number };
+  /** 開局時牌堆中的卡（「你的牌堆在開始時……」） */
+  startingDeck?: string[];
+  /** 本場對戰中抽的牌數 */
+  drawnTotal?: number;
+  /** 惡棍套牌：你的跟班消耗 (0) */
+  lackeysFree?: boolean;
+  /** 沙畫元素：這個回合英雄具有風怒 */
+  heroWindfuryTurn?: number;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
