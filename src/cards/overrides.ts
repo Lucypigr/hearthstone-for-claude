@@ -25,6 +25,8 @@ import { CAVERNS_OVERRIDES } from './caverns';
 import { LEGENDS_OVERRIDES } from './legends';
 import { CLASSIC_REST_OVERRIDES } from './classicrest';
 import { OLDGODS_OVERRIDES } from './oldgods';
+import { OUTLAND_OVERRIDES } from './outland';
+import { SHADOWS_OVERRIDES } from './shadows';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
 
@@ -2923,3 +2925,5 @@ Object.assign(OVERRIDES, CAVERNS_OVERRIDES);
 Object.assign(OVERRIDES, LEGENDS_OVERRIDES);
 Object.assign(OVERRIDES, CLASSIC_REST_OVERRIDES);
 Object.assign(OVERRIDES, OLDGODS_OVERRIDES);
+Object.assign(OVERRIDES, OUTLAND_OVERRIDES);
+Object.assign(OVERRIDES, SHADOWS_OVERRIDES);

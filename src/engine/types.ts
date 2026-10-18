@@ -384,6 +384,8 @@ export type Condition =
   /** 觸發事件的卡：是奧秘 / 來自其他職業 / 消耗為 n / 攻擊力為 n / 是某張卡 / 有連擊 */
   | { c: 'itSecret' }
   | { c: 'itOtherClass' }
+  /** 你的手牌中有另一個職業的卡 */
+  | { c: 'holdingOtherClass' }
   | { c: 'itCost'; n: number }
   | { c: 'itAttack'; n: number }
   | { c: 'itCard'; id: string }
@@ -994,7 +996,7 @@ export interface CardDef {
   /** 場上時影響手牌消耗的光環 */
   costAuras?: CostAura[];
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
-  atkIf?: { cond: Condition; atk: number };
+  atkIf?: { cond: Condition; atk: number; self?: boolean };
   /** 在手牌中時才會觸發的能力（例如肥油大亨） */
   handAbilities?: Ability[];
   /** 在你打出某種族的牌後，從你的牌堆召喚這張卡（海盜派奇） */
@@ -1128,6 +1130,12 @@ export interface CardDef {
  */
 export type MinionFlag =
   | 'attackIfHeroAttacked'
+  // 外域灰燼 / 暗影崛起
+  | 'moargArtificer'
+  | 'permanentStealth'
+  | 'megaWindfuryAura'
+  | 'secretsTwice'
+  | 'takNozwhisker'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'

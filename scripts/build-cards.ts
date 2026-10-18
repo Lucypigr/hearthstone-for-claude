@@ -508,6 +508,32 @@ async function main() {
   }
 
   const tokens = [...tokenDefs.values()].filter((d): d is CardDef => !!d && !cards.some((c) => c.id === d.id));
+  // 二選一法術的選項也收錄成（不可收藏的）法術，讓「把兩個選項加入你的手牌」（看守者史達勒崔斯）可以使用
+  const optionCards: CardDef[] = [];
+  for (const c of cards) {
+    if (c.type !== 'SPELL' || !c.chooseOne) continue;
+    for (const o of c.chooseOne) {
+      const r = byId.get(o.id);
+      if (!r || typeOf(r) !== 'SPELL' || o.transformInto || tokens.some((t) => t.id === o.id) || optionCards.some((t) => t.id === o.id)) continue;
+      optionCards.push({
+        id: o.id,
+        dbfId: r.dbf,
+        name: o.name,
+        nameEn: clean(r.strs.CARDNAME?.enUS),
+        text: o.text,
+        type: 'SPELL',
+        cardClass: c.cardClass,
+        rarity: c.rarity,
+        set: c.set,
+        cost: r.tags.COST ?? c.cost,
+        collectible: false,
+        ...(c.spellSchool ? { spellSchool: c.spellSchool } : {}),
+        ...(o.target ? { target: o.target } : {}),
+        ...(o.abilities.length ? { abilities: o.abilities } : {}),
+      });
+    }
+  }
+  tokens.push(...optionCards);
   const all = [...cards, ...tokens.map((t) => ({ ...t, collectible: false })), ...powerCards.filter((c) => !cards.some((x) => x.id === c.id) && !tokens.some((x) => x.id === c.id))];
 
   // ------------------------------------------------------------------ 輸出

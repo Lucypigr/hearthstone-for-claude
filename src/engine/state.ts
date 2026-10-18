@@ -22,6 +22,8 @@ export interface HandCard {
   boons?: number;
   /** 高等精靈學徒：傳授的法術 */
   taught?: string;
+  /** 佐司瓦邪偶：學會的法術（打出時施放） */
+  taughtSpells?: string[];
   /** 時間循環者托奇：這張法術屬於哪一組 */
   looping?: number;
   /** 黑暗禮物：打出時召喚 2/2 的複製（活生生的噩夢） / 戰吼觸發兩次（魯莽的覺醒） / 聖盾要被打破幾次（夢魘鱗片） */
@@ -95,6 +97,8 @@ export interface HandCard {
   fromOpp?: boolean;
   /** 進入手牌的回合 */
   enteredTurn?: number;
+  /** 從牌堆抽到的回合（『破壞者』凱利丹） */
+  drawnTurn?: number;
   /** 被賦予了預備 */
   canPrepare?: boolean;
   /** 打出時施放兩次 */
@@ -363,6 +367,10 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 禦法珠寶匠：英雄具有法術免疫，直到你的下個回合 */
+  heroElusive?: boolean;
+  /** 伊斯歐‧風詠：在這個回合你的法術消耗為 (1) */
+  spellsCostOneTurn?: number;
   /** 本場對戰中你發現的牌數 */
   discoverCount?: number;
   /** 不是開局在牌堆裡的惡魔消耗減少 / 本場對戰打出過的這類惡魔 */

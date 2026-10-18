@@ -96,11 +96,14 @@ const STATIC_FLAGS = new Set([
   'clumsySteward', 'growInHand', 'serviceAce',
   'exactLethalDraw', 'heroPowerFree', 'tradeUpgrade', 'corridorSleeper', 'bountyBoard', 'popgar', 'howdyfin', 'slagmaw', 'ogreRider',
   'taethelan', 'morphingCard', 'mirage',
+  // 外域灰燼 / 暗影崛起
+  'moargArtificer', 'permanentStealth', 'megaWindfuryAura',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([
   'lumia', 'anchorite', 'murmur', 'auchenai', 'talgath', 'rangari', 'mutalisk', 'harbinger', 'podling', 'orion',
   'stagSpirit', 'mirrorSpell', 'copyFrozen', 'natureFeeds', 'natureSummons', 'livingPlague', 'grazing',
+  'takNozwhisker',
 ]);
 
 describe('旗標稽核', () => {
