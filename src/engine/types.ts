@@ -263,7 +263,9 @@ export type DynAmount =
   | 'treantsOnBoard'
   /** 本場對戰中你對友方角色施放的法術數 / 你的英雄生命值在你的回合改變的次數 */
   | 'spellsOnFriendly'
-  | 'ownTurnHealthChanges';
+  | 'ownTurnHealthChanges'
+  /** 你牌堆中的靈魂碎片數 */
+  | 'soulFragments';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 

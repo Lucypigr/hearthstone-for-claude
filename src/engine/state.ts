@@ -99,6 +99,8 @@ export interface HandCard {
   enteredTurn?: number;
   /** 從牌堆抽到的回合（『破壞者』凱利丹） */
   drawnTurn?: number;
+  /** 炎心講師發現的法術：這個回合打出就再發現一次 */
+  fireheartTurn?: number;
   /** 被賦予了預備 */
   canPrepare?: boolean;
   /** 打出時施放兩次 */
@@ -214,6 +216,8 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 會背書的伊萊克：記住的法術 */
+  remembered?: string[];
   /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
   brand?: PlayerId;
   /** 到這個回合為止攻擊時免疫（飢餓猛禽） */
@@ -367,6 +371,8 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 秘密通道：從牌堆拿進手牌的牌（回合結束時放回去） */
+  passageUids?: number[];
   /** 本場對戰中你對友方角色施放的法術數 / 英雄生命值在你的回合改變的次數 */
   spellsOnFriendly?: number;
   ownTurnHealthChanges?: number;
