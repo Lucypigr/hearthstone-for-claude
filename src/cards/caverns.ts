@@ -107,6 +107,13 @@ export const CAVERNS_OVERRIDES: Record<string, Override> = {
   WON_310: { abilities: [{ on: { k: 'summon', side: 'friendly' }, effects: [fn('cvSteward')] }] },
   // 升天者哈拉澤爾：法術傷害 +1。你的法術具有生命竊取
   WON_336: { spellDamage: 1, flags: ['spellLifestealAura'] },
+  // 時光之風奧拉基爾：戰吼：抽一個衝鋒、聖盾、嘲諷與風怒手下。英雄能力：使你的英雄獲得聖盾，並在本回合獲得 +2 攻擊力與風怒
+  WON_092h: {
+    abilities: play(
+      ...(['CHARGE', 'DIVINE_SHIELD', 'TAUNT', 'WINDFURY'] as Keyword[]).map((keyword): Effect => ({ e: 'draw', count: 1, who: 'self', pool: { type: 'MINION', keyword } })),
+    ),
+    heroPower: { effects: [fn('cvSwat'), { e: 'heroAttack', amount: 2 }, fn('wzHeroWindfury')] },
+  },
   // 瓦斯坦‧鹿盔：亡語：從你的牌堆召喚一個嘲諷手下
   WON_345: { abilities: dr(fn('cvValstann')) },
 };
