@@ -20532,6 +20532,9 @@ export class Game {
         if (t && t.hp === 1 && !t.keywords.includes('DIVINE_SHIELD')) t.keywords.push('DIVINE_SHIELD');
         return true;
       }
+      case 'cvSwat':
+        me.hero.divineShield = true;
+        return true;
       case 'cvValstann': {
         const h = pick(s, me.deck.filter((x) => getCard(x.cardId).type === 'MINION' && !!getCard(x.cardId).keywords?.includes('TAUNT')));
         if (h) {
