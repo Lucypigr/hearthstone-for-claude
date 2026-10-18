@@ -321,8 +321,11 @@ describe('中立與各職業的卡牌', () => {
 
   it('混沌觸手：每打出一個，之後的觸手施放的法術消耗多 1', () => {
     const g = newGame();
-    playMinion(g, 'YOG_514');
-    playMinion(g, 'YOG_514');
+    for (let i = 0; i < 2; i++) {
+      const hc = give(g, 'YOG_514');
+      expect(g.apply({ type: 'play', handUid: hc.uid })).toBe(true);
+      while (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+    }
     expect(g.s.players[0].tendrils).toBe(2);
   });
 

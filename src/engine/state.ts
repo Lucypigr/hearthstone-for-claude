@@ -122,6 +122,10 @@ export interface HandCard {
   lockedUntil?: number;
   /** 畸變怪物：目前的兩種加成效果 */
   bonus?: Keyword[];
+  /** 打包進行李箱 / 夾進三明治的卡 */
+  packed?: string[];
+  /** 潮池學徒：在手牌中時施放的法術 / 卡瑞絲：施放過的法術派系 */
+  held?: string[];
   /** 抽到時施放（符文裝飾洗入的複製） */
   castOnDraw?: boolean;
   /** 鍛造過的次數（暴風巨人） */
@@ -211,6 +215,10 @@ export interface Minion {
   titanTurn?: number;
   /** 諾甘農：各能力的威力倍率 */
   titanPower?: Record<string, number>;
+  /** 一開始不在牌堆中（恐懼逃兵） */
+  notStarting?: boolean;
+  /** 食肉小隔間吃掉的手下 */
+  eaten?: string;
   /** 攻擊造成的溢出傷害會擊中敵方英雄 */
   trample?: boolean;
   /** 寇格拉朗抓進手牌的手下（手牌的 uid） */
@@ -629,6 +637,8 @@ export interface PlayerState {
   automatons?: number;
   /** 泰坦時代的各種持續效果 */
   titans?: TitansState;
+  /** 天堂島的各種持續效果 */
+  paradise?: ParadiseState;
   fatigue: number;
   cardsPlayedThisTurn: number;
   spellsCastThisGame: number;
@@ -691,6 +701,35 @@ export interface TitansState {
   lockedCards?: number[];
   /** 本回合抽到第二張牌時摧毀（草率的機械技師） */
   drawsThisTurn?: { turn: number; n: number };
+}
+
+/** 天堂島卡牌的玩家狀態 */
+export interface ParadiseState {
+  /** 本場對戰使用地點牌的次數 */
+  locationsUsed?: number;
+  /** 連續打出元素的回合數（不含這個回合） */
+  elementalStreak?: number;
+  /** 在你的回合英雄受到傷害的次數 */
+  ownTurnHits?: number;
+  /** 本場對戰中對角色施放的法術數 */
+  spellsOnChars?: number;
+  /** 本場對戰中打出的其他職業卡數，以及最後一張 */
+  otherClassPlayed?: number;
+  lastOtherClass?: string;
+  /** 你打出的下一張其他職業的卡消耗減少 */
+  nextOtherDiscount?: number;
+  /** 潮汐之王：雙方的法術消耗為 (5)，直到這個回合結束 */
+  kingTideUntil?: number;
+  /** 衝浪足類：你抽到的下一張法術會在抽到時施放 */
+  surfalopod?: boolean;
+  /** 救生員：你施放的下一張法術具有生命竊取 */
+  lifeguard?: boolean;
+  /** 艾杜拉的支線任務進度 */
+  eudora?: number;
+  /** 奎爾德拉的碎片 */
+  quelDelar?: string[];
+  /** 打卡：本回合英雄的攻擊也會傷害相鄰手下 */
+  heroCleaveTurn?: number;
 }
 
 export interface LogEntry {

@@ -20,11 +20,40 @@ export function maxCopies(def: CardDef): number {
   return def.rarity === 'LEGENDARY' ? 1 : 2;
 }
 
-export function cardAllowed(def: CardDef, heroClass: HeroClass, freeform: boolean): boolean {
+/**
+ * 這張卡能不能放進這個職業的套牌。
+ * 觀光客：有「X 觀光客」的卡可以放進 X 職業的套牌；放了觀光客之後，也可以放入觀光客所屬職業的卡。
+ */
+export function cardAllowed(def: CardDef, heroClass: HeroClass, freeform: boolean, deckCards: string[] = []): boolean {
   if (!def.collectible) return false;
   if (freeform) return true;
   const classes = cardClasses(def);
-  return classes.includes('NEUTRAL') || classes.includes(heroClass);
+  if (classes.includes('NEUTRAL') || classes.includes(heroClass)) return true;
+  if (def.tourist === heroClass) return true;
+  return touristClasses(deckCards, heroClass).some((c) => classes.includes(c));
+}
+
+/** 套牌中的觀光客帶來的額外職業 */
+export function touristClasses(deckCards: string[], heroClass: HeroClass): CardClass[] {
+  const out: CardClass[] = [];
+  for (const id of new Set(deckCards)) {
+    let def: CardDef;
+    try {
+      def = getCard(id);
+    } catch {
+      continue;
+    }
+    if (def.tourist === heroClass) for (const c of cardClasses(def)) if (c !== 'NEUTRAL' && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+function getCardSafe(id: string): CardDef | undefined {
+  try {
+    return getCard(id);
+  } catch {
+    return undefined;
+  }
 }
 
 export const MAX_RUNES = 3;
@@ -77,9 +106,11 @@ export function validateDeck(deck: Deck, owned?: Record<string, number>): DeckPr
       continue;
     }
     if (n > maxCopies(def)) errors.push(`【${def.name}】最多只能放 ${maxCopies(def)} 張`);
-    if (!cardAllowed(def, deck.heroClass, deck.freeform)) errors.push(`【${def.name}】不屬於此職業`);
+    if (!cardAllowed(def, deck.heroClass, deck.freeform, deck.cards)) errors.push(`【${def.name}】不屬於此職業`);
     if (owned && (owned[id] ?? 0) < n) errors.push(`你沒有足夠的【${def.name}】`);
   }
+  // 一副套牌最多一張觀光客
+  if (!deck.freeform && new Set(deck.cards.filter((id) => getCardSafe(id)?.tourist)).size > 1) errors.push('一副套牌最多只能放一張遊客');
   const runes = deckRunes(deck.cards);
   if (runeTotal(runes) > MAX_RUNES) {
     const need = RUNE_KINDS.filter((k) => runes[k]).map((k) => `${RUNE_NAMES[k]}×${runes[k]}`).join('、');

@@ -233,7 +233,13 @@ export type DynAmount =
   | 'secretsTriggered'
   | 'schoolsCast'
   | 'natureThisTurn'
-  | 'ownTurnDamage';
+  | 'ownTurnDamage'
+  /** 天堂島：本場對戰使用地點牌的次數 / 連續打出元素的回合數 / 在你的回合英雄受到傷害的次數 / 對角色施放的法術數 / 打出的其他職業卡數 */
+  | 'locationsUsed'
+  | 'elementalStreak'
+  | 'ownTurnHits'
+  | 'spellsOnChars'
+  | 'otherClassPlayed';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -484,6 +490,10 @@ export type Condition =
   | { c: 'castHolyAndShadow' }
   | { c: 'deckTenCosts' }
   | { c: 'deckSameType' }
+  /** 這張卡一開始不在牌堆中 */
+  | { c: 'notStarting' }
+  /** 你在自己的回合受到過至少 n 點傷害 */
+  | { c: 'ownTurnDamage'; n: number }
   | { c: 'not'; cond: Condition };
 
 export type Effect =
@@ -645,6 +655,8 @@ export type Trig =
   | { k: 'forge' }
   /** 你把一個磁力手下吸附到手下上時（it = 被吸附的手下） */
   | { k: 'magnetize' }
+  /** 你使用地點牌後 */
+  | { k: 'locationUsed' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -802,6 +814,8 @@ export interface PendingDiscount {
   grant?: Keyword;
   /** 改為消耗你對手的生命值（最多 10 點） */
   oppHealth?: boolean;
+  /** 只適用於有亡語的手下 */
+  deathrattle?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -998,6 +1012,8 @@ export interface CardDef {
   magnetRaces?: Race[];
   /** 休眠：抽這麼多張牌後甦醒 */
   awakenDraws?: number;
+  /** 觀光客：這個職業的套牌可以放入此卡，並因此可以放入此卡所屬職業的卡 */
+  tourist?: CardClass;
   /** 綻放：在手牌中這麼多個回合後變成另一張卡 */
   blossom?: { turns: number; into: string };
 }
@@ -1165,4 +1181,17 @@ export type MinionFlag =
   | 'argus'
   | 'kologarn'
   | 'minotauren'
-  | 'sif';
+  | 'sif'
+  /** 天堂島 */
+  | 'customsEnforcer'
+  | 'concierge'
+  | 'octuple'
+  | 'aranna'
+  | 'climbingHook'
+  | 'lynessa'
+  | 'serviceAce'
+  | 'permaFrozen'
+  | 'damageCap1'
+  | 'clumsySteward'
+  | 'growInHand'
+  | 'temporaryCard';

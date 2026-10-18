@@ -1340,7 +1340,7 @@ describe('倒轉與時光（TIME_ 100 ~ 449）', () => {
     play(g3, 'TIME_444');
     g3.s.players[0].weapon!.durability = 0;
     g3.apply({ type: 'endTurn' });
-    expect(g3.s.players[0].hand.some((h) => getCard(h.cardId).races?.includes('DEMON'))).toBe(true);
+    expect(g3.s.players[0].hand.some((h) => getCard(h.cardId).races?.includes('DEMON') || getCard(h.cardId).races?.includes('ALL'))).toBe(true);
     const g4 = newGame({ classes: ['DEMONHUNTER', 'WARRIOR'] });
     g4.s.players[0].deck = [];
     play(g4, 'TIME_446');
