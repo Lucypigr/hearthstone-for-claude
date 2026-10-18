@@ -367,6 +367,13 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 本場對戰中你對友方角色施放的法術數 / 英雄生命值在你的回合改變的次數 */
+  spellsOnFriendly?: number;
+  ownTurnHealthChanges?: number;
+  /** 本場對戰中祈求葛拉克朗的次數 */
+  invokes?: number;
+  /** 進行中的支線任務（uid 對應掛在 eternal 上的能力） */
+  sidequests?: { uid: number; cardId: string; progress: number; goal: number }[];
   /** 禦法珠寶匠：英雄具有法術免疫，直到你的下個回合 */
   heroElusive?: boolean;
   /** 伊斯歐‧風詠：在這個回合你的法術消耗為 (1) */

@@ -427,9 +427,10 @@ describe('終結（END_）卡牌', () => {
     play(g, 'END_013');
     expect(g.s.pendingChoice?.options.length).toBeGreaterThan(0);
     for (const id of g.s.pendingChoice!.options) expect(getCard(id).cost).toBe(1);
-    const before = me.hand.length;
+    // 有些黑暗禮物（甜蜜的夢）會把這張牌放到牌堆頂，所以看手牌加牌堆
+    const before = me.hand.length + me.deck.length;
     g.apply({ type: 'choose', index: 0 });
-    expect(me.hand.length).toBe(before + 1);
+    expect(me.hand.length + me.deck.length).toBe(before + 1);
     const g2 = newGame({ classes: ['PRIEST', 'WARRIOR'] });
     play(g2, 'END_027');
     for (const id of g2.s.pendingChoice!.options) expect(getCard(id).races?.some((r) => r === 'DRAGON' || r === 'ALL')).toBe(true);

@@ -26,6 +26,7 @@ import { LEGENDS_OVERRIDES } from './legends';
 import { CLASSIC_REST_OVERRIDES } from './classicrest';
 import { OLDGODS_OVERRIDES } from './oldgods';
 import { OUTLAND_OVERRIDES } from './outland';
+import { DRAGONS_OVERRIDES } from './dragons';
 import { SHADOWS_OVERRIDES } from './shadows';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
@@ -231,30 +232,6 @@ export const OVERRIDES: Record<string, Override> = {
     ),
     heroPower: { effects: [{ e: 'nextCardDiscount', amount: 2 }] },
     tokens: ['AV_203t'],
-  },
-  // 葛拉克朗（基本形態；不支援祈願升級）
-  DRG_600: {
-    abilities: play({ e: 'summonRandom', pool: { type: 'MINION', race: 'DEMON' }, count: 1, who: 'self' }),
-    heroPower: { effects: [{ e: 'summon', card: 'DRG_238t12t2', count: 2, who: 'self' }], needsBoardSpace: true },
-    tokens: ['DRG_238t12t2'],
-  },
-  DRG_610: {
-    abilities: play({ e: 'draw', count: 1, who: 'self' }, { e: 'costMod', amount: -99, scope: 'it' }),
-    heroPower: { effects: [{ e: 'custom', fn: 'addOneOf', args: { cards: LACKEYS } }] },
-    tokens: LACKEYS,
-  },
-  DRG_620: {
-    abilities: play({ e: 'summon', card: 'DRG_620t4', count: 2, who: 'self' }),
-    heroPower: { effects: [{ e: 'summon', card: 'DRG_238t14t3', count: 1, who: 'self' }], needsBoardSpace: true },
-    tokens: ['DRG_620t4', 'DRG_238t14t3'],
-  },
-  DRG_650: {
-    abilities: play({ e: 'draw', count: 1, who: 'self', pool: { type: 'MINION' } }, { e: 'buff', target: { t: 'it' }, atk: 4, hp: 4 }),
-    heroPower: { effects: [{ e: 'heroAttack', amount: 3 }] },
-  },
-  DRG_660: {
-    abilities: play({ e: 'destroy', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } }),
-    heroPower: { effects: [{ e: 'addRandom', pool: { type: 'MINION', cls: 'PRIEST' }, count: 1, who: 'self' }] },
   },
   // 『死屍獸王』雷克薩：對所有敵方手下造成 2 點傷害；英雄能力「製造殭屍獸」
   //（先發現一張獵人野獸，再發現一張殭屍獸專用野獸，縫合成一張卡加入手牌）
@@ -2927,3 +2904,4 @@ Object.assign(OVERRIDES, CLASSIC_REST_OVERRIDES);
 Object.assign(OVERRIDES, OLDGODS_OVERRIDES);
 Object.assign(OVERRIDES, OUTLAND_OVERRIDES);
 Object.assign(OVERRIDES, SHADOWS_OVERRIDES);
+Object.assign(OVERRIDES, DRAGONS_OVERRIDES);

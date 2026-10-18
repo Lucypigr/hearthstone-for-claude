@@ -257,7 +257,13 @@ export type DynAmount =
   | 'dragonsInHand'
   | 'oneCostPlayed'
   | 'drawnThisGame'
-  | 'holySpellsCast';
+  | 'holySpellsCast'
+  /** 你控制的其他同名手下數（恐懼烏鴉）/ 你控制的樹人數 */
+  | 'otherSameName'
+  | 'treantsOnBoard'
+  /** 本場對戰中你對友方角色施放的法術數 / 你的英雄生命值在你的回合改變的次數 */
+  | 'spellsOnFriendly'
+  | 'ownTurnHealthChanges';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -386,6 +392,8 @@ export type Condition =
   | { c: 'itOtherClass' }
   /** 你的手牌中有另一個職業的卡 */
   | { c: 'holdingOtherClass' }
+  /** 本場對戰中你祈求過葛拉克朗至少 n 次 */
+  | { c: 'invoked'; n: number }
   | { c: 'itCost'; n: number }
   | { c: 'itAttack'; n: number }
   | { c: 'itCard'; id: string }
@@ -871,6 +879,10 @@ export interface PendingDiscount {
   deathrattle?: boolean;
   /** 只適用於這個派系的法術 */
   school?: string;
+  /** 只適用於具有這個關鍵字的手下（例如突襲） */
+  keyword?: Keyword;
+  /** 只適用於有法術傷害的手下 */
+  spellDamage?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -1136,6 +1148,13 @@ export type MinionFlag =
   | 'megaWindfuryAura'
   | 'secretsTwice'
   | 'takNozwhisker'
+  // 巨龍降臨
+  | 'stormhammer'
+  | 'noFreeze'
+  // 通靈學院
+  | 'poisonousSpells'
+  | 'othersImmuneAttacking'
+  | 'weaponAtk2'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'
