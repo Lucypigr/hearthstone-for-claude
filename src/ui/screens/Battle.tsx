@@ -294,6 +294,20 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   }, []);
 
   const myTurn = !!s && s.phase === 'play' && s.current === ME && !s.pendingChoice;
+  // 諾茲多姆：玩家只有 15 秒可以進行回合
+  const nozTurn = !!s && s.phase === 'play' && s.current === ME && g.flagOnBoard('nozdormu') ? s.turn : -1;
+  useEffect(() => {
+    if (nozTurn < 0) return;
+    flash('諾茲多姆：你只有 15 秒！');
+    const t = window.setTimeout(() => {
+      if (g.s.turn === nozTurn && g.s.current === ME && g.s.phase === 'play') {
+        while (g.s.pendingChoice) g.apply({ type: 'choose', index: 0 });
+        act({ type: 'endTurn' });
+      }
+    }, 15000);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nozTurn]);
 
   const validTargets = useMemo(() => {
     if (!s || !myTurn) return new Set<number>();
