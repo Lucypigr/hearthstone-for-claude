@@ -307,7 +307,9 @@ async function main() {
     const ov = OVERRIDES[r.id];
     if (ov) {
       const { tokens, heroPower, ...rest } = ov;
-      for (const t of tokens ?? []) {
+      // 鍛造版本、泰坦能力、綻放後的卡也要一起收錄
+      const linked = [ov.forge, ...(ov.titan ?? []), ov.blossom?.into].filter((t): t is string => !!t && t !== r.id);
+      for (const t of [...(tokens ?? []), ...linked]) {
         if (!buildToken(t)) throw new Error(`覆寫 ${r.id} 引用的衍生卡 ${t} 無法建立`);
       }
       const out: CardDef = { ...def, ...rest, heroPower: undefined };
@@ -332,7 +334,7 @@ async function main() {
         parsed = { keywords: [], abilities: [], auras: [], tokens: [] };
         const options: ChooseOneOption[] = [];
         for (const suffix of ['a', 'b']) {
-          const sub = byId.get(r.id + suffix);
+          const sub = byId.get(r.id + suffix) ?? byId.get(r.id + suffix.toUpperCase());
           if (!sub) throw new Unsupported('找不到二選一子卡');
           const subType = typeOf(sub);
           if (subType === 'MINION') {
@@ -343,6 +345,13 @@ async function main() {
             const into = same && buildToken(same.id) ? same.id : sub.id;
             if (!buildToken(into)) throw new Unsupported('二選一變形失敗');
             options.push({ id: sub.id, name: clean(sub.strs.CARDNAME.zhTW), text: clean(sub.strs.CARDTEXT?.zhTW), abilities: [], transformInto: into });
+            continue;
+          }
+          // 子卡有手動定義時直接使用
+          const subOv = OVERRIDES[sub.id];
+          if (subOv) {
+            for (const t of subOv.tokens ?? []) if (!buildToken(t)) throw new Unsupported(`二選一子卡的衍生卡 ${t} 無法建立`);
+            options.push({ id: sub.id, name: clean(sub.strs.CARDNAME.zhTW), text: clean(sub.strs.CARDTEXT?.zhTW), abilities: subOv.abilities ?? [], target: subOv.target && type === 'MINION' ? { ...subOv.target, optional: true } : subOv.target });
             continue;
           }
           const sp = parseCardText({ textEn: sub.strs.CARDTEXT?.enUS ?? '', cardType: 'SPELL' }, makeEnv(r.id));

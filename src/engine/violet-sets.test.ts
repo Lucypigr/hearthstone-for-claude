@@ -475,6 +475,8 @@ describe('重生與牧師', () => {
     expect(hand.length).toBe(3);
     for (const h of hand) {
       expect(g.costOf(g.s.players[0], h)).toBe(1);
+      // 『詛咒之王』吉恩在手牌中會變成狼人之王（屬性值不同），不在這裡檢查
+      if (h.cardId === 'CATA_615t') continue;
       expect(g.handStats(0, h)).toEqual({ atk: 1, hp: 1 });
     }
   });

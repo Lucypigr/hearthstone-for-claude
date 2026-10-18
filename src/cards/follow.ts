@@ -21,5 +21,7 @@ export const FOLLOW_EFFECTS: Record<string, Effect[]> = {
   // 跟隨證據：放一個 3/3 小鬼線人到敵方牌堆，賦予手中一張可打出的卡牌此效果
   evidence: [fn('putImpformants', { count: 1 }), fn('followGive', { id: 'evidence' })],
   // 跟隨鬼魂：召喚一個 2/1 重生鬼魂，賦予手中一張可打出的卡牌此效果
+  // 閃電反射：本回合打出發現的自然法術後，再發現一個
+  reflexes: [{ e: 'discover', pool: { type: 'SPELL', spellSchool: 'NATURE' } }],
   ghosts: [{ e: 'summon', card: 'CAP_802t', count: 1, who: 'self' }, fn('followGive', { id: 'ghosts' })],
 };

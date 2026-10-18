@@ -27,7 +27,10 @@ type Mode =
   | { k: 'heroPower'; option?: number }
   | { k: 'heroPower2' }
   | { k: 'location'; uid: number }
-  | { k: 'powerChoose' };
+  | { k: 'powerChoose' }
+  /** 選擇泰坦的能力 / 泰坦能力的目標 */
+  | { k: 'titanPick'; uid: number }
+  | { k: 'titan'; uid: number; index: number };
 
 const AI_DELAY = { slow: 1300, normal: 800, fast: 350 };
 
@@ -298,6 +301,10 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'location') {
       const req = g.locationTargetReq(mode.uid);
       return req ? new Set(g.validTargets(req, ME, true)) : new Set<number>();
+    }
+    if (mode.k === 'titan') {
+      const req = g.titanTargetReq(mode.uid, mode.index);
+      return req ? new Set(g.validTargets(req, ME, true, mode.uid)) : new Set<number>();
     }
     if (mode.k === 'card' && mode.stage === 'target') {
       const req = g.playTargetReq(mode.handUid, mode.option);
@@ -593,6 +600,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     else if (mode.k === 'heroPower') act({ type: 'heroPower', target: uid, option: mode.option });
     else if (mode.k === 'heroPower2') act({ type: 'heroPower2', target: uid });
     else if (mode.k === 'location') act({ type: 'location', uid: mode.uid, target: uid });
+    else if (mode.k === 'titan') act({ type: 'titan', uid: mode.uid, index: mode.index, target: uid });
     else if (mode.k === 'card') act({ type: 'play', handUid: mode.handUid, target: uid, option: mode.option, position: mode.position, side: mode.side });
   };
 
@@ -603,6 +611,13 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     }
     if (validTargets.has(c.uid)) {
       onTarget(c.uid);
+      return;
+    }
+    // 泰坦：點一下選擇要使用的能力
+    const titan = !isHero(c) && getCard(c.cardId).titan;
+    if (myTurn && c.owner === ME && titan && titan.some((_, i) => g.canTitan(c.uid, i).ok)) {
+      setInspect(null);
+      setMode({ k: 'titanPick', uid: c.uid });
       return;
     }
     if (myTurn && c.owner === ME && g.canAttack(c.uid)) {
@@ -682,6 +697,12 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     setInspect(on && def ? { cardId: def.id, def, atk: def.attack, hp: def.health } : null);
   };
 
+  const onTitanOption = (uid: number, index: number) => {
+    const req = g.titanTargetReq(uid, index);
+    if (req && g.validTargets(req, ME, true, uid).length) setMode({ k: 'titan', uid, index });
+    else act({ type: 'titan', uid, index });
+  };
+
   const onPowerOption = (option: number) => {
     if (g.heroPowerNeedsTarget(option)) setMode({ k: 'heroPower', option });
     else act({ type: 'heroPower', option });
@@ -689,6 +710,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
 
   const selectedHand = mode.k === 'card' ? mode.handUid : null;
   const canTrade = selectedHand !== null && g.check({ type: 'trade', handUid: selectedHand }).ok;
+  const canForge = selectedHand !== null && g.check({ type: 'forge', handUid: selectedHand }).ok;
   const prepHand = prepPick !== null ? me.hand.find((h) => h.uid === prepPick) : undefined;
   const canPrepare = myTurn && !!prepHand && g.check({ type: 'prepare', handUid: prepHand.uid }).ok;
   const selectedDef = selectedHand !== null ? getCard(me.hand.find((h) => h.uid === selectedHand)?.cardId ?? 'GAME_005') : null;
@@ -709,6 +731,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     if (mode.k === 'attack') return '選擇攻擊目標（Esc 取消）';
     if (mode.k === 'heroPower' || mode.k === 'heroPower2') return '選擇英雄能力的目標';
     if (mode.k === 'location') return '選擇地點的目標（Esc 取消）';
+    if (mode.k === 'titan') return '選擇泰坦能力的目標（Esc 取消）';
     return '';
   })();
 
@@ -1019,6 +1042,11 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           🛠 預備（花光 {me.mana} 點法力，之後消耗減少 {me.mana + 1}）
         </button>
       )}
+      {canForge && selectedHand !== null && (
+        <button className={`btn trade-btn forge-btn ${canTrade ? 'stacked' : ''}`} onClick={() => act({ type: 'forge', handUid: selectedHand })}>
+          ⚒ 鍛造（2 法力：變成鍛造版本）
+        </button>
+      )}
       {canTrade && selectedHand !== null && (
         <button className="btn trade-btn" onClick={() => act({ type: 'trade', handUid: selectedHand })}>
           🔁 交易（1 法力：洗回牌堆並抽一張）
@@ -1090,6 +1118,45 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
           </div>
         </div>
       )}
+
+      {mode.k === 'titanPick' && (() => {
+        const m = g.minion(mode.uid);
+        const list = m ? getCard(m.cardId).titan : undefined;
+        if (!m || !list) return null;
+        return (
+          <div className="modal" onClick={() => setMode({ k: 'idle' })}>
+            <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+              <h2>{getCard(m.cardId).name}：選擇泰坦能力</h2>
+              <div className="card-row">
+                {list.map((id, i) => {
+                  const r = g.canTitan(m.uid, i);
+                  const used = m.titanUsed?.includes(id);
+                  const d = getCard(id);
+                  const pw = m.titanPower?.[id];
+                  return (
+                    <button key={id} className={`choose-option ${r.ok ? '' : 'disabled'}`} disabled={!r.ok} onClick={() => onTitanOption(m.uid, i)}>
+                      <Art cardId={id} className="choose-art" label={d.name.slice(0, 2)} color={CLASS_COLORS[me.heroClass]} />
+                      <b>
+                        {d.name}
+                        {used ? '（已使用）' : pw && pw > 1 ? `（×${pw}）` : ''}
+                      </b>
+                      <span dangerouslySetInnerHTML={{ __html: formatCardText(g.titanText(m.uid, id)) }} />
+                    </button>
+                  );
+                })}
+              </div>
+              {g.canAttack(m.uid) && (
+                <button className="btn" onClick={() => setMode({ k: 'attack', attacker: m.uid })}>
+                  攻擊
+                </button>
+              )}
+              <button className="btn" onClick={() => setMode({ k: 'idle' })}>
+                取消
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {mode.k === 'powerChoose' && g.heroPowerOptions() && (
         <div className="modal" onClick={() => setMode({ k: 'idle' })}>
