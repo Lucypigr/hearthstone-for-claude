@@ -1,7 +1,7 @@
 // 英雄戰場的英雄與英雄能力（依官方敘述實作；只收錄能完整執行的英雄）
 import type { Combat } from './api';
 import { COIN, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TRIPLE_REWARD } from './cards';
-import { isRace, racesOf, tierOf } from './data';
+import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry, isMagnetic } from './rules';
 import type { BMinion, BPlayer, Tribe } from './types';
@@ -41,6 +41,10 @@ export interface HeroSpec {
   onPlay?(G: BgGame, p: BPlayer, m: BMinion): void;
   onRefresh?(G: BgGame, p: BPlayer): void;
   onSpend?(G: BgGame, p: BPlayer, n: number): void;
+  onBuySpell?(G: BgGame, p: BPlayer, id: string): void;
+  onCast?(G: BgGame, p: BPlayer, id: string): void;
+  /** 酒館法術的費用 */
+  spellCost?: (p: BPlayer, cost: number) => number;
   // 戰鬥中
   soc?(c: Combat, side: 0 | 1): void;
   onSummonCombat?(c: Combat, side: 0 | 1, m: BMinion): void;
@@ -73,9 +77,9 @@ export const HEROES: HeroSpec[] = [
     id: 'TB_BaconShop_HERO_01', // 艾德溫‧范克里夫：打磨利刃
     target: 'friend',
     cost: fixed(1),
-    status: (p) => `目前 +${2 + Math.floor(cnt(p, 'bought') / 4)}/+${2 + Math.floor(cnt(p, 'bought') / 4)}`,
+    status: (p) => `目前 +${2 + Math.floor(cnt(p, 'cards') / 4)}/+${2 + Math.floor(cnt(p, 'cards') / 4)}`,
     use: (_G, p, t) => {
-      const n = 2 + Math.floor(cnt(p, 'bought') / 4);
+      const n = 2 + Math.floor(cnt(p, 'cards') / 4);
       if (t) (t.atk += n), (t.hp += n);
     },
     rank: 4,
@@ -628,6 +632,13 @@ export const HEROES: HeroSpec[] = [
         giveTripleReward(G, p);
       }
     },
+    onBuySpell: (G, p, id) => {
+      add(p, 'guff', tierOf(id));
+      if (cnt(p, 'guff') >= 20) {
+        p.c.guff -= 20;
+        giveTripleReward(G, p);
+      }
+    },
     rank: 3,
   },
   {
@@ -680,7 +691,87 @@ export const HEROES: HeroSpec[] = [
     },
     rank: 3,
   },
+  // —— 酒館法術相關 ——
+  {
+    id: 'BG28_HERO_800', // 泰瑟連‧血腥看守者
+    passive: true,
+    status: (p) => `還差 ${2 - (cnt(p, 'taeth') % 3)} 張`,
+    spellCost: (p, c) => (cnt(p, 'taeth') % 3 === 2 ? 0 : c),
+    onBuySpell: (_G, p) => void add(p, 'taeth'),
+    rank: 3,
+  },
+  {
+    id: 'BG28_HERO_801', // 醫生荷利代
+    target: 'none',
+    cost: fixed(1),
+    use: (G, p) => {
+      const id = G.randomSpell(p, (x) => tierOf(x) <= p.tier);
+      if (id) G.addHand(p, { kind: 'spell', uid: G.nextUid(), id, g: 1 });
+    },
+    rank: 3,
+    ai: (_G, p) => (p.hand.length < 8 && p.gold >= 1 ? 'none' : undefined),
+  },
+  {
+    id: 'BG31_HERO_006', // 奧薩爾主教
+    target: 'none',
+    cost: fixed(0),
+    locked: (_p, G) => (G.round < 3 ? '第 3 回合解鎖' : null),
+    status: (p) => (cnt(p, 'spellDisc') ? `下一張酒館法術便宜 ${cnt(p, 'spellDisc')}` : null),
+    use: (_G, p) => void add(p, 'spellDisc'),
+    rank: 3,
+    ai: (_G, p) => (p.shopSpells.length && !cnt(p, 'spellDisc') ? 'none' : undefined),
+  },
+  {
+    id: 'BG31_HERO_003', // 先知諾柏多
+    target: 'none',
+    cost: (p, G) => Math.max(0, 3 - (G.round - 1 - cnt(p, 'nobundoUsed'))),
+    locked: (p) => (!p.lastSpell ? '還沒有施放過酒館法術' : null),
+    status: (p) => (p.lastSpell ? `上一張：${spellName(p.lastSpell)}` : null),
+    use: (G, p) => {
+      if (p.lastSpell) G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: p.lastSpell, g: 1 });
+      p.c.nobundoUsed = G.round - 1;
+    },
+    rank: 3,
+    ai: (_G, p) => (p.lastSpell && p.hand.length < 8 ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_75', // 拉卡尼休
+    passive: true,
+    status: (p) => `你的酒館法術額外 +${cnt(p, 'raka')}/+${cnt(p, 'raka')}`,
+    startGame: (_G, p) => void (p.c.raka = 1),
+    startTurn: (G, p) => {
+      if (G.round > 1 && (G.round - 1) % 3 === 0) add(p, 'raka');
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG34_HERO_001', // 時光轉繞者克羅米
+    target: 'none',
+    cost: fixed(0),
+    use: (G, p) => G.refreshWithSpells(p),
+    rank: 2,
+    ai: (G, p) => (G.round >= 4 && p.board.length >= 5 && p.gold >= 3 && !p.shopSpells.some((s) => G.spellCost(p, s.id) <= p.gold) ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_35', // 『深沉絕望』尤格薩倫
+    passive: true,
+    status: (_p, G) => (G.round < 3 ? '第 3 回合解鎖' : null),
+    startTurn: (G, p) => {
+      if (G.round < 3) return;
+      const id = G.randomSpell(p, (x) => tierOf(x) <= p.tier);
+      if (id) G.castRandom(p, id);
+    },
+    rank: 3,
+  },
 ];
+
+function spellName(id: string): string {
+  try {
+    return bgCard(id).name;
+  } catch {
+    return id;
+  }
+}
 
 function pairOf(p: BPlayer): string | null {
   const counts = new Map<string, number>();

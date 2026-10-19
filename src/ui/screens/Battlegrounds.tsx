@@ -1,7 +1,8 @@
 // 英雄戰場：大廳、選英雄、招募、戰鬥、結算
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import { aiEmote, BG_DIFFICULTY_NAMES, skillLabel, STYLE_NAMES, type BgDifficulty, type BgEmoteEvent } from '../../bg/ai';
-import { SPEC, SPELL_SPEC, TRIPLE_REWARD } from '../../bg/cards';
+import { SPEC, TRIPLE_REWARD } from '../../bg/cards';
+import { SPELL_SPEC } from '../../bg/spells';
 import { bgCard, racesOf, tierOf } from '../../bg/data';
 import { BgError, type BgGame, type CombatRecord } from '../../bg/game';
 import { HERO_SPEC } from '../../bg/heroes';
@@ -187,6 +188,7 @@ function MinionTip({ m, p, G }: { m: BMinion; p: BPlayer | null; G: BgGame }) {
       </div>
       {cardText(m, p) && <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(cardText(m, p)) }} />}
       {m.golden && <div className="bg-tip-note">金卡：身材與效果加倍</div>}
+      {m.both && <div className="bg-tip-note">二選一的兩個效果都會發動</div>}
       {m.mags.length > 0 && <div className="bg-tip-note">磁力：{m.mags.map((x) => bgCard(x.id).name).join('、')}</div>}
       {kws.length > 0 && <div className="bg-tip-note">{kws.map((k) => KEYWORD_NAMES[k]).join('・')}</div>}
       {(m.tmpAtk || m.tmpHp || m.tmpKw.length) > 0 && (
@@ -269,16 +271,42 @@ function MinionToken({
   );
 }
 
-function SpellCard({ card, onClick, selected }: { card: HandCard & { kind: 'spell' }; onClick: () => void; selected: boolean }) {
+function SpellCard({
+  card,
+  onClick,
+  selected,
+  cost,
+  locked,
+  tipSide = 'top',
+}: {
+  card: { id: string; g: number; temp?: boolean; tier?: number };
+  onClick: () => void;
+  selected: boolean;
+  /** 酒館裡的價錢（手牌不用顯示） */
+  cost?: string;
+  locked?: boolean;
+  tipSide?: 'top' | 'bottom';
+}) {
   const d = bgCard(card.id);
   const [hover, setHover] = useState(false);
   const text = card.id === TRIPLE_REWARD ? `<b>發現</b>一個<b>旅店等級${card.tier ?? '?'}</b>的手下` : d.text;
   return (
-    <div className={`bg-spell ${selected ? 'selected' : ''} ${card.temp ? 'temp' : ''}`} onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <div
+      className={`bg-spell ${selected ? 'selected' : ''} ${card.temp ? 'temp' : ''} ${locked ? 'locked' : ''} ${d.pool ? 'tavern' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <Art cardId={card.id} label={d.name.slice(0, 2)} />
       <span className="bg-spell-name">{d.name}</span>
+      {cost !== undefined && <span className="bg-spell-cost">{cost}</span>}
+      {d.tier && d.pool && <span className="bg-spell-tier">{d.tier}</span>}
+      {locked && <span className="bg-lock">🔒</span>}
       {hover && (
-        <div className="bg-tip-pop top">
+        <div className={`bg-tip-pop ${tipSide}`}>
           <div className="bg-tip">
             <div className="bg-tip-head">
               <b>{d.name}</b>
@@ -286,6 +314,8 @@ function SpellCard({ card, onClick, selected }: { card: HandCard & { kind: 'spel
             <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(text) }} />
             {card.g > 1 && <div className="bg-tip-note">金卡：效果加倍</div>}
             {card.temp && <div className="bg-tip-note">回合結束時會消失</div>}
+            {locked && <div className="bg-tip-note">鎖定中：下回合才能使用</div>}
+            {d.pool && <div className="bg-tip-note">酒館法術</div>}
           </div>
         </div>
       )}
@@ -417,7 +447,15 @@ function PeekPanel({ G, idx, onClose }: { G: BgGame; idx: number; onClose: () =>
 // 一局
 // ---------------------------------------------------------------------------
 
-type Mode = { k: 'idle' } | { k: 'hand'; uid: number } | { k: 'target'; uid: number; pos: number } | { k: 'board'; uid: number } | { k: 'power' };
+type Mode =
+  | { k: 'idle' }
+  /** 選了一張手牌（choice = 二選一選了哪個） */
+  | { k: 'hand'; uid: number; choice?: number }
+  /** 二選一 */
+  | { k: 'choose'; uid: number }
+  | { k: 'target'; uid: number; pos: number; choice?: number }
+  | { k: 'board'; uid: number }
+  | { k: 'power' };
 
 export function BgMatch({ onExit }: { onExit: () => void }) {
   const profile = useProfile();
@@ -525,7 +563,9 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   const power = bgCard(me.heroId).power!;
   const hero = HERO_SPEC.get(me.heroId)!;
   const pst = G.powerState(me);
-  const handCard = mode.k === 'hand' || mode.k === 'target' ? me.hand.find((h) => h.uid === mode.uid) : undefined;
+  const handCard = mode.k === 'hand' || mode.k === 'target' || mode.k === 'choose' ? me.hand.find((h) => h.uid === mode.uid) : undefined;
+  const choice = mode.k === 'hand' || mode.k === 'target' ? mode.choice ?? 0 : 0;
+  const spellTargets = handCard?.kind === 'spell' && mode.k === 'hand' ? G.spellTargets(me, handCard.id, choice) : [];
   const handMinion = handCard?.kind === 'minion' ? handCard.m : null;
   const spellSpec = handCard?.kind === 'spell' ? SPELL_SPEC.get(handCard.id) : undefined;
   const bcSpec = handMinion ? SPEC.get(handMinion.id) : undefined;
@@ -538,21 +578,43 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
       if (hero.target === 'shop' && where !== 'shop') return false;
       return !hero.canTarget || hero.canTarget(me, m, G);
     }
+    if (mode.k === 'hand' && spellSpec) return spellTargets.includes(m);
     if (where !== 'board') return false;
     if (mode.k === 'target' && handMinion && bcSpec?.target) return bcSpec.target(handMinion, m);
     if (mode.k === 'hand' && handMinion) return canMagnetize(handMinion, m);
-    if (mode.k === 'hand' && spellSpec?.target) return true;
     return false;
+  };
+
+  /** 法術：選好選項後施放，或是進入選目標 */
+  const castOrTarget = (h: HandCard & { kind: 'spell' }, c: number) => {
+    const spec = SPELL_SPEC.get(h.id);
+    const need = !!spec?.target && (!spec.choiceTarget || spec.choiceTarget(c));
+    if (!need) {
+      act(() => G.play(0, h.uid, undefined, undefined, c));
+      return setMode({ k: 'idle' });
+    }
+    if (!G.spellTargets(me, h.id, c).length) {
+      setToast('沒有可以選的目標');
+      return setMode({ k: 'idle' });
+    }
+    setMode({ k: 'hand', uid: h.uid, choice: c });
+  };
+
+  const castOn = (m: BMinion) => {
+    if (!handCard || handCard.kind !== 'spell') return;
+    if (!spellTargets.includes(m)) return setToast('不能選這個目標');
+    act(() => G.play(0, handCard.uid, undefined, m.uid, choice));
+    setMode({ k: 'idle' });
   };
 
   const playMinionAt = (pos: number) => {
     if (!handMinion) return;
     const spec = SPEC.get(handMinion.id);
     if (spec?.target && me.board.some((x) => spec.target!(handMinion, x))) {
-      setMode({ k: 'target', uid: handMinion.uid, pos });
+      setMode({ k: 'target', uid: handMinion.uid, pos, choice });
       return;
     }
-    act(() => G.play(0, handMinion.uid, pos));
+    act(() => G.play(0, handMinion.uid, pos, undefined, choice));
     setMode({ k: 'idle' });
   };
 
@@ -565,14 +627,11 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
     }
     if (mode.k === 'target') {
       if (!isTarget(m, 'board')) return setToast('不能選這個目標');
-      act(() => G.play(0, mode.uid, mode.pos, m.uid));
+      act(() => G.play(0, mode.uid, mode.pos, m.uid, mode.choice ?? 0));
       return setMode({ k: 'idle' });
     }
     if (mode.k === 'hand' && handCard) {
-      if (handCard.kind === 'spell' && spellSpec?.target) {
-        act(() => G.play(0, handCard.uid, undefined, m.uid));
-        return setMode({ k: 'idle' });
-      }
+      if (handCard.kind === 'spell') return castOn(m);
       if (handMinion && canMagnetize(handMinion, m)) {
         act(() => G.play(0, handMinion.uid, undefined, m.uid));
         return setMode({ k: 'idle' });
@@ -595,33 +654,47 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
       setMode({ k: 'idle' });
       if (target) return act(() => G.sell(0, target.uid));
     }
+    if (mode.k === 'hand' && handCard?.kind === 'spell') return castOn(m);
     act(() => G.buy(0, m.uid));
     setMode({ k: 'idle' });
   };
 
   const clickHand = (h: HandCard) => {
     if (busy) return;
+    if (h.locked === G.round) return setToast('這張卡鎖定中，下回合才能使用');
     if (mode.k === 'hand' && mode.uid === h.uid) {
-      // 再點一次：放到最右邊 / 施放
+      // 再點一次：放到最右邊
       if (h.kind === 'minion') playMinionAt(me.board.length);
-      else if (!SPELL_SPEC.get(h.id)?.target) {
-        act(() => G.play(0, h.uid));
-        setMode({ k: 'idle' });
-      }
+      else setMode({ k: 'idle' });
       return;
     }
-    if (h.kind === 'spell' && !SPELL_SPEC.get(h.id)?.target) {
-      act(() => G.play(0, h.uid));
-      return setMode({ k: 'idle' });
-    }
-    if (h.kind === 'minion' && !me.board.length) {
-      const spec = SPEC.get(h.m.id);
-      if (!spec?.target) {
-        act(() => G.play(0, h.uid, 0));
+    if (h.kind === 'spell') {
+      if (h.id === TRIPLE_REWARD) {
+        act(() => G.play(0, h.uid));
         return setMode({ k: 'idle' });
       }
+      if (SPELL_SPEC.get(h.id)?.choices) return setMode({ k: 'choose', uid: h.uid });
+      return castOrTarget(h, 0);
+    }
+    const spec = SPEC.get(h.m.id);
+    if (spec?.choices && !h.m.both) return setMode({ k: 'choose', uid: h.uid });
+    if (!me.board.length && !spec?.target) {
+      act(() => G.play(0, h.uid, 0));
+      return setMode({ k: 'idle' });
     }
     setMode({ k: 'hand', uid: h.uid });
+  };
+
+  /** 二選一選好了 */
+  const pickChoice = (c: number) => {
+    if (mode.k !== 'choose' || !handCard) return;
+    if (handCard.kind === 'spell') return castOrTarget(handCard, c);
+    const spec = SPEC.get(handCard.m.id);
+    if (!me.board.length && !spec?.target) {
+      act(() => G.play(0, handCard.uid, 0, undefined, c));
+      return setMode({ k: 'idle' });
+    }
+    setMode({ k: 'hand', uid: handCard.uid, choice: c });
   };
 
   // 拖曳
@@ -634,9 +707,9 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
     if (d.from === 'hand') {
       const h = me.hand.find((x) => x.uid === d.uid);
       if (!h) return;
-      if (h.kind === 'spell') return setMode({ k: 'hand', uid: h.uid });
-      setMode({ k: 'hand', uid: h.uid });
+      if (h.kind === 'spell' || h.locked === G.round) return clickHand(h);
       const spec = SPEC.get(h.m.id);
+      if (spec?.choices) return setMode({ k: 'choose', uid: h.uid });
       if (spec?.target && me.board.some((x) => spec.target!(h.m, x))) return setMode({ k: 'target', uid: h.uid, pos: index });
       act(() => G.play(0, h.uid, index));
       setMode({ k: 'idle' });
@@ -739,7 +812,21 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   onDragStart={() => (drag.current = { from: 'shop', uid: m.uid })}
                 />
               ))}
-              {!me.shop.length && <div className="muted">酒館空了，刷新看看</div>}
+              {me.shopSpells.map((sp) => (
+                <SpellCard
+                  key={sp.uid}
+                  card={{ id: sp.id, g: 1 }}
+                  selected={false}
+                  tipSide="bottom"
+                  cost={sp.id === 'BG28_571' ? `❤${G.spellCost(me, sp.id)}` : `${G.spellCost(me, sp.id)}`}
+                  onClick={() => {
+                    if (busy) return;
+                    act(() => G.buySpell(0, sp.uid));
+                    setMode({ k: 'idle' });
+                  }}
+                />
+              ))}
+              {!me.shop.length && !me.shopSpells.length && <div className="muted">酒館空了，刷新看看</div>}
               {mode.k === 'board' && <div className="bg-sell-hint">點酒館賣出（🪙{selectedBoard ? G.sellPrice(me, selectedBoard) : 1}）</div>}
             </div>
           </section>
@@ -784,7 +871,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
             {mode.k === 'target' && <div className="bg-hint">選擇戰吼的目標</div>}
             {mode.k === 'power' && <div className="bg-hint">選擇英雄能力的目標</div>}
             {mode.k === 'hand' && handMinion && <div className="bg-hint">點空格放置手下{me.board.some((x) => canMagnetize(handMinion, x)) ? '，或點機械吸附上去' : ''}（再點一次手牌放到最右邊）</div>}
-            {mode.k === 'hand' && spellSpec?.target && <div className="bg-hint">選擇一個友方手下</div>}
+            {mode.k === 'hand' && spellSpec && <div className="bg-hint">選擇法術的目標{spellSpec.target === 'any' ? '（可以選酒館裡的手下）' : ''}</div>}
           </section>
 
           {/* 英雄與手牌 */}
@@ -821,6 +908,14 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
               <div className="bg-gold" title="金幣">
                 🪙 {me.gold}
                 <small> / {goldForTurn(G.round) + me.maxGoldBonus}</small>
+                {(() => {
+                  const [a, h] = G.spellExtra(me);
+                  return a || h ? (
+                    <div className="bg-extra" title="你的酒館法術額外給的身材">
+                      📜 +{a}/+{h}
+                    </div>
+                  ) : null;
+                })()}
               </div>
             </div>
             <div className="bg-hand">
@@ -831,7 +926,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                     m={h.m}
                     p={me}
                     G={G}
-                    className={`in-hand ${mode.k !== 'idle' && 'uid' in mode && mode.uid === h.uid ? 'selected' : ''}`}
+                    className={`in-hand ${mode.k !== 'idle' && 'uid' in mode && mode.uid === h.uid ? 'selected' : ''} ${h.locked === G.round ? 'locked' : ''}`}
                     onClick={() => clickHand(h)}
                     draggable
                     onDragStart={() => (drag.current = { from: 'hand', uid: h.uid })}
@@ -840,7 +935,8 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   <SpellCard
                     key={h.uid}
                     card={h}
-                    selected={mode.k === 'hand' && mode.uid === h.uid}
+                    locked={h.locked === G.round}
+                    selected={(mode.k === 'hand' || mode.k === 'choose') && mode.uid === h.uid}
                     onClick={() => {
                       clickHand(h);
                     }}
@@ -863,6 +959,26 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
         </main>
       </div>
       {me.discover && <DiscoverModal G={G} onPick={(i) => act(() => G.choose(0, i))} />}
+      {mode.k === 'choose' && handCard && (
+        <div className="bg-modal" onClick={(e) => (e.stopPropagation(), setMode({ k: 'idle' }))}>
+          <h3>{bgCard(handCard.kind === 'spell' ? handCard.id : handCard.m.id).name}：二選一</h3>
+          <div className="bg-choices">
+            {(handCard.kind === 'spell' ? SPELL_SPEC.get(handCard.id)?.choices : SPEC.get(handCard.m.id)?.choices)?.map((label, i) => (
+              <button
+                key={i}
+                className="btn big"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  pickChoice(i);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">點旁邊取消</p>
+        </div>
+      )}
       {toast && <div className="bg-toast">{toast}</div>}
     </div>
   );
@@ -885,11 +1001,19 @@ function Slot({ onClick }: { onClick: () => void }) {
 function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }) {
   const me = G.human;
   const d = me.discover!;
-  const ms = useMemo(() => d.options.map((id) => G.make(id, !!d.golden)), [d]);
+  const ms = useMemo(() => (d.spells ? [] : d.options.map((id) => G.make(id, !!d.golden))), [d]);
   return (
     <div className="bg-modal" onClick={(e) => e.stopPropagation()}>
       <h3>{d.title}</h3>
       <div className="bg-discover">
+        {d.spells &&
+          d.options.map((id, i) => (
+            <div key={id + i} className="bg-discover-opt" onClick={() => onPick(i)}>
+              <SpellCard card={{ id, g: 1 }} selected={false} tipSide="bottom" cost={String(G.spellCost(me, id))} onClick={() => onPick(i)} />
+              <b>{bgCard(id).name}</b>
+              <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+            </div>
+          ))}
         {ms.map((m, i) => (
           <div key={m.uid} className="bg-discover-opt" onClick={() => onPick(i)}>
             <MinionToken m={m} p={me} G={G} tipSide="bottom" onClick={() => onPick(i)} />

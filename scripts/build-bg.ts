@@ -22,6 +22,9 @@ interface HsjCard {
   races?: string[];
   mechanics?: string[];
   isBattlegroundsPoolMinion?: boolean;
+  isBattlegroundsPoolSpell?: boolean;
+  isBattlegroundsDuosExclusive?: boolean;
+  battlegroundsAssociatedRaces?: string[];
   battlegroundsHero?: boolean;
   heroPowerDbfId?: number;
 }
@@ -46,6 +49,13 @@ const EXTRA_IDS = [
   'BG23_004t', // 釣手誘餌
   'BG23_007t', // 水下坐騎
   'BG23_008t', // 發光皇冠
+  'BG32_835t', // 冥想
+  'BG33_319t', // 霜贏局面
+  'BG31_893', // 寶石日
+  'BG35_910', // 焚焰
+  'BG35_911', // 秘法吸收
+  'EBG_Spell_014', // 尖尖箭
+  'BG31_171t', // 衛星
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -62,7 +72,16 @@ async function load(locale: string): Promise<HsjCard[]> {
 }
 
 function clean(text: string | undefined): string {
-  return (text ?? '').replace(/\[x\]/g, '').trim();
+  let t = (text ?? '').replace(/\[x\]/g, '').trim();
+  // 有些卡把兩種敘述（例如「還差 3 個」和「完成！」）用一個數字接在一起：只留第一段
+  const head = t.slice(0, 4);
+  for (let i = 4; i < t.length - 4; i++) {
+    if (/\d/.test(t[i]) && t.slice(i + 1).startsWith(head)) {
+      t = t.slice(0, i);
+      break;
+    }
+  }
+  return t;
 }
 
 async function main() {
@@ -81,17 +100,21 @@ async function main() {
       ...(c.techLevel ? { tier: c.techLevel } : {}),
       ...(c.races?.length ? { races: c.races } : {}),
       ...(c.mechanics?.length ? { mech: c.mechanics } : {}),
-      ...(c.type === 'HERO_POWER' ? { cost: c.cost ?? 0 } : {}),
+      ...(c.type === 'HERO_POWER' || c.type === 'BATTLEGROUND_SPELL' || c.type === 'SPELL' ? { cost: c.cost ?? 0 } : {}),
+      ...(c.isBattlegroundsPoolSpell ? { pool: true } : {}),
+      ...(c.battlegroundsAssociatedRaces?.length ? { assoc: c.battlegroundsAssociatedRaces } : {}),
       ...extra,
     };
   };
   const byId = new Map(zh.map((c) => [c.id, c]));
   // 酒館卡池（不含雙人模式的卡）
   for (const c of zh) if (c.isBattlegroundsPoolMinion && !c.id.startsWith('BGDUO')) add(c);
+  // 酒館法術（不含雙人模式限定）
+  for (const c of zh) if (c.isBattlegroundsPoolSpell && !c.isBattlegroundsDuosExclusive) add(c);
   for (const id of EXTRA_IDS) {
     const c = byId.get(id);
     if (!c) throw new Error(`找不到 ${id}`);
-    add(c);
+    if (!out[id]) add(c);
   }
   // 英雄與英雄能力
   for (const c of zh) {

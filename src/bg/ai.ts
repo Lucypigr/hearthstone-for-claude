@@ -7,7 +7,8 @@
 // 4. 錢不夠就凍結好牌；找不到想要的就刷新
 // 5. 最後調整站位：高手會用打過的對手戰隊模擬戰鬥，挑勝率最高的站位
 // 技術越低，評估越有雜訊、越常忘記三連、亂站位、錢花不完
-import { GEM, COIN, SPEC, SPELL_SPEC, TRIPLE_REWARD } from './cards';
+import { GEM, COIN, SPEC, TRIPLE_REWARD } from './cards';
+import { mostCommonType, SPELL_SPEC } from './spells';
 import { runCombat } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
@@ -318,25 +319,26 @@ function playFromHand(M: Mind): boolean {
   const { G, p, persona } = M;
   // 法術
   for (const h of p.hand) {
-    if (h.kind !== 'spell' || h.id === TRIPLE_REWARD) continue;
+    if (h.kind !== 'spell' || h.id === TRIPLE_REWARD || h.locked === G.round) continue;
     const spec = SPELL_SPEC.get(h.id);
     if (!spec) continue;
-    if (!spec.target) {
-      G.play(p.idx, h.uid);
+    // 酒吧精選：錢不夠買法術時不用
+    if (h.id === 'BG28_849' && p.gold < 2) continue;
+    const choice = spellChoice(M, h.id);
+    const targets = G.spellTargets(p, h.id, choice);
+    const needTarget = !!spec.target && (!spec.choiceTarget || spec.choiceTarget(choice));
+    if (!needTarget) {
+      G.play(p.idx, h.uid, undefined, undefined, choice);
       return true;
     }
-    if (!p.board.length) continue;
-    let t: BMinion | undefined;
-    if (h.id === 'BG23_008t') t = pickFriendlyTarget(M, (m) => !m.shield && !m.tmpKw.includes('shield'));
-    else if (h.id === 'BG23_004t') t = pickFriendlyTarget(M, (m) => !m.taunt);
-    else if (h.id === GEM) t = pickFriendlyTarget(M, (m) => isRace(m.id, 'QUILBOAR')) ?? pickFriendlyTarget(M, () => true);
-    else t = pickFriendlyTarget(M, () => true);
-    t ??= p.board[0];
-    G.play(p.idx, h.uid, undefined, t.uid);
+    if (!targets.length) continue;
+    const t = spellTarget(M, h.id, targets);
+    if (!t) continue;
+    G.play(p.idx, h.uid, undefined, t.uid, choice);
     return true;
   }
   // 手下
-  const minions = p.hand.filter((h): h is HandCard & { kind: 'minion' } => h.kind === 'minion');
+  const minions = p.hand.filter((h): h is HandCard & { kind: 'minion' } => h.kind === 'minion' && h.locked !== G.round);
   if (!minions.length) return false;
   // 新手偶爾會忘記把手牌打出來
   if (persona.skill < 0.3 && M.r() < 0.12) return false;
@@ -379,7 +381,7 @@ function playFromHand(M: Mind): boolean {
     if (destroys && target === undefined && p.board.some((x) => spec.target!(m, x))) return false;
   }
   try {
-    G.play(p.idx, best.h.uid, undefined, target);
+    G.play(p.idx, best.h.uid, undefined, target, spec?.choices ? minionChoice(M, m.id) : 0);
   } catch {
     return false;
   }
@@ -407,12 +409,24 @@ function usePower(M: Mind): boolean {
 
 function buySomething(M: Mind): boolean {
   const { G, p, persona } = M;
+  if (p.hand.length >= HAND_MAX) return false;
   const cost = G.minionCost(p);
-  if (p.gold < cost || !p.shop.length || p.hand.length >= HAND_MAX) return false;
   const handMinions = p.hand.filter((h) => h.kind === 'minion').length;
   const scored = p.shop.map((m) => ({ m, v: buyValue(M, m) })).sort((a, b) => b.v - a.v);
   const best = scored[0];
   const space = p.board.length + handMinions < BOARD_MAX;
+  // 酒館法術：比較「每枚金幣的價值」
+  const spell = p.shopSpells
+    .map((sp) => ({ sp, cost: G.spellCost(p, sp.id), v: spellValue(M, sp.id) }))
+    .filter((x) => (x.sp.id === 'BG28_571' ? p.hp > 8 : x.cost <= p.gold))
+    .sort((a, b) => b.v / Math.max(1, b.cost) - a.v / Math.max(1, a.cost))[0];
+  const minionRate = best && p.gold >= cost ? best.v / Math.max(1, cost) : 0;
+  if (spell && spell.v > 0 && spell.v / Math.max(1, spell.cost) > minionRate * (space ? 1.25 : 0.8)) {
+    G.buySpell(p.idx, spell.sp.uid);
+    M.bought.push(bgCard(spell.sp.id).name);
+    return true;
+  }
+  if (!best || p.gold < cost) return false;
   // 金幣不會留到下回合：有空位就買最好的那張
   let threshold = -Infinity;
   if (!space) {
@@ -426,6 +440,89 @@ function buySomething(M: Mind): boolean {
   G.buy(p.idx, best.m.uid);
   M.bought.push(bgCard(best.m.id).name);
   return true;
+}
+
+/** 酒館法術值多少（大約幾點身材）；新手看不太懂法術 */
+function spellValue(M: Mind, id: string): number {
+  const { G, p, persona } = M;
+  const spec = SPELL_SPEC.get(id);
+  if (!spec) return 0;
+  // 需要目標但場上沒有可以選的：先不要買
+  if (spec.target && !spec.choiceTarget && !G.spellTargets(p, id, 0).length) return 0;
+  let v = spec.v ? spec.v(G, p) : 3;
+  if (spec.stats) {
+    const [a, h] = G.spellExtra(p);
+    if (a + h > 0) v += (a + h) * Math.max(1, Math.min(4, p.board.length)) * 0.6;
+  }
+  return v * (0.6 + persona.skill * 0.5) + gauss(M) * (1 - persona.skill) * 3;
+}
+
+/** 二選一的法術選哪個 */
+function spellChoice(M: Mind, id: string): number {
+  const { G, p } = M;
+  switch (id) {
+    case 'BG31_881': // 時間管理：危險時先拿現在的
+      return M.danger ? 0 : 1;
+    case 'BG31_886': // 森林的餽贈：手下多就全體
+      return p.board.length >= 6 ? 1 : 0;
+    case 'BG31_890': // 無窮潛力
+      return p.board.length + p.hand.length >= 8 ? 1 : 0;
+    case 'BG31_880': // 聯盟旗幟
+      return M.r() < 0.5 ? 0 : 1;
+    case 'BG31_893': // 寶石日
+      return G.round % 2;
+    default:
+      return 0;
+  }
+}
+
+/** 二選一的手下選哪個 */
+function minionChoice(M: Mind, id: string): number {
+  const { G, p } = M;
+  switch (id) {
+    case 'BG27_084': // 活潑聖甲蟲：攻擊力高的給風怒
+      return p.board.some((m) => isRace(m.id, 'BEAST') && m.atk >= 6) ? 1 : 0;
+    case 'BG30_123': // 無畏饕客：前期拿加成，後期拿寶石
+      return G.round <= 8 ? 0 : 1;
+    case 'BG36_330': // 狡猾的滲透者
+      return p.board.some((m) => isRace(m.id, 'QUILBOAR')) ? 1 : 0;
+    case 'BG36_332': // 陷阱獵手：前期拿金幣上限
+      return G.round <= 7 ? 1 : 0;
+    default:
+      return M.r() < 0.5 ? 0 : 1;
+  }
+}
+
+/** 法術要選誰 */
+function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefined {
+  const { p } = M;
+  const friends = targets.filter((m) => p.board.includes(m));
+  switch (id) {
+    case 'BG23_008t':
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && !m.shield && !m.tmpKw.includes('shield')) ?? friends[0];
+    case 'BG23_004t':
+    case 'BG28_503':
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && !m.taunt) ?? friends[0];
+    case GEM:
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && isRace(m.id, 'QUILBOAR')) ?? pickFriendlyTarget(M, (m) => friends.includes(m));
+    case 'BG28_604': // 屠殺：犧牲最弱的不死族
+    case 'EBG_Spell_032': // 引導吞噬者
+    case 'BG28_838': // 完美幻象：最弱的那個加最多
+    case 'BG30_804': // 穩健進化
+      return pickFriendlyTarget(M, (m) => friends.includes(m), 'weak');
+    case 'BG28_520': // 狡猾長褲：選沒有嘲諷的
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && !m.taunt) ?? friends[0];
+    case 'BG28_518':
+    case 'BG28_845':
+    case 'BG35_912':
+    case 'EBG_Spell_038': {
+      // 「選一個手下」：選自己最多的種族
+      const t = mostCommonType(p.board);
+      return targets.find((m) => p.board.includes(m) && t && isRace(m.id, t)) ?? friends[0] ?? targets[0];
+    }
+    default:
+      return pickFriendlyTarget(M, (m) => friends.includes(m)) ?? targets[0];
+  }
 }
 
 function rollOrFreeze(M: Mind): boolean {

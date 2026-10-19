@@ -31,6 +31,11 @@ export function getSession(): BgSession | null {
     if (!raw) return null;
     const d = JSON.parse(raw) as Omit<BgSession, 'game' | 'roundStart'> & { state: BgState };
     if (!d.state?.players?.length) return null;
+    // 舊版存檔沒有酒館法術的欄位
+    for (const pl of d.state.players) {
+      pl.shopSpells ??= [];
+      pl.after ??= [];
+    }
     current = { ...d, game: new BgGame(d.state), roundStart: performance.now() };
     return current;
   } catch {

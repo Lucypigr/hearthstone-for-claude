@@ -102,3 +102,18 @@ export function canMagnetize(card: BMinion, host: BMinion): boolean {
 export function hasBattlecry(id: string): boolean {
   return !!SPEC.get(id)?.battlecry;
 }
+
+/** 「你的酒館法術額外 +X」：本賽局的計數 + 場上的胡蒙戈茲 / 附魔哨兵 */
+export function spellExtraOf(cnt: Record<string, number>, board: BMinion[]): [number, number] {
+  let a = (cnt.tsA ?? 0) + (cnt.raka ?? 0);
+  let h = (cnt.tsH ?? 0) + (cnt.raka ?? 0);
+  for (const m of board) {
+    if (m.dead) continue;
+    const all = [{ id: m.id, g: m.golden ? 2 : 1 }, ...m.mags];
+    for (const x of all) {
+      if (x.id === 'BG32_341') (a += x.g), (h += 2 * x.g);
+      if (x.id === 'BG35_341') (a += x.g), (h += x.g);
+    }
+  }
+  return [a, h];
+}

@@ -10,6 +10,8 @@ export interface Recruit {
   pick<T>(arr: T[]): T | undefined;
   /** 永久加成 */
   buff(m: BMinion, atk: number, hp: number): void;
+  /** 酒館法術給的身材（會加上「你的酒館法術額外 +X」） */
+  spellBuff(m: BMinion, atk: number, hp: number): void;
   /** 直到下回合的加成 */
   tmpBuff(m: BMinion, atk: number, hp: number, kw?: Keyword[]): void;
   giveKw(m: BMinion, kw: Keyword): void;
@@ -32,6 +34,12 @@ export interface Recruit {
   consume(eater: BMinion, food: BMinion): void;
   /** 觸發手下的戰吼 */
   battlecry(m: BMinion): void;
+  /** 發現一張酒館法術 */
+  discoverSpell(filter: (id: string) => boolean, title: string): void;
+  /** 立刻施放一個法術（沒有目標的） */
+  castSpell(id: string): void;
+  /** 這個法術在這局的酒館裡（種族有在這局） */
+  spellInLobby(id: string): boolean;
   /** 賦予「酒館中的手下」加成（本賽局） */
   tavernBuff(atk: number, hp: number, tribe?: Tribe): void;
   /** 增加計數並同步到戰場上符合的手下（例如「你的甲蟲本賽局 +2/+1」） */
@@ -74,8 +82,10 @@ export interface Combat {
   /** 把卡（手下或法術）放進招募階段的手牌（模擬中不會發生） */
   give(side: 0 | 1, id: string): void;
   giveRandom(side: 0 | 1, filter: (id: string) => boolean): void;
+  /** 酒館法術的額外加成（戰鬥中施放法術用） */
+  spellExtra(side: 0 | 1): [number, number];
   /** 讓手下的計數永久 +1（例如「永久強化此手下」） */
-  bump(m: BMinion): void;
+  bump(m: BMinion, n?: number): void;
   /** 這張卡在這一局的卡池裡 */
   inLobby(id: string): boolean;
 }
@@ -85,7 +95,9 @@ export interface MinionSpec {
   /** 覆寫官方敘述（官方資料有誤或需要顯示數值） */
   text?: (m: BMinion, p: BPlayer | null) => string | null;
   // —— 招募階段 ——
-  battlecry?(r: Recruit, self: BMinion, g: number, target: BMinion | null): void;
+  battlecry?(r: Recruit, self: BMinion, g: number, target: BMinion | null, choice: number): void;
+  /** 二選一（-1 = 兩個效果都要，荊棘開路者） */
+  choices?: string[];
   /** 戰吼需要選一個友方手下 */
   target?: (self: BMinion, t: BMinion) => boolean;
   /** 另一個友方手下被打出後 */
@@ -98,12 +110,14 @@ export interface MinionSpec {
   /** 你對某個手下施放法術後（鮮血寶石、造法……） */
   onSpell?(r: Recruit, self: BMinion, target: BMinion | null, g: number, spellId: string): void;
   onBuy?(r: Recruit, self: BMinion, bought: BMinion, g: number): void;
+  /** 你購買酒館法術後 */
+  onBuySpell?(r: Recruit, self: BMinion, id: string, g: number): void;
   /** 你花了金幣 */
   onSpend?(r: Recruit, self: BMinion, amount: number, g: number): void;
   /** 酒館被刷新後 */
   onRefresh?(r: Recruit, self: BMinion, g: number): void;
   /** 英雄受到傷害後 */
-  onHeroHurt?(r: Recruit, self: BMinion, g: number): void;
+  onHeroHurt?(r: Recruit, self: BMinion, g: number, amount: number): void;
   /** 你觸發戰吼後 */
   afterBattlecry?(r: Recruit, self: BMinion, m: BMinion, g: number): void;
   /** 使用鮮血寶石到這個手下身上後 */

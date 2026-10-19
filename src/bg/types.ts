@@ -46,6 +46,10 @@ export interface BgCardData {
   cost?: number;
   armor?: number;
   power?: string;
+  /** 酒館裡會賣的法術 */
+  pool?: boolean;
+  /** 法術相關的種族（這局沒有這個種族就不會出現） */
+  assoc?: string[];
 }
 
 export type Keyword = 'taunt' | 'shield' | 'windfury' | 'venom' | 'reborn' | 'stealth';
@@ -101,12 +105,33 @@ export interface BMinion {
   killer?: number;
   /** 三連做出來的金卡：打出時拿到三合一獎勵 */
   reward?: boolean;
+  /** 身上有幾顆鮮血寶石（寶石沒收用） */
+  gems?: number;
+  /** 轉墓術：在這個回合打出的話，回合結束時死亡 */
+  doom?: number;
+  /** 范達爾的機運：二選一的兩個效果都會發動 */
+  both?: boolean;
 }
 
 export type HandCard =
-  | { kind: 'minion'; uid: number; m: BMinion }
-  /** 法術：鮮血寶石、旅店幸運幣、三合一獎勵、造法法術 */
-  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number };
+  /** locked = 這個回合還不能打出（時光尋跡） */
+  | { kind: 'minion'; uid: number; m: BMinion; locked?: number }
+  /** 法術：酒館法術、鮮血寶石、旅店幸運幣、三合一獎勵、造法法術 */
+  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number };
+
+/** 酒館裡賣的法術 */
+export interface ShopSpell {
+  uid: number;
+  id: string;
+}
+
+/** 之後才會發生的效果（贏家的麵包） */
+export interface Pending {
+  k: 'bread';
+  uid: number;
+  /** 下一場戰鬥贏了 */
+  won?: boolean;
+}
 
 export interface Discover {
   /** 選項：手下的卡牌 ID */
@@ -119,6 +144,14 @@ export interface Discover {
   hurt?: boolean;
   /** 複製品：不從卡池裡拿 */
   noPool?: boolean;
+  /** 拿到時鎖定 1 回合（時光尋跡） */
+  lock?: boolean;
+  /** 這回合打出的話會死亡（轉墓術） */
+  doom?: boolean;
+  /** 選項是酒館法術 */
+  spells?: boolean;
+  /** 范達爾的機運：二選一的兩個效果都要 */
+  both?: boolean;
 }
 
 export interface Seen {
@@ -148,6 +181,8 @@ export interface BPlayer {
   board: BMinion[];
   hand: HandCard[];
   shop: BMinion[];
+  /** 酒館裡賣的法術 */
+  shopSpells: ShopSpell[];
   frozen: boolean;
   /** 本回合英雄能力用了幾次 */
   powerUses: number;
@@ -168,6 +203,10 @@ export interface BPlayer {
   seen: Record<number, Seen>;
   /** 下回合多拿的金幣 */
   nextGold: number;
+  /** 之後才會發生的效果 */
+  after: Pending[];
+  /** 上一張施放的酒館法術 */
+  lastSpell?: string;
   /** 被淘汰時的戰隊（之後當作殘影） */
   deathBoard: BMinion[] | null;
   /** 電腦玩家的個性 */

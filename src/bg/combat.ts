@@ -3,7 +3,7 @@ import type { Combat } from './api';
 import { tierOf } from './data';
 import { HERO_SPEC } from './heroes';
 import { nextRandom } from '../engine/rng';
-import { auraOf, BOARD_MAX, makeMinion, specsOf } from './rules';
+import { auraOf, BOARD_MAX, makeMinion, specsOf, spellExtraOf } from './rules';
 import type { BMinion, BPlayer, CombatFrame, CombatResult, Keyword } from './types';
 
 export interface SideInput {
@@ -142,10 +142,13 @@ export class CombatSim implements Combat {
       src.hp += hp;
     }
   }
-  bump(m: BMinion) {
-    m.n++;
+  bump(m: BMinion, n = 1) {
+    m.n += n;
     const src = this.source(m);
-    if (src) src.n++;
+    if (src) src.n += n;
+  }
+  spellExtra(side: 0 | 1): [number, number] {
+    return spellExtraOf(this.counts[side], this.boards[side]);
   }
   giveKw(m: BMinion, kw: Keyword) {
     m[kw] = true;
@@ -366,6 +369,7 @@ export class CombatSim implements Combat {
           }
         }
       }
+      for (const side of [0, 1] as const) this.boon(side);
       this.frame();
     }
   }
@@ -379,6 +383,32 @@ export class CombatSim implements Combat {
     } finally {
       const i = this.boards[side].indexOf(m);
       if (i >= 0) this.boards[side].splice(i, 1);
+    }
+  }
+
+  /** 起始戰鬥的酒館法術：佔上風、諾茲多姆的子嗣、甲蟲恩澤 */
+  private socSpells(side: 0 | 1) {
+    const foe = (1 - side) as 0 | 1;
+    for (let k = 0; k < this.cnt(side, 'upperHand'); k++) {
+      const m = this.pick(this.alive(foe));
+      if (m) m.hp = m.maxHp = 1;
+    }
+    for (let k = 0; k < this.cnt(side, 'brood'); k++) {
+      const m = this.alive(side)[0];
+      if (m) m.atk *= 2;
+    }
+    this.boon(side);
+  }
+
+  private boonDone: [boolean, boolean] = [false, false];
+  /** 甲蟲恩澤：戰鬥中有空位時召喚兩隻有嘲諷的 2/2 甲蟲 */
+  private boon(side: 0 | 1) {
+    if (this.boonDone[side] || this.cnt(side, 'boon') <= 0 || this.alive(side).length >= BOARD_MAX) return;
+    this.boonDone[side] = true;
+    this.counter(side, 'boon', -1);
+    for (let k = 0; k < 2; k++) {
+      const b = this.summon(side, this.make('BG28_603t'));
+      if (b) b.taunt = true;
     }
   }
 
@@ -403,6 +433,7 @@ export class CombatSim implements Combat {
     // 起始戰鬥：英雄能力 → 手牌 → 手下
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
       HERO_SPEC.get(this.sides[side].heroId)?.soc?.(this, side);
+      this.socSpells(side);
     }
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
       for (const h of [...this.hands[side]]) for (const { s, g } of specsOf(h)) s.socInHand?.(this, h, side, g);
