@@ -42,6 +42,7 @@ export const GLOSSARY: GlossEntry[] = [
   { group: '觸發', term: '盛怒', desc: '這個手下受到傷害但沒有死亡時觸發（只會觸發一次）。' },
   { group: '觸發', term: '溢療', desc: '這個手下被治療到超過生命值上限時觸發。' },
   { group: '觸發', term: '法術爆發', desc: '你施放一張法術後觸發一次，之後這個效果就消失。' },
+  { group: '觸發', term: '榮譽擊殺', desc: '在你的回合，它造成剛好足以消滅一個手下的傷害時觸發（傷害多於所需就不算）。', has: (d) => !!d.abilities?.some((a) => a.on.k === 'honorableKill') || JSON.stringify(d.abilities ?? []).includes('"c":"honorableKill"') },
   { group: '觸發', term: '滅殺', desc: '在你的回合，它造成的傷害超過消滅目標所需時觸發。', has: (d) => !!d.abilities?.some((a) => a.on.k === 'overkill') },
   { group: '觸發', term: '對戰開始', desc: '遊戲一開始（換完起始手牌之後）就生效；這張牌只要在你的起始牌堆或手牌中就會觸發。' },
   { group: '觸發', term: '抽中時施放', desc: '抽到這張牌時會立即施放，然後再抽一張牌。', has: (d) => !!d.castsWhenDrawn },

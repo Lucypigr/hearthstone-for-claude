@@ -214,6 +214,8 @@ export interface Minion {
   linked?: number;
   /** 記住的卡（過期品商人棄掉的卡） */
   stash?: string;
+  /** 凍結的長毛象：在擁有者施放火焰法術之前保持凍結 */
+  mammoth?: boolean;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
   /** 飛行管理員杜加爾：甦醒時的獎勵 */
@@ -687,6 +689,22 @@ export interface PlayerState {
   spellDamageDealt?: { turn: number; amount: number };
   /** 本場對戰中施放的邪能法術數 / 英雄與友方攻擊次數 */
   felSpells?: number;
+  /** 奧特蘭克山谷：施放的冰霜法術數、獲得的護甲總量、在對手回合受到的傷害、上一張二選一的選項等 */
+  av?: {
+    frostSpells?: number;
+    armorGained?: number;
+    oppTurnDamage?: { turn: number; n: number };
+    lastChooseOne?: { cardId: string; option: number };
+    dawngrasp?: number;
+    powerFreeze?: boolean;
+    toFront?: { turn: number; n: number };
+    /** 納亞克·海克森：此手下偷來的手下 */
+    najak?: Record<number, number>;
+    /** 虔信者賽瑞菈 / 元素使布魯坎：英雄能力翻面的起始回合 */
+    flipStart?: number;
+    /** 空軍指揮官艾克曼 / 夾擊戰法：本回合監看的手下 */
+    watch?: { kind: 'ichman' | 'flank'; uid: number; turn: number }[];
+  };
   attacksThisGame?: number;
   /** 本場對戰中打出的 1 費手下 */
   oneCostMinions?: string[];

@@ -228,6 +228,8 @@ export type DynAmount =
   | 'spellDamageDealtThisTurn'
   /** 你本場對戰中施放的邪能法術數 */
   | 'felSpellsCast'
+  /** 你本場對戰中施放的冰霜法術數 */
+  | 'frostSpellsCast'
   /** 你本場對戰中英雄 / 友方角色攻擊的次數 */
   | 'attacksThisGame'
   /** 場上（雙方）的手下數 */
@@ -442,6 +444,14 @@ export type Condition =
   | { c: 'itPlayedLastTurn' }
   /** 你這個回合恢復過生命值 */
   | { c: 'healedThisTurn' }
+  /** 剛才的傷害榮譽擊殺了選擇的目標 */
+  | { c: 'honorableKill' }
+  /** 此手下被榮譽擊殺（亡語用） */
+  | { c: 'wasHonorablyKilled' }
+  /** 你在對手的上個回合受到 n 點以上的傷害 */
+  | { c: 'tookOnOppTurn'; n: number }
+  /** 你本場對戰中獲得過 n 點以上的護甲值 */
+  | { c: 'armorGainedGame'; n: number }
   /** 你上個回合施放過法術 */
   | { c: 'castSpellLastTurn' }
   /** 剛剛的攻擊是英雄攻擊手下 */
@@ -725,6 +735,8 @@ export type Trig =
   | { k: 'locationUsed' }
   /** 你的英雄獲得攻擊力後（amount = 獲得多少） */
   | { k: 'heroAtkGain' }
+  /** 榮譽擊殺：此手下（或你裝備的武器）在你的回合以剛好致命的傷害消滅一個手下 */
+  | { k: 'honorableKill' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -904,6 +916,8 @@ export interface PendingDiscount {
   keyword?: Keyword;
   /** 只適用於有法術傷害的手下 */
   spellDamage?: boolean;
+  /** 只適用於二選一卡 */
+  chooseOne?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -1186,6 +1200,11 @@ export type MinionFlag =
   // 暴風城
   | 'jaxon'
   | 'heroesTakeExtra'
+  // 奧特蘭克山谷
+  | 'immovableObject'
+  | 'mulverick'
+  | 'saidan'
+  | 'cheatySnobold'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'

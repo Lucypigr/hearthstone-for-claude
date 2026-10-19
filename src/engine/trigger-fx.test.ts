@@ -104,12 +104,14 @@ const STATIC_FLAGS = new Set([
   'outcastDiscount', 'lifestealDamagesEnemy', 'inara', 'lightsteed', 'noDeathrattles', 'heroPowerDiscount1',
   // 暴風城
   'jaxon', 'heroesTakeExtra',
+  // 奧特蘭克山谷
+  'immovableObject', 'saidan',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([
   'lumia', 'anchorite', 'murmur', 'auchenai', 'talgath', 'rangari', 'mutalisk', 'harbinger', 'podling', 'orion',
   'stagSpirit', 'mirrorSpell', 'copyFrozen', 'natureFeeds', 'natureSummons', 'livingPlague', 'grazing',
-  'takNozwhisker',
+  'takNozwhisker', 'mulverick', 'cheatySnobold',
 ]);
 
 describe('旗標稽核', () => {
