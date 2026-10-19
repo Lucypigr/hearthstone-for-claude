@@ -12,7 +12,7 @@ import { mostCommonType, SPELL_SPEC } from './spells';
 import { runCombat } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
-import { HERO_SPEC, type HeroSpec } from './heroes';
+import { heroOf, HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { BOARD_MAX, canMagnetize, HAND_MAX, MAX_TIER, specsOf } from './rules';
 import { TRIBE_NAMES, TRIBES, type BgPersona, type BgStyle, type BMinion, type BPlayer, type HandCard, type Tribe } from './types';
@@ -169,7 +169,7 @@ function copiesOwned(p: BPlayer, id: string): number {
 function buyValue(M: Mind, m: BMinion): number {
   const { G, p, persona } = M;
   let v = minionValue(G, p, m, M.focus, persona.skill);
-  const need = HERO_SPEC.get(p.heroId)?.tripleNeed ?? 3;
+  const need = heroOf(p)?.tripleNeed ?? 3;
   const owned = copiesOwned(p, m.id);
   // 三連：新手常常沒發現
   const noticesTriple = M.r() < 0.35 + persona.skill * 0.65;
@@ -297,8 +297,19 @@ function chooseDiscover(M: Mind) {
   if (!d) return;
   let best = 0;
   let bestV = -Infinity;
+  // 魚爾摩斯：用記得的對手戰隊來猜
+  if (d.guess !== undefined) {
+    const o = G.opponentOf(p.idx);
+    const seen = o !== null && o >= 0 ? p.seen[o]?.board.map((m) => m.id) ?? [] : [];
+    const i = d.options.findIndex((id) => seen.includes(id));
+    return G.choose(p.idx, i >= 0 && M.r() < 0.5 + M.persona.skill / 2 ? i : Math.floor(M.r() * d.options.length));
+  }
   d.options.forEach((id, i) => {
-    const v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0);
+    let v: number;
+    if (d.powers) v = (HERO_SPEC.get(id)?.rank ?? 2) * 3 + gauss(M) * (1 - M.persona.skill) * 4;
+    else if (d.spells) v = spellValue(M, id);
+    else if (d.objs) v = minionValue(G, p, d.objs[i], M.focus, M.persona.skill);
+    else v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0);
     if (v > bestV) {
       bestV = v;
       best = i;
@@ -321,7 +332,7 @@ function playFromHand(M: Mind): boolean {
   const { G, p, persona } = M;
   // 法術
   for (const h of p.hand) {
-    if (h.kind !== 'spell' || h.id === TRIPLE_REWARD || h.locked === G.round) continue;
+    if (h.kind !== 'spell' || h.id === TRIPLE_REWARD || (h.locked ?? 0) >= G.round) continue;
     const spec = SPELL_SPEC.get(h.id);
     if (!spec) continue;
     // 酒吧精選：錢不夠買法術時不用
@@ -340,7 +351,7 @@ function playFromHand(M: Mind): boolean {
     return true;
   }
   // 手下
-  const minions = p.hand.filter((h): h is HandCard & { kind: 'minion' } => h.kind === 'minion' && h.locked !== G.round);
+  const minions = p.hand.filter((h): h is HandCard & { kind: 'minion' } => h.kind === 'minion' && (h.locked ?? 0) < G.round);
   if (!minions.length) return false;
   // 新手偶爾會忘記把手牌打出來
   if (persona.skill < 0.3 && M.r() < 0.12) return false;
@@ -392,7 +403,7 @@ function playFromHand(M: Mind): boolean {
 
 function usePower(M: Mind): boolean {
   const { G, p, persona } = M;
-  const h: HeroSpec | undefined = HERO_SPEC.get(p.heroId);
+  const h: HeroSpec | undefined = heroOf(p);
   if (!h?.ai) return false;
   const st = G.powerState(p);
   if (!st.usable) return false;
@@ -402,7 +413,7 @@ function usePower(M: Mind): boolean {
   const t = h.ai(G, p);
   if (t === undefined) return false;
   try {
-    G.usePower(p.idx, t === 'none' ? undefined : t.uid);
+    G.usePower(p.idx, t === 'none' ? undefined : t.uid, undefined, h.aiChoice?.(G, p) ?? 0);
   } catch {
     return false;
   }

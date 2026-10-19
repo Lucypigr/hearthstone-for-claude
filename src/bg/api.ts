@@ -116,6 +116,8 @@ export interface Combat {
   inLobbySpell(id: string): boolean;
   /** 你的神祇 +X/+Y（已經甦醒的話也會加在它身上） */
   deity(side: 0 | 1, atk: number, hp: number): void;
+  /** 有空位時才召喚 */
+  summonLater(side: 0 | 1, m: BMinion): void;
   /** 戰鬥開始時這一方的手下（卡牌 ID） */
   startBoard(side: 0 | 1): string[];
 }

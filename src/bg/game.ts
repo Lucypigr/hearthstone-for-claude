@@ -8,7 +8,7 @@ const FODDER = 'BG35_150t';
 import { BOUNTIES, isTavernSpell, SPELL_SPEC, spellCostOf, TAVERN_SPELLS, type SpellCtx } from './spells';
 import { CombatSim, runCombat, type SideInput } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
-import { HERO_SPEC, heroAvailable, HEROES } from './heroes';
+import { heroOf, HERO_SPEC, heroAvailable, HEROES, SWAPPABLE_POWERS } from './heroes';
 import { nextRandom } from '../engine/rng';
 import {
   auraOf,
@@ -205,15 +205,15 @@ export class BgGame {
 
   // —— 數值 ——
   minionCost(p: BPlayer): number {
-    return HERO_SPEC.get(p.heroId)?.minionCost?.(p) ?? MINION_COST;
+    return heroOf(p)?.minionCost?.(p) ?? MINION_COST;
   }
   refreshCost(p: BPlayer): number {
     if (p.freeRefreshes > 0) return 0;
     if ((p.c.malch ?? 0) < p.board.filter((m) => m.id === 'BG26_524').length * 2) return 0;
-    return HERO_SPEC.get(p.heroId)?.refreshCost ?? REFRESH_COST;
+    return heroOf(p)?.refreshCost ?? REFRESH_COST;
   }
   upgradeCost(p: BPlayer): number {
-    return Math.max(0, p.upgradeCost + (HERO_SPEC.get(p.heroId)?.upgradeExtra ?? 0));
+    return Math.max(0, p.upgradeCost + (heroOf(p)?.upgradeExtra ?? 0));
   }
   sellPrice(p: BPlayer, m: BMinion): number {
     for (const { s } of specsOf(m)) if (s.sellPrice) return s.sellPrice(p, m);
@@ -243,7 +243,7 @@ export class BgGame {
   }
 
   private startGame() {
-    for (const p of this.s.players) HERO_SPEC.get(p.heroId)?.startGame?.(this, p);
+    for (const p of this.s.players) heroOf(p)?.startGame?.(this, p);
     this.startRound();
   }
 
@@ -263,6 +263,8 @@ export class BgGame {
     p.c.elemTurn = 0;
     p.c.trail = 0;
     p.gold = goldForTurn(this.s.round) + p.maxGoldBonus + p.nextGold;
+    // 費林大使、詹莉‧伊夏：跳過前幾回合
+    if (this.s.round <= (p.c.skip ?? 0)) p.gold = 0;
     p.nextGold = 0;
     if (this.s.round > 1 && p.tier < MAX_TIER) p.upgradeCost = Math.max(0, p.upgradeCost - 1);
     for (const m of [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))]) {
@@ -298,7 +300,9 @@ export class BgGame {
     for (let k = 0; k < (p.c.timeMgmt ?? 0); k++) for (const m of p.board) for (let t = 0; t < 2; t++) r.spellBuff(m, 2, 2);
     p.c.timeMgmt = 0;
     for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.startTurn?.(r, m, g);
-    HERO_SPEC.get(p.heroId)?.startTurn?.(this, p);
+    heroOf(p)?.startTurn?.(this, p);
+    // 阮大師：每回合從 2 個新的英雄能力中挑選一個
+    if (p.heroId === 'BG20_HERO_202') this.offerPowers(p, 2, '阮大師：選擇這回合的英雄能力');
     for (const m of p.board) this.giveSpellcraft(p, m);
   }
 
@@ -314,7 +318,7 @@ export class BgGame {
         if (!p.board.includes(m)) continue;
         for (const { s, g } of specsOf(m)) s.endTurn?.(r, m, g);
       }
-      HERO_SPEC.get(p.heroId)?.endTurn?.(this, p);
+      heroOf(p)?.endTurn?.(this, p);
     }
     p.hand = p.hand.filter((h) => !(h.kind === 'spell' && h.temp));
     // 轉墓術：這回合打出的不死族會死亡
@@ -367,10 +371,13 @@ export class BgGame {
 
   // —— 酒館 ——
   refreshShop(p: BPlayer, opts: { higher?: number; hooks?: boolean; tribe?: Tribe } = {}) {
-    for (const m of p.shop) this.returnToPool(m);
-    p.shop = [];
-    const hero = HERO_SPEC.get(p.heroId);
-    const size = SHOP_SIZE[p.tier] + (hero?.shopExtra ?? 0);
+    // 單獨凍結的手下（瓦登‧晨握）留下來一次
+    const kept = p.shop.filter((m) => m.iced);
+    for (const m of p.shop) if (!m.iced) this.returnToPool(m);
+    for (const m of kept) m.iced = false;
+    p.shop = kept;
+    const hero = heroOf(p);
+    const size = Math.max(1, SHOP_SIZE[p.tier] + (hero?.shopExtra ?? 0) - kept.length);
     const tribe = opts.tribe;
     for (let i = 0; i < size; i++) {
       const id = this.draw((x) => tierOf(x) <= p.tier && (!tribe || racesOf(x).includes(tribe)));
@@ -455,7 +462,7 @@ export class BgGame {
 
   spellCost(p: BPlayer, id: string): number {
     let cost = spellCostOf(id) - (p.c.spellDisc ?? 0);
-    const hero = HERO_SPEC.get(p.heroId);
+    const hero = heroOf(p);
     if (hero?.spellCost) cost = hero.spellCost(p, cost);
     return Math.max(0, cost);
   }
@@ -478,7 +485,7 @@ export class BgGame {
     this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: sp.id, g: 1 });
     const r = this.recruit(p);
     for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onBuySpell?.(r, x, sp.id, g);
-    HERO_SPEC.get(p.heroId)?.onBuySpell?.(this, p, sp.id);
+    heroOf(p)?.onBuySpell?.(this, p, sp.id);
   }
 
   /** 「你的酒館法術額外 +X」 */
@@ -505,7 +512,7 @@ export class BgGame {
       a += p.c[`tav:${t}:A`] ?? 0;
       h += p.c[`tav:${t}:H`] ?? 0;
     }
-    const hb = HERO_SPEC.get(p.heroId)?.shopBuff?.(p);
+    const hb = heroOf(p)?.shopBuff?.(p);
     if (hb) {
       a += hb[0];
       h += hb[1];
@@ -530,7 +537,7 @@ export class BgGame {
   }
 
   private checkTriple(p: BPlayer, id: string) {
-    const need = HERO_SPEC.get(p.heroId)?.tripleNeed ?? 3;
+    const need = heroOf(p)?.tripleNeed ?? 3;
     const all = [...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), ...p.board].filter((m) => !m.golden);
     // 驚奇元素可以和任何元素組成三連
     if (id === 'BG33_890t') return; // 魔術魚學徒不能三連
@@ -593,6 +600,43 @@ export class BgGame {
       this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
       return;
     }
+    // 魚爾摩斯：猜對拿到旅店幸運幣
+    if (d.guess !== undefined) {
+      if (id === d.guess) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+      return;
+    }
+    // 換英雄能力
+    if (d.powers) {
+      p.powerHero = id;
+      p.powerUses = 0;
+      p.powerSpent = false;
+      heroOf(p)?.startGame?.(this, p);
+      return;
+    }
+    // 現成的手下（保留加成）
+    if (d.objs) {
+      const o = d.objs[Math.max(0, Math.min(d.objs.length - 1, i))];
+      this.addMinion(p, { ...o, uid: this.nextUid(), mags: o.mags.slice(), tmpKw: [], tmpAtk: 0, tmpHp: 0 });
+      return;
+    }
+    // 費林大使：之後才拿到
+    if (d.reserve !== undefined) {
+      this.takeFromPool(id);
+      (p.reserve ??= []).push({ id, tier: d.reserve });
+      this.giveReserved(p);
+      return;
+    }
+    // 葛拉克朗：取代酒館裡的手下
+    if (d.replace !== undefined) {
+      const i2 = p.shop.findIndex((x) => x.uid === d.replace);
+      this.takeFromPool(id);
+      const n = this.shopMinion(p, id);
+      if (i2 >= 0) {
+        this.returnToPool(p.shop[i2]);
+        p.shop[i2] = n;
+      } else p.shop.push(n);
+      return;
+    }
     if (!d.noPool) this.takeFromPool(id);
     const m = this.make(id, !!d.golden);
     if (d.doom) m.doom = this.s.round;
@@ -603,6 +647,24 @@ export class BgGame {
       if (h) h.locked = this.s.round;
     }
     if (d.hurt) this.hurtHero(p, tierOf(id));
+  }
+
+  /** 芬利、阮大師、揭露身分：發現一個英雄能力 */
+  offerPowers(p: BPlayer, n: number, title: string) {
+    const bag = SWAPPABLE_POWERS().filter((id) => id !== (p.powerHero ?? p.heroId) && heroAvailable(HERO_SPEC.get(id)!, this.s.tribes));
+    const options: string[] = [];
+    while (options.length < n && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const d: Discover = { options, title, powers: true };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+
+  /** 費林大使：升到那個等級就拿到 */
+  giveReserved(p: BPlayer) {
+    const ready = (p.reserve ?? []).filter((x) => x.tier <= p.tier);
+    p.reserve = (p.reserve ?? []).filter((x) => x.tier > p.tier);
+    for (const x of ready) this.addMinion(p, this.make(x.id));
   }
 
   // —— 動作 ——
@@ -618,7 +680,7 @@ export class BgGame {
     p.c.spentTotal = (p.c.spentTotal ?? 0) + n;
     const r = this.recruit(p);
     for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onSpend?.(r, m, n, g);
-    HERO_SPEC.get(p.heroId)?.onSpend?.(this, p, n);
+    heroOf(p)?.onSpend?.(this, p, n);
   }
 
   hurtHero(p: BPlayer, n: number) {
@@ -653,7 +715,7 @@ export class BgGame {
     p.c.cards = (p.c.cards ?? 0) + 1;
     const r = this.recruit(p);
     for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onBuy?.(r, x, m, g);
-    HERO_SPEC.get(p.heroId)?.onBuy?.(this, p, m);
+    heroOf(p)?.onBuy?.(this, p, m);
   }
 
   sell(pi: number, uid: number) {
@@ -671,9 +733,14 @@ export class BgGame {
     p.gold += price;
     const r = this.recruit(p);
     for (const { s, g } of specsOf(m)) s.onSell?.(r, m, g);
+    // 跳舞的戴瑞：帽子傳給另一個友方手下
+    if (m.hat) {
+      const to = this.pick(p.board);
+      if (to) (to.atk += m.hat), (to.hp += m.hat), (to.hat = (to.hat ?? 0) + m.hat);
+    }
     // 扭曲的憤怒守衛：賣掉手下後，下次刷新多一個惡魔食料
     for (const x of p.board) if (x.id === 'BG35_155') for (let k = 0; k < (x.golden ? 2 : 1); k++) (p.fodder ??= []).push(1);
-    HERO_SPEC.get(p.heroId)?.onSell?.(this, p, m);
+    heroOf(p)?.onSell?.(this, p, m);
     this.returnToPool(m);
   }
 
@@ -720,7 +787,8 @@ export class BgGame {
     this.spend(p, cost);
     p.tier++;
     p.upgradeCost = UPGRADE_COST[p.tier + 1] ?? 0;
-    HERO_SPEC.get(p.heroId)?.onUpgrade?.(this, p);
+    this.giveReserved(p);
+    heroOf(p)?.onUpgrade?.(this, p);
   }
 
   /**
@@ -732,7 +800,7 @@ export class BgGame {
     this.ensure(p);
     const card = p.hand.find((h) => h.uid === uid);
     if (!card) throw new BgError('手牌裡沒有這張卡');
-    if (card.locked === this.s.round) throw new BgError('這張卡鎖定中，下回合才能使用');
+    if ((card.locked ?? 0) >= this.s.round) throw new BgError('這張卡鎖定中，下回合才能使用');
     if (card.kind === 'spell') return this.cast(p, card, target, choice);
     const m = card.m;
     const r = this.recruit(p);
@@ -868,11 +936,11 @@ export class BgGame {
       if (h.kind !== 'minion') continue;
       for (const { s, g } of specsOf(h.m)) s.inHandOnPlay?.(r, h.m, card, g);
     }
-    HERO_SPEC.get(p.heroId)?.onPlay?.(this, p, onBoard);
+    heroOf(p)?.onPlay?.(this, p, onBoard);
     if (card.golden) p.c.goldens = (p.c.goldens ?? 0) + 1;
     if (card.golden && card.reward) {
       card.reward = false;
-      if (HERO_SPEC.get(p.heroId)?.tripleNeed) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+      if (heroOf(p)?.tripleNeed) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
       else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: TRIPLE_REWARD, g: 1, tier: Math.min(MAX_TIER, p.tier + 1) });
     }
   }
@@ -979,12 +1047,12 @@ export class BgGame {
       p.lastSpell = id;
     }
     for (const x of [...p.board]) for (const { s, g: gg } of specsOf(x)) s.onSpell?.(r, x, t, gg, id);
-    HERO_SPEC.get(p.heroId)?.onCast?.(this, p, id);
+    heroOf(p)?.onCast?.(this, p, id);
   }
 
   // —— 英雄能力 ——
   powerState(p: BPlayer): { cost: number; usable: boolean; reason: string | null } {
-    const h = HERO_SPEC.get(p.heroId);
+    const h = heroOf(p);
     if (!h || h.passive) return { cost: 0, usable: false, reason: '被動能力' };
     const cost = h.cost ? h.cost(p, this) : 0;
     const lock = h.locked?.(p, this) ?? null;
@@ -995,22 +1063,30 @@ export class BgGame {
     return { cost, usable: true, reason: null };
   }
 
-  usePower(pi: number, target?: number) {
+  /** 使用英雄能力；target2 = 第二個目標（沃金）；手牌目標（卓雷阿葛斯）用 target 傳手牌的 uid */
+  usePower(pi: number, target?: number, target2?: number, choice = 0) {
     const p = this.player(pi);
     this.ensure(p);
-    const h = HERO_SPEC.get(p.heroId);
+    const h = heroOf(p);
     const st = this.powerState(p);
     if (!h?.use || !st.usable) throw new BgError(st.reason ?? '不能使用');
     let t: BMinion | null = null;
-    if (h.target && h.target !== 'none') {
+    let t2: BMinion | null = null;
+    if (h.target === 'hand') {
+      if (!p.hand.some((x) => x.uid === target)) throw new BgError('請選擇一張手牌');
+    } else if (h.target && h.target !== 'none') {
       const pool = h.target === 'friend' ? p.board : h.target === 'shop' ? p.shop : [...p.board, ...p.shop];
       t = pool.find((m) => m.uid === target) ?? null;
       if (!t || (h.canTarget && !h.canTarget(p, t, this))) throw new BgError('請選擇目標');
+      if (h.target2) {
+        t2 = pool.find((m) => m.uid === target2 && m !== t) ?? null;
+        if (!t2) throw new BgError('請選擇第二個目標');
+      }
     }
     this.spend(p, st.cost);
     p.powerUses++;
     if (h.once) p.powerSpent = true;
-    h.use(this, p, t);
+    h.use(this, p, t, t2, h.target === 'hand' ? target ?? null : null, choice);
   }
 
   // —— 回合結束與戰鬥 ——
@@ -1029,7 +1105,7 @@ export class BgGame {
       const sideA = this.sideInput(pa, true);
       const sideB: SideInput = pb
         ? b < 0
-          ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.heroId, hand: [], persist: false }
+          ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.powerHero ?? pb.heroId, hand: [], persist: false }
           : this.sideInput(pb, true)
         : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
       const res = runCombat([sideA, sideB], {
@@ -1053,10 +1129,16 @@ export class BgGame {
       const winner = res.winner === null ? null : res.winner === 0 ? a : b;
       this.s.combats.push({ round: this.s.round, a, b, ghostOf: ghost?.idx ?? null, winner, damage: dmg, boards, frames: res.frames });
       pa.results.push(res.winner === null ? 'draw' : res.winner === 0 ? 'win' : 'loss');
+      pa.lastDied = res.died[0];
+      pa.lastBoardIds = boards[0].map((m) => m.id);
+      heroOf(pa)?.afterCombat?.(this, pa, pa.results[pa.results.length - 1]);
       pa.lastOpp = b;
       if (b >= 0) {
         const pbb = this.player(b);
         pbb.results.push(res.winner === null ? 'draw' : res.winner === 1 ? 'win' : 'loss');
+        pbb.lastDied = res.died[1];
+        pbb.lastBoardIds = boards[1].map((m) => m.id);
+        heroOf(pbb)?.afterCombat?.(this, pbb, pbb.results[pbb.results.length - 1]);
         pbb.lastOpp = a;
         pa.seen[b] = { round: this.s.round, board: boards[1], tier: pbb.tier, heroId: pbb.heroId };
         pbb.seen[a] = { round: this.s.round, board: boards[0], tier: pa.tier, heroId: pa.heroId };
@@ -1092,6 +1174,7 @@ export class BgGame {
       p.place = place--;
       p.diedRound = this.s.round;
       p.deathBoard = p.board.map((m) => ({ ...m }));
+      for (const q of this.alive()) heroOf(q)?.onHeroDeath?.(this, q, p);
     }
     const left = this.alive();
     if (left.length <= 1) {
@@ -1101,7 +1184,7 @@ export class BgGame {
   }
 
   sideInput(p: BPlayer, persist: boolean): SideInput {
-    return { player: p, board: p.board, tier: p.tier, heroId: p.heroId, hand: p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), persist };
+    return { player: p, board: p.board, tier: p.tier, heroId: p.powerHero ?? p.heroId, hand: p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), persist };
   }
 
   /** 戰鬥結束後進入下一回合 */

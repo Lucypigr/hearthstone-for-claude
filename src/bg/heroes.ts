@@ -4,7 +4,7 @@ import { COIN, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TRIPLE_REWARD } from './cards'
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry, isMagnetic } from './rules';
-import type { BMinion, BPlayer, Tribe } from './types';
+import { BONUS_KEYWORDS, type BMinion, type BPlayer, type Tribe } from './types';
 
 export interface HeroSpec {
   id: string;
@@ -12,7 +12,7 @@ export interface HeroSpec {
   needTribe?: Tribe;
   passive?: boolean;
   /** 主動能力要選什麼 */
-  target?: 'friend' | 'shop' | 'any' | 'none';
+  target?: 'friend' | 'shop' | 'any' | 'none' | 'hand';
   cost?: (p: BPlayer, G: BgGame) => number;
   perTurn?: number;
   /** 一局只能用一次 */
@@ -20,7 +20,21 @@ export interface HeroSpec {
   /** 還不能用的原因 */
   locked?: (p: BPlayer, G: BgGame) => string | null;
   canTarget?: (p: BPlayer, t: BMinion, G: BgGame) => boolean;
-  use?(G: BgGame, p: BPlayer, t: BMinion | null): void;
+  use?(G: BgGame, p: BPlayer, t: BMinion | null, t2: BMinion | null, hand: number | null, choice?: number): void;
+  /** 二選一（布魯坎的元素） */
+  choices?: string[];
+  /** 電腦選哪個選項 */
+  aiChoice?: (G: BgGame, p: BPlayer) => number;
+  /** 目前的英雄能力卡（會變的能力，例如艾薩拉、拉格納羅斯） */
+  powerId?: (p: BPlayer) => string;
+  /** 要選第二個目標（沃金） */
+  target2?: boolean;
+  /** 戰鬥中友方手下死亡後 */
+  onFriendDeath?(c: Combat, side: 0 | 1, dead: BMinion): void;
+  /** 戰鬥結束後（記錄這場的結果） */
+  afterCombat?(G: BgGame, p: BPlayer, result: 'win' | 'loss' | 'draw'): void;
+  /** 另一位英雄被淘汰後 */
+  onHeroDeath?(G: BgGame, p: BPlayer, dead: BPlayer): void;
   /** 能力上顯示的目前進度 */
   status?: (p: BPlayer, G: BgGame) => string | null;
   /** 取代 30 點生命值與護甲 */
@@ -763,7 +777,561 @@ export const HEROES: HeroSpec[] = [
     },
     rank: 3,
   },
+
+  // —— 第三批 ——
+  {
+    id: 'BG20_HERO_101', // 賽瑞菈
+    target: 'shop',
+    cost: fixed(2),
+    use: (G, p, t) => {
+      if (!t) return;
+      p.shop = p.shop.filter((m) => m !== t);
+      t.atk = 2;
+      t.hp = 2;
+      G.addMinion(p, t);
+    },
+    rank: 3,
+    ai: (_G, p) => (p.hand.length < 8 ? p.shop.find((m) => tierOf(m.id) >= p.tier && tierOf(m.id) >= 3) : undefined),
+  },
+  {
+    id: 'BG20_HERO_201', // 沃金
+    target: 'friend',
+    target2: true,
+    cost: fixed(0),
+    use: (G, p, t, t2) => {
+      if (!t || !t2) return;
+      const a = G.eff(p, t).atk;
+      const b = G.eff(p, t2).atk;
+      t.tmpAtk += b - a;
+      t2.tmpAtk += a - b;
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG20_HERO_282', // 塔姆辛‧羅姆
+    passive: true,
+    soc: (c, side) => {
+      const b = c.board(side).filter((m) => !m.dead);
+      if (!b.length) return;
+      const low = b.reduce((x, y) => (y.atk < x.atk ? y : x));
+      (low.extraDr ??= []).push({ id: 'BG20_HERO_282p', g: 1 });
+    },
+    rank: 4,
+  },
+  {
+    id: 'BG21_HERO_020', // 餅乾大廚
+    target: 'friend',
+    cost: fixed(0),
+    status: (p) => `鍋裡有 ${cnt(p, 'pot')} 個`,
+    use: (G, p, t) => {
+      if (!t) return;
+      p.board = p.board.filter((m) => m !== t);
+      G.returnToPool(t);
+      for (const r of racesOf(t.id)) add(p, `pot:${r}`);
+      add(p, 'pot');
+      if (cnt(p, 'pot') < 3) return;
+      const types = Object.keys(p.c).filter((k) => k.startsWith('pot:') && p.c[k] > 0).map((k) => k.slice(4));
+      for (const k of Object.keys(p.c)) if (k.startsWith('pot')) delete p.c[k];
+      G.discoverFor(p, (id) => tierOf(id) <= p.tier && (!types.length || racesOf(id).some((r) => types.includes(r))), '發現一個鍋裡種族的手下');
+    },
+    rank: 2,
+    ai: (G, p) => (p.board.length >= 6 && G.round >= 5 ? weakest(p.board) : undefined),
+  },
+  { id: 'BG21_HERO_030', passive: true, startGame: (G, p) => void G.addMinion(p, G.make('BG21_HERO_030t')), rank: 3 }, // 斯尼德
+  {
+    id: 'BG22_HERO_000', // 塔維西‧雷矛
+    target: 'shop',
+    cost: fixed(0),
+    status: (p) => (cnt(p, 'tavish') ? `下一場戰鬥射出 ${cnt(p, 'tavish')} 點傷害` : null),
+    use: (G, p, t) => {
+      if (!t) return;
+      p.shop = p.shop.filter((m) => m !== t);
+      G.returnToPool(t);
+      p.c.tavish = (p.c.tavish ?? 0) + t.atk;
+    },
+    soc: (c, side) => {
+      const n = c.cnt(side, 'tavish');
+      if (!n) return;
+      const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
+      if (t) c.damage(t, n, null);
+    },
+    afterCombat: (_G, p) => void (p.c.tavish = 0),
+    rank: 3,
+    ai: (_G, p) => (p.shop.length > 1 ? strongest(p.shop) : undefined),
+  },
+  {
+    id: 'BG22_HERO_001', // 布魯坎
+    target: 'none',
+    cost: fixed(0),
+    choices: ['大地祈願：4 個隨機友方手下獲得「亡語：召喚一個 1/1 元素」', '火焰祈願：你最左邊的手下攻擊力加倍', '流水祈願：你最右邊的手下獲得聖盾與嘲諷', '雷電祈願：對 5 個隨機敵方手下造成 1 點傷害'],
+    powerId: (p) => (cnt(p, 'brukan') ? `BG22_HERO_001p_t${cnt(p, 'brukan')}` : 'BG22_HERO_001p'),
+    use: (_G, p, _t, _t2, _h, choice = 0) => void (p.c.brukan = choice + 1),
+    soc: (c, side) => {
+      const b = c.board(side).filter((m) => !m.dead);
+      switch (c.cnt(side, 'brukan')) {
+        case 1:
+          for (const m of [...b].sort(() => c.rand() - 0.5).slice(0, 4)) (m.extraDr ??= []).push({ id: 'BG22_HERO_001p_t1', g: 1 });
+          break;
+        case 2:
+          if (b[0]) c.buff(b[0], b[0].atk, 0);
+          break;
+        case 3:
+          if (b.length) {
+            c.giveKw(b[b.length - 1], 'shield');
+            c.giveKw(b[b.length - 1], 'taunt');
+          }
+          break;
+        case 4:
+          for (let k = 0; k < 5; k++) {
+            const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
+            if (t) c.damage(t, 1, null);
+          }
+          break;
+      }
+    },
+    rank: 3,
+    ai: (_G, p) => (cnt(p, 'brukan') ? undefined : 'none'),
+    aiChoice: (_G, p) => {
+      if (p.board[0] && p.board[0].atk >= 8) return 1;
+      if (p.board.some((m) => SPEC.get(m.id)?.onSummon)) return 0;
+      return 2;
+    },
+  },
+  {
+    id: 'BG22_HERO_004', // 瓦登‧晨握
+    passive: true,
+    onRefresh: (G, p) => {
+      if (!p.shop.length) return;
+      const best = p.shop.reduce((a, b) => (tierOf(b.id) > tierOf(a.id) ? b : a));
+      const copy = G.shopMinion(p, best.id);
+      best.iced = true;
+      copy.iced = true;
+      p.shop.push(copy);
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG22_HERO_007', // 艾薩拉女王
+    target: 'none',
+    cost: fixed(1),
+    powerId: (p) => (cnt(p, 'azshara') ? 'BG22_HERO_007p2' : 'BG22_HERO_007p'),
+    locked: (p) => (cnt(p, 'azshara') ? null : `戰隊總攻擊力達到 30 後解鎖（目前 ${p.board.reduce((n, m) => n + m.atk, 0)}）`),
+    endTurn: (_G, p) => {
+      if (p.board.reduce((n, m) => n + m.atk, 0) >= 30) p.c.azshara = 1;
+    },
+    onPlay: (_G, p) => {
+      if (p.board.reduce((n, m) => n + m.atk, 0) >= 30) p.c.azshara = 1;
+    },
+    use: (G, p) => G.discoverFor(p, (id) => isRace(id, 'NAGA') && tierOf(id) <= p.tier, '發現一個納迦'),
+    needTribe: 'NAGA',
+    rank: 3,
+    ai: (_G, p) => (p.hand.length < 8 ? 'none' : undefined),
+  },
+  {
+    id: 'BG22_HERO_200', // 伊尼‧風暴線圈
+    passive: true,
+    needTribe: 'MECHANICAL',
+    status: (p) => `還差 ${9 - cnt(p, 'ini')} 個手下死亡`,
+    onFriendDeath: (c, side) => {
+      c.counter(side, 'ini', 1);
+      if (c.cnt(side, 'ini') < 9) return;
+      c.counter(side, 'ini', -9);
+      c.giveRandom(side, (id) => isRace(id, 'MECHANICAL'));
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG22_HERO_201', // 費林大使
+    passive: true,
+    startGame: (G, p) => {
+      p.c.skip = 1;
+      for (const t of [6, 4, 2]) G.discoverFor(p, (id) => tierOf(id) === t, `發現一個旅店等級 ${t} 的手下（升到 ${t} 本時拿到）`, { reserve: t });
+    },
+    status: (p) => ((p.reserve ?? []).length ? `等待中：${(p.reserve ?? []).map((x) => `${bgCard(x.id).name}（${x.tier} 本）`).join('、')}` : null),
+    rank: 3,
+  },
+  {
+    id: 'BG23_HERO_303', // 魚爾摩斯
+    target: 'none',
+    cost: fixed(0),
+    use: (G, p) => {
+      const o = G.opponentOf(p.idx);
+      const opp = o !== null && o >= 0 ? G.player(o) : null;
+      const theirs = opp?.lastBoardIds ?? [];
+      const right = theirs.length ? G.pick(theirs)! : 'BG23_HERO_303pt';
+      const wrong = G.pick(G.poolIds((id) => !theirs.includes(id) && tierOf(id) <= Math.max(1, opp?.tier ?? 1))) ?? 'BG23_HERO_303pt';
+      const options = G.rand() < 0.5 ? [right, wrong] : [wrong, right];
+      const d = { options, title: '猜猜看：下一個對手上場戰鬥有哪一個？', guess: right, noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 2,
+    ai: (G, p) => (G.round >= 2 && p.hand.length < 9 ? 'none' : undefined),
+  },
+  {
+    id: 'BG23_HERO_305', // 劫匪大亨托戈瓦哥
+    target: 'none',
+    cost: (p, G) => Math.max(0, 11 - (G.round - (cnt(p, 'tog') || 1))),
+    use: (G, p) => {
+      p.c.tog = G.round;
+      for (const m of [...p.shop]) {
+        if (p.hand.length >= 10) break;
+        p.shop = p.shop.filter((x) => x !== m);
+        G.addMinion(p, m);
+      }
+      for (const sp of [...p.shopSpells]) {
+        if (p.hand.length >= 10) break;
+        p.shopSpells = p.shopSpells.filter((x) => x !== sp);
+        G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: sp.id, g: 1 });
+      }
+    },
+    rank: 3,
+    ai: (_G, p) => (p.hand.length <= 5 ? 'none' : undefined),
+  },
+  {
+    id: 'BG23_HERO_306', // 希瓦娜斯‧風行者
+    target: 'none',
+    cost: fixed(2),
+    locked: (p, G) => (G.round < 3 ? '第 3 回合解鎖' : !(p.lastDied ?? []).some((id) => SPEC.has(id)) ? '上場戰鬥沒有手下死亡' : null),
+    use: (G, p) => {
+      const ids = [...new Set((p.lastDied ?? []).filter((id) => SPEC.has(id)))];
+      const options: string[] = [];
+      while (options.length < 3 && ids.length) options.push(ids.splice(Math.floor(G.rand() * ids.length), 1)[0]);
+      if (!options.length) return;
+      const d = { options, title: '發現一個上場戰鬥中死亡的手下', noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 3,
+    ai: (_G, p) => (p.hand.length < 8 && p.gold >= 5 ? 'none' : undefined),
+  },
+  {
+    id: 'BG24_HERO_204', // 強化機器人
+    passive: true,
+    onRefresh: (G, p) => {
+      for (let k = 0; k < 2; k++) {
+        const m = G.pick(p.shop);
+        const kw = m && G.pick(BONUS_KEYWORDS.filter((x) => !m[x]));
+        if (m && kw) m[kw] = true;
+      }
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG25_HERO_103', // 泰朗‧血魔
+    target: 'friend',
+    cost: fixed(0),
+    status: (p) => (cnt(p, 'teron') ? '下一場戰鬥會發動' : null),
+    use: (_G, p, t) => void (t && (p.c.teron = t.uid)),
+    soc: (c, side) => {
+      const uid = c.cnt(side, 'teron');
+      if (!uid) return;
+      const m = c.board(side).find((x) => x.src === uid && !x.dead);
+      if (!m) return;
+      const copy: BMinion = { ...m, mags: m.mags.slice(), tmpKw: [], uid: c.make(m.id).uid, src: m.src, dead: false };
+      c.destroy(m);
+      c.summonLater(side, copy);
+    },
+    afterCombat: (_G, p) => void (p.c.teron = 0),
+    rank: 4,
+    ai: (_G, p) => p.board.find((m) => SPEC.get(m.id)?.deathrattle) ?? undefined,
+  },
+  {
+    id: 'BG26_HERO_104', // 搖滾大師沃恩
+    passive: true,
+    status: (_p, G) => `還剩 ${3 - ((G.round - 1) % 3)} 回合`,
+    endTurn: (G, p) => {
+      if (G.round % 3) return;
+      const h = p.hand[0];
+      if (!h) return;
+      if (h.kind === 'minion') G.addMinion(p, G.make(h.m.id));
+      else G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: h.id, g: h.g, tier: h.tier });
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG27_HERO_801', // 『風暴之王』索林姆
+    passive: true,
+    startGame: (G, p) => G.discoverFor(p, (id) => tierOf(id) === 7, '發現一個旅店等級 7 的手下（花費 60 枚金幣後拿到）', { reserve: 99 }),
+    status: (p) => ((p.reserve ?? []).some((x) => x.tier === 99) ? `還差 ${Math.max(0, 60 - cnt(p, 'spentTotal'))} 枚金幣` : null),
+    onSpend: (G, p) => {
+      if (cnt(p, 'spentTotal') < 60) return;
+      const ready = (p.reserve ?? []).filter((x) => x.tier === 99);
+      p.reserve = (p.reserve ?? []).filter((x) => x.tier !== 99);
+      for (const x of ready) G.addMinion(p, G.make(x.id));
+    },
+    rank: 4,
+  },
+  {
+    id: 'BG31_HERO_005', // 複製大師澤瑞克
+    target: 'friend',
+    cost: fixed(0),
+    once: true,
+    locked: (p) => (p.board.length >= 7 ? '戰場已滿' : null),
+    use: (G, p, t) => {
+      if (!t || p.board.length >= 7) return;
+      const copy: BMinion = { ...t, uid: G.nextUid(), mags: t.mags.slice(), tmpKw: [...t.tmpKw] };
+      p.board.splice(p.board.indexOf(t) + 1, 0, copy);
+    },
+    rank: 3,
+    ai: (G, p) => (G.round >= 8 && p.board.length < 7 ? strongest(p.board) : undefined),
+  },
+  {
+    id: 'BG36_HERO_000', // 卓雷阿葛斯
+    target: 'hand',
+    needTribe: 'ABERRATION',
+    cost: fixed(1),
+    use: (G, p, _t, _t2, hand) => {
+      if (hand === null) return;
+      G.discard(p, hand);
+      const id = G.draw((x) => isRace(x, 'ABERRATION') && tierOf(x) <= p.tier);
+      if (id) G.addMinion(p, G.make(id));
+    },
+    rank: 3,
+  },
+  {
+    id: 'BG36_HERO_002', // 克希斯
+    target: 'none',
+    cost: fixed(2),
+    use: (G, p) => G.recruit(p).getPair(() => G.draw((x) => tierOf(x) <= p.tier)!, false),
+    rank: 3,
+    ai: (_G, p) => (p.hand.length <= 7 && p.gold >= 5 ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_02', // 葛拉克朗
+    target: 'shop',
+    cost: fixed(1),
+    canTarget: (_p, t) => tierOf(t.id) < 6,
+    use: (G, p, t) => {
+      if (!t) return;
+      const tier = tierOf(t.id) + 1;
+      G.discoverFor(p, (id) => tierOf(id) === tier, `發現一個旅店等級 ${tier} 的手下取代它`, { replace: t.uid });
+    },
+    rank: 4,
+    ai: (_G, p) => (p.gold >= 4 ? p.shop.find((m) => tierOf(m.id) === p.tier && p.tier < 6) : undefined),
+  },
+  { id: 'TB_BaconShop_HERO_10', passive: true, onSell: (_G, p) => void (p.nextGold += 1), rank: 3 }, // 貿易親王加里維克斯
+  {
+    id: 'TB_BaconShop_HERO_11', // 『炎魔』拉格納羅斯
+    passive: true,
+    powerId: (p) => (cnt(p, 'sulfuras') ? 'TB_BaconShop_HP_087t' : 'TB_BaconShop_HP_087'),
+    status: (p) => (cnt(p, 'sulfuras') ? null : `還差 ${Math.max(0, 12 - cnt(p, 'cards'))} 張`),
+    onBuy: (_G, p) => {
+      if (cnt(p, 'cards') >= 12) p.c.sulfuras = 1;
+    },
+    onBuySpell: (_G, p) => {
+      if (cnt(p, 'cards') >= 12) p.c.sulfuras = 1;
+    },
+    endTurn: (_G, p) => {
+      if (!cnt(p, 'sulfuras') || !p.board.length) return;
+      const ends = p.board.length > 1 ? [p.board[0], p.board[p.board.length - 1]] : [p.board[0]];
+      for (const m of ends) (m.atk += 8), (m.hp += 8);
+    },
+    rank: 4,
+  },
+  {
+    id: 'TB_BaconShop_HERO_12', // 老鼠王
+    target: 'none',
+    cost: fixed(2),
+    status: (_p, G) => `本回合：${TRIBE_NAMES_SHORT[G.s.tribes[G.round % G.s.tribes.length]]}`,
+    use: (G, p) => {
+      const t = G.s.tribes[G.round % G.s.tribes.length];
+      G.discoverFor(p, (id) => isRace(id, t) && tierOf(id) <= p.tier, `發現一個${TRIBE_NAMES_SHORT[t]}`);
+    },
+    rank: 3,
+    ai: (_G, p) => (p.hand.length < 8 && p.gold >= 5 ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_16', // 詹莉‧伊夏
+    passive: true,
+    startGame: (_G, p) => void (p.c.skip = 2),
+    startTurn: (G, p) => {
+      if (G.round !== 3) return;
+      G.discoverFor(p, (id) => tierOf(id) === 3, '發現一個旅店等級 3 的手下');
+      G.discoverFor(p, (id) => tierOf(id) === 4, '發現一個旅店等級 4 的手下');
+    },
+    rank: 2,
+  },
+  {
+    id: 'TB_BaconShop_HERO_18', // 海盜派奇
+    target: 'none',
+    needTribe: 'PIRATE',
+    cost: (p) => Math.max(0, 3 - cnt(p, 'patches')),
+    use: (G, p) => {
+      p.c.patches = 0;
+      const id = G.draw((x) => isRace(x, 'PIRATE') && tierOf(x) <= p.tier);
+      if (id) G.addMinion(p, G.make(id));
+    },
+    onBuy: (_G, p, m) => {
+      if (isRace(m.id, 'PIRATE')) add(p, 'patches');
+    },
+    rank: 3,
+    ai: (G, p) => (G.powerState(p).cost <= 1 && p.hand.length < 8 ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_23', // 哮斗龍
+    target: 'friend',
+    cost: fixed(0),
+    locked: (_p, G) => (G.round < 3 ? '第 3 回合解鎖' : null),
+    canTarget: (_p, t) => !!SPEC.get(t.id)?.battlecry,
+    use: (G, p, t) => {
+      if (t) G.recruit(p).battlecry(t);
+    },
+    rank: 3,
+    ai: (_G, p) => strongestBy(p.board.filter((m) => SPEC.get(m.id)?.battlecry)),
+  },
+  { id: 'TB_BaconShop_HERO_27', passive: true, minionCost: () => 2, shopExtra: -1, endTurn: (_G, p) => void (p.frozen = true), rank: 3 }, // 辛德拉苟莎
+  { id: 'TB_BaconShop_HERO_33', passive: true, startGame: (G, p) => void G.addMinion(p, G.make('TB_BaconShop_HP_033t')), rank: 3 }, // 館長
+  {
+    id: 'TB_BaconShop_HERO_36', // 跳舞的戴瑞
+    passive: true,
+    onPlay: (_G, _p, m) => {
+      m.atk += 1;
+      m.hp += 1;
+      m.hat = (m.hat ?? 0) + 1;
+    },
+    rank: 2,
+  },
+  {
+    id: 'TB_BaconShop_HERO_37', // 賈拉克瑟斯領主
+    passive: true,
+    needTribe: 'DEMON',
+    powerId: (p) => (cnt(p, 'portal') ? 'TB_BaconShop_HP_036t' : 'TB_BaconShop_HP_036'),
+    status: (p) => (cnt(p, 'portal') ? null : `還差 ${Math.max(0, 150 - cnt(p, 'jarax'))} 點傷害`),
+    onAttack: (c, side, m) => {
+      if (c.cnt(side, 'portal')) return;
+      c.counter(side, 'jarax', m.atk);
+      if (c.cnt(side, 'jarax') >= 150) c.counter(side, 'portal', 1);
+    },
+    startTurn: (G, p) => {
+      if (!cnt(p, 'portal')) return;
+      for (let k = 0; k < 2; k++) {
+        const id = G.draw((x) => isRace(x, 'DEMON') && tierOf(x) <= p.tier);
+        if (id) G.addMinion(p, G.make(id));
+      }
+    },
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_38', // 穆克拉
+    passive: true,
+    needTribe: 'BEAST',
+    startTurn: (G, p) => {
+      for (let k = 0; k < 2; k++) G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: 'TB_BaconShop_HP_038t', g: 1 });
+      for (const q of G.alive()) if (q !== p) G.addHand(q, { kind: 'spell', uid: G.nextUid(), id: 'TB_BaconShop_HP_038t', g: 1 });
+    },
+    rank: 2,
+  },
+  {
+    id: 'TB_BaconShop_HERO_40', // 芬利‧莫戈頓爵士
+    passive: true,
+    startGame: (G, p) => G.offerPowers(p, 3, '發現一個英雄能力'),
+    rank: 4,
+  },
+  {
+    id: 'TB_BaconShop_HERO_55', // 真菌術師弗勒戈
+    passive: true,
+    needTribe: 'MURLOC',
+    status: (p) => `還差 ${5 - (cnt(p, 'flurgl') % 5)} 個`,
+    onSell: (G, p) => {
+      add(p, 'flurgl');
+      if (cnt(p, 'flurgl') % 5) return;
+      const id = G.draw((x) => isRace(x, 'MURLOC') && tierOf(x) <= p.tier);
+      if (id) G.addMinion(p, G.make(id));
+    },
+    rank: 2,
+  },
+  {
+    id: 'TB_BaconShop_HERO_62', // 瑪翼夫‧影歌
+    target: 'shop',
+    cost: fixed(1),
+    use: (G, p, t) => {
+      if (!t) return;
+      p.shop = p.shop.filter((m) => m !== t);
+      t.atk += 1;
+      t.hp += 1;
+      G.addMinion(p, t);
+      const h = p.hand.find((x) => x.kind === 'minion' && x.m === t);
+      if (h) h.locked = G.round + 1;
+    },
+    rank: 3,
+    ai: (G, p) => (p.hand.length < 8 && G.round >= 3 ? p.shop.find((m) => tierOf(m.id) === p.tier) : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_64', // 尤多拉船長
+    target: 'none',
+    cost: fixed(1),
+    status: (p) => `還要挖 ${4 - (cnt(p, 'dig') % 4)} 次`,
+    use: (G, p) => {
+      add(p, 'dig');
+      if (cnt(p, 'dig') % 4) return;
+      const id = G.draw((x) => tierOf(x) === p.tier);
+      if (id) G.addMinion(p, G.make(id, true));
+    },
+    rank: 3,
+    ai: (_G, p) => (p.gold >= 1 ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_70', // 畢勾沃斯先生
+    passive: true,
+    onHeroDeath: (G, p, dead) => {
+      const objs = [...(dead.deathBoard ?? [])].sort(() => G.rand() - 0.5).slice(0, 3);
+      if (!objs.length) return;
+      const d = { options: objs.map((m) => m.id), objs, title: `發現一個 ${dead.name} 戰隊裡的手下（保留加成）`, noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_702', // 閻獄之主
+    target: 'friend',
+    needTribe: 'UNDEAD',
+    cost: fixed(1),
+    locked: (p) => (p.tier < 2 ? '旅店等級 2 解鎖' : null),
+    canTarget: (_p, t) => isRace(t.id, 'UNDEAD'),
+    use: (G, p, t) => {
+      if (!t) return;
+      p.board = p.board.filter((m) => m !== t);
+      G.returnToPool(t);
+      const id = G.draw((x) => isRace(x, 'UNDEAD') && tierOf(x) <= p.tier);
+      if (id) G.addMinion(p, G.make(id));
+    },
+    rank: 3,
+    ai: (_G, p) => p.board.filter((m) => isRace(m.id, 'UNDEAD') && tierOf(m.id) < p.tier).sort((a, b) => a.atk + a.hp - b.atk - b.hp)[0],
+  },
+  { id: 'TB_BaconShop_HERO_93', passive: true, startGame: (G, p) => void G.addMinion(p, G.make('TB_BaconShop_HP_105t')), rank: 3 }, // 恩若司
+  {
+    id: 'BG20_HERO_202', // 阮大師
+    passive: true,
+    status: () => '每回合開始時選擇新的英雄能力',
+    rank: 4,
+  },
 ];
+
+const TRIBE_NAMES_SHORT: Record<string, string> = {
+  BEAST: '野獸',
+  DEMON: '惡魔',
+  DRAGON: '龍類',
+  ELEMENTAL: '元素',
+  MECHANICAL: '機械',
+  MURLOC: '魚人',
+  PIRATE: '海盜',
+  QUILBOAR: '野豬人',
+  UNDEAD: '不死族',
+  NAGA: '納迦',
+  ABERRATION: '畸變體',
+};
+
+function strongestBy(b: BMinion[]): BMinion | undefined {
+  return b.length ? b.reduce((a, x) => (x.atk + x.hp > a.atk + a.hp ? x : a)) : undefined;
+}
+
+/** 可以被芬利、阮大師換到的英雄能力（開局限定、會換生命值的不算） */
+export const SWAPPABLE_POWERS = (): string[] =>
+  HEROES.filter((h) => !h.health && !NOT_SWAPPABLE.has(h.id)).map((h) => h.id);
+const NOT_SWAPPABLE = new Set(['BG20_HERO_202', 'TB_BaconShop_HERO_40', 'BG22_HERO_201', 'TB_BaconShop_HERO_16', 'BG21_HERO_030', 'TB_BaconShop_HERO_33', 'TB_BaconShop_HERO_93', 'BG27_HERO_801']);
+
 
 function spellName(id: string): string {
   try {
@@ -794,6 +1362,17 @@ function POOL_BY_TIER(t: number): string[] {
 }
 
 export const HERO_SPEC = new Map<string, HeroSpec>(HEROES.map((h) => [h.id, h]));
+
+/** 玩家目前的英雄能力（芬利、阮大師可以換成別的英雄的能力） */
+export function heroOf(p: BPlayer): HeroSpec | undefined {
+  return HERO_SPEC.get(p.powerHero ?? p.heroId);
+}
+
+/** 英雄能力的卡（顯示用） */
+export function powerCardOf(p: BPlayer): string {
+  const h = heroOf(p);
+  return h?.powerId?.(p) ?? bgCard(p.powerHero ?? p.heroId).power ?? '';
+}
 
 export function heroAvailable(h: HeroSpec, tribes: Tribe[]): boolean {
   return !h.needTribe || tribes.includes(h.needTribe);

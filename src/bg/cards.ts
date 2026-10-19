@@ -1896,6 +1896,39 @@ export const MINIONS: MinionSpec[] = [
       if (s.memo) r.castOn(s.memo, s);
     },
   },
+  // —— 英雄給的衍生物 ——
+  {
+    id: 'BG21_HERO_030t', // 斯尼德的新伐木機
+    deathrattle: (c, s, g, i) => {
+      const side = c.side(s);
+      for (let k = 0; k < g; k++) {
+        const hand = c.hand(side);
+        if (!hand.length) return;
+        const best = hand.reduce((a, b) => (b.hp > a.hp ? b : a));
+        const copy = c.make(best.id, best.golden);
+        Object.assign(copy, { atk: best.atk, hp: best.hp, taunt: best.taunt, windfury: best.windfury, venom: best.venom, reborn: best.reborn, shield: true, temp: true });
+        c.summon(side, copy, i + k);
+      }
+    },
+    val: 4,
+  },
+  { id: 'TB_BaconShop_HP_033t', val: 6 }, // 聚合體
+  {
+    id: 'TB_BaconShop_HP_105t', // 恩若司之魚
+    onFriendDeath: (_c, s, d) => {
+      if (d === s) return;
+      for (const x of [{ id: d.id, g: d.golden ? 2 : 1 }, ...d.mags]) if (SPEC.get(x.id)?.deathrattle) (s.extraDr ??= []).push(x);
+    },
+    val: 5,
+  },
+  { id: 'BG22_HERO_001p_t1et' }, // 石元素
+  { id: 'BG22_HERO_001p_t1', deathrattle: (c, s, _g, i) => summonAt(c, s, 'BG22_HERO_001p_t1et', 1, false, i) }, // 大地祈願的亡語
+  {
+    id: 'BG20_HERO_282p', // 塔姆辛的亡語：把這個手下的身材給其他手下
+    deathrattle: (c, s) => {
+      for (const m of c.friends(s)) if (m !== s) c.buff(m, s.atk, s.maxHp ?? s.hp);
+    },
+  },
   { id: TENTACLE, val: 0 },
   { id: DEITY, val: 0 },
 
@@ -2070,6 +2103,12 @@ export const TOKENS = new Set([
   TENTACLE,
   DEITY,
   APPRENTICE,
+  'BG21_HERO_030t',
+  'TB_BaconShop_HP_033t',
+  'TB_BaconShop_HP_105t',
+  'BG22_HERO_001p_t1et',
+  'BG22_HERO_001p_t1',
+  'BG20_HERO_282p',
 ]);
 
 /** 不死族（致命打擊者用） */

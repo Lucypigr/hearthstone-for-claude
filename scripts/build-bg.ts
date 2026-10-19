@@ -69,6 +69,19 @@ const EXTRA_IDS = [
   'BG31_920t', // 進化策略
   'BG27_514t', // 海妖之歌
   'BG33_890t', // 魔術魚學徒
+  'BG21_HERO_030t', // 斯尼德的新伐木機
+  'TB_BaconShop_HP_033t', // 聚合體
+  'TB_BaconShop_HP_105t', // 恩若司之魚
+  'BG22_HERO_001p_t1et', // 石元素
+  'BG22_HERO_001p_t1', // 大地祈願
+  'BG22_HERO_001p_t2', // 火焰祈願
+  'BG22_HERO_001p_t3', // 流水祈願
+  'BG22_HERO_001p_t4', // 雷電祈願
+  'BG22_HERO_007p2', // 納迦征服
+  'TB_BaconShop_HP_087t', // 薩弗拉斯
+  'TB_BaconShop_HP_036t', // 虛空傳送門
+  'BG23_HERO_303pt', // 沒有手下
+  'TB_BaconShop_HP_038t', // 野生香蕉
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -129,6 +142,8 @@ async function main() {
     if (!c) throw new Error(`找不到 ${id}`);
     if (!out[id]) add(c);
   }
+  // 聚合體擁有所有種族
+  (out['TB_BaconShop_HP_033t'] as { races?: string[] }).races = ['ALL'];
   // 英雄與英雄能力
   for (const c of zh) {
     if (!c.battlegroundsHero || c.type !== 'HERO' || c.id.startsWith('BGDUO') || /_SKIN_/.test(c.id)) continue;

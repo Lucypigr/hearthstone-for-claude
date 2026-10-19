@@ -1098,3 +1098,12 @@
   white-space: normal;
   max-width: 300px;
 }
+
+.bg-minion.iced .minion-portrait {
+  box-shadow: 0 0 0 3px #9fd4ff, 0 0 14px #7cc8ffaa;
+}
+
+.bg-hero-card-art.small {
+  width: 84px;
+  height: 84px;
+}

@@ -12,7 +12,11 @@ const m = (id: string, patch: Partial<BMinion> = {}) => ({ ...makeMinion(id, fal
 function game(seed = 11) {
   const ais = Array.from({ length: 7 }, (_, i) => ({ name: `AI${i}`, persona: makePersona(i + 1, { difficulty: 'normal' }) }));
   const G = BgGame.create({ seed, humanName: '你', ais, tribes: ['PIRATE', 'UNDEAD', 'QUILBOAR', 'DEMON', 'ELEMENTAL'] });
-  for (const p of G.s.players) G.pickHero(p.idx, G.s.heroOffers[p.idx].find((h) => h === 'TB_BaconShop_HERO_34') ?? G.s.heroOffers[p.idx][0]);
+  // 大家都用縫補者（被動只有生命值），避免英雄能力影響測試
+  for (const p of G.s.players) {
+    G.s.heroOffers[p.idx] = ['TB_BaconShop_HERO_34'];
+    G.pickHero(p.idx, 'TB_BaconShop_HERO_34');
+  }
   return G;
 }
 

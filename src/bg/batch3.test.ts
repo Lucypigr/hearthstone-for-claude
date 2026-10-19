@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_ERRORS, aiPickHero, aiRecruit, makePersona, playAiTurns } from './ai';
+import { AI_ERRORS, aiRecruit, makePersona, playAiTurns } from './ai';
 import { runCombat } from './combat';
 import { BgGame } from './game';
 import { makeMinion } from './rules';
@@ -12,7 +12,10 @@ function game(tribes: Tribe[], seed = 3) {
   const ais = Array.from({ length: 7 }, (_, i) => ({ name: `AI${i}`, persona: makePersona(seed * 7 + i, { difficulty: 'expert' }) }));
   const G = BgGame.create({ seed, humanName: '你', ais, tribes });
   G.human.persona = makePersona(seed, { difficulty: 'expert' });
-  for (const p of G.s.players) G.pickHero(p.idx, aiPickHero(G, p));
+  for (const p of G.s.players) {
+    G.s.heroOffers[p.idx] = ['TB_BaconShop_HERO_34'];
+    G.pickHero(p.idx, 'TB_BaconShop_HERO_34');
+  }
   return G;
 }
 

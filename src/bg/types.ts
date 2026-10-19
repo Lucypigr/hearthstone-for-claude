@@ -119,6 +119,12 @@ export interface BMinion {
   memo?: string;
   /** 戰鬥中：記住的手下（縫合拾荒者摧毀的手下） */
   held?: BMinion;
+  /** 酒館中：單獨凍結（瓦登‧晨握） */
+  iced?: boolean;
+  /** 額外的亡語（布魯坎的大地祈願、塔姆辛、恩若司之魚） */
+  extraDr?: { id: string; g: number }[];
+  /** 跳舞的戴瑞：帽子 */
+  hat?: number;
 }
 
 export type HandCard =
@@ -160,6 +166,16 @@ export interface Discover {
   spells?: boolean;
   /** 范達爾的機運：二選一的兩個效果都要 */
   both?: boolean;
+  /** 葛拉克朗：選到的手下取代酒館裡的這個手下 */
+  replace?: number;
+  /** 魚爾摩斯：猜對的是哪一個（不會拿到手下） */
+  guess?: string;
+  /** 選項是英雄能力（英雄 ID） */
+  powers?: boolean;
+  /** 選項是現成的手下（畢勾沃斯：保留加成） */
+  objs?: BMinion[];
+  /** 費林大使：選到的手下等升到這個等級才拿到 */
+  reserve?: number;
 }
 
 export interface Seen {
@@ -217,6 +233,14 @@ export interface BPlayer {
   lastSpell?: string;
   /** 惡魔食料：每個來源還剩幾次刷新 */
   fodder?: number[];
+  /** 英雄能力換成別的英雄的（芬利、阮大師、揭露身分） */
+  powerHero?: string;
+  /** 上一場戰鬥時的手下（魚爾摩斯） */
+  lastBoardIds?: string[];
+  /** 上一場戰鬥死掉的手下（希瓦娜斯） */
+  lastDied?: string[];
+  /** 費林大使：升到某等級才拿到的手下 */
+  reserve?: { id: string; tier: number }[];
   /** 被淘汰時的戰隊（之後當作殘影） */
   deathBoard: BMinion[] | null;
   /** 電腦玩家的個性 */
@@ -263,4 +287,6 @@ export interface CombatResult {
   frames?: CombatFrame[];
   /** 第一個攻擊的一方 */
   first: 0 | 1;
+  /** 雙方死掉的手下 */
+  died: [string[], string[]];
 }

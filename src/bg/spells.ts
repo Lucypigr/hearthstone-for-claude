@@ -632,6 +632,8 @@ export const SPELLS: SpellSpec[] = [
       for (let k = 0; k < g; k++) r.getRandom((id) => isRace(id, 'NAGA') && tierOf(id) === tier);
     },
   },
+  { id: 'TB_BaconShop_HP_038t', target: 'friend', filter: (m) => race(m, 'BEAST'), cast: ({ r }, t) => t && r.buff(t, 1, 1), v: fixedV(2) }, // 野生香蕉
+  { id: 'EBG_Spell_037', target: false, cast: ({ G, p }) => G.offerPowers(p, 3, '發現一個新的英雄能力'), v: fixedV(6) }, // 揭露身分
   {
     id: 'BG31_892', // 范達爾的機運
     target: false,

@@ -5,7 +5,7 @@ import { SPEC, TRIPLE_REWARD } from '../../bg/cards';
 import { SPELL_SPEC } from '../../bg/spells';
 import { bgCard, racesOf, tierOf } from '../../bg/data';
 import { BgError, type BgGame, type CombatRecord } from '../../bg/game';
-import { HERO_SPEC } from '../../bg/heroes';
+import { heroOf, HERO_SPEC, powerCardOf } from '../../bg/heroes';
 import { canMagnetize, goldForTurn, MAX_TIER, specsOf } from '../../bg/rules';
 import { KEYWORD_NAMES, TRIBE_ICONS, TRIBE_NAMES, TRIBES, type BMinion, type BPlayer, type CombatFrame, type HandCard, type Keyword, type Tribe } from '../../bg/types';
 import { BG_PLACE_GOLD } from '../../game/economy';
@@ -419,8 +419,8 @@ function PeekPanel({ G, idx, onClose }: { G: BgGame; idx: number; onClose: () =>
   const me = G.human;
   const p = G.player(idx);
   const seen = me.seen[idx];
-  const hero = HERO_SPEC.get(p.heroId);
-  const power = bgCard(p.heroId).power;
+  const hero = heroOf(p);
+  const power = powerCardOf(p);
   return (
     <div className="bg-peek" onClick={onClose}>
       <div className="bg-peek-head">
@@ -461,7 +461,10 @@ type Mode =
   | { k: 'board'; uid: number }
   /** 啟動技能選目標 */
   | { k: 'act'; uid: number }
-  | { k: 'power' };
+  /** 英雄能力選目標（first = 已經選好的第一個目標） */
+  | { k: 'power'; first?: number }
+  /** 英雄能力的選項（布魯坎） */
+  | { k: 'pchoose' };
 
 export function BgMatch({ onExit }: { onExit: () => void }) {
   const profile = useProfile();
@@ -566,8 +569,8 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   }
 
   // —— 招募階段 ——
-  const power = bgCard(me.heroId).power!;
-  const hero = HERO_SPEC.get(me.heroId)!;
+  const power = powerCardOf(me);
+  const hero = heroOf(me)!;
   const pst = G.powerState(me);
   const handCard = mode.k === 'hand' || mode.k === 'target' || mode.k === 'choose' ? me.hand.find((h) => h.uid === mode.uid) : undefined;
   const choice = mode.k === 'hand' || mode.k === 'target' ? mode.choice ?? 0 : 0;
@@ -587,8 +590,10 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
       return !actSpec.filter || actSpec.filter(actMinion, m, me);
     }
     if (mode.k === 'power') {
+      if (hero.target === 'hand') return false;
       if (hero.target === 'friend' && where !== 'board') return false;
       if (hero.target === 'shop' && where !== 'shop') return false;
+      if (mode.first === m.uid) return false;
       return !hero.canTarget || hero.canTarget(me, m, G);
     }
     if (mode.k === 'hand' && spellSpec) return spellTargets.includes(m);
@@ -652,7 +657,8 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
     }
     if (mode.k === 'power') {
       if (!isTarget(m, 'board')) return setToast('不能選這個目標');
-      act(() => G.usePower(0, m.uid));
+      if (hero.target2 && mode.first === undefined) return setMode({ k: 'power', first: m.uid });
+      act(() => (hero.target2 ? G.usePower(0, mode.first, m.uid) : G.usePower(0, m.uid)));
       return setMode({ k: 'idle' });
     }
     if (mode.k === 'target') {
@@ -696,11 +702,15 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
 
   const clickHand = (h: HandCard) => {
     if (busy) return;
+    if (mode.k === 'power' && hero.target === 'hand') {
+      act(() => G.usePower(0, h.uid));
+      return setMode({ k: 'idle' });
+    }
     if (mode.k === 'act' && actMinion && actSpec?.target === 'hand') {
       act(() => G.activate(0, actMinion.uid, undefined, h.uid));
       return setMode({ k: 'idle' });
     }
-    if (h.locked === G.round) return setToast('這張卡鎖定中，下回合才能使用');
+    if ((h.locked ?? 0) >= G.round) return setToast('這張卡鎖定中，下回合才能使用');
     if (mode.k === 'hand' && mode.uid === h.uid) {
       // 再點一次：放到最右邊
       if (h.kind === 'minion') playMinionAt(me.board.length);
@@ -746,7 +756,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
     if (d.from === 'hand') {
       const h = me.hand.find((x) => x.uid === d.uid);
       if (!h) return;
-      if (h.kind === 'spell' || h.locked === G.round) return clickHand(h);
+      if (h.kind === 'spell' || (h.locked ?? 0) >= G.round) return clickHand(h);
       const spec = SPEC.get(h.m.id);
       if (spec?.choices) return setMode({ k: 'choose', uid: h.uid });
       if (spec?.target && me.board.some((x) => spec.target!(h.m, x))) return setMode({ k: 'target', uid: h.uid, pos: index });
@@ -844,7 +854,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   m={m}
                   p={me}
                   G={G}
-                  className={isTarget(m, 'shop') ? 'targetable' : ''}
+                  className={`${isTarget(m, 'shop') ? 'targetable' : ''} ${m.iced ? 'iced' : ''}`}
                   tipSide="bottom"
                   onClick={() => clickShop(m)}
                   draggable
@@ -880,7 +890,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                     m={m}
                     p={me}
                     G={G}
-                    className={`${mode.k === 'board' && mode.uid === m.uid ? 'selected' : ''} ${isTarget(m, 'board') ? 'targetable' : ''}`}
+                    className={`${(mode.k === 'board' && mode.uid === m.uid) || (mode.k === 'power' && mode.first === m.uid) ? 'selected' : ''} ${isTarget(m, 'board') ? 'targetable' : ''}`}
                     onClick={() => clickBoard(m)}
                     draggable
                     onDragStart={() => (drag.current = { from: 'board', uid: m.uid })}
@@ -920,7 +930,11 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
             {mode.k === 'act' && (
               <div className="bg-hint">{actSpec?.target === 'hand' ? '選擇一張要棄掉的手牌' : actSpec?.target === 'shop' ? '選擇酒館裡的一個手下' : '選擇一個友方手下'}</div>
             )}
-            {mode.k === 'power' && <div className="bg-hint">選擇英雄能力的目標</div>}
+            {mode.k === 'power' && (
+              <div className="bg-hint">
+                {hero.target === 'hand' ? '選擇一張手牌' : hero.target2 ? (mode.first === undefined ? '選擇第一個手下' : '選擇第二個手下') : '選擇英雄能力的目標'}
+              </div>
+            )}
             {mode.k === 'hand' && handMinion && <div className="bg-hint">點空格放置手下{me.board.some((x) => canMagnetize(handMinion, x)) ? '，或點機械吸附上去' : ''}（再點一次手牌放到最右邊）</div>}
             {mode.k === 'hand' && spellSpec && <div className="bg-hint">選擇法術的目標{spellSpec.target === 'any' ? '（可以選酒館裡的手下）' : ''}</div>}
           </section>
@@ -938,7 +952,9 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                 title={pst.reason ?? ''}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!hero.target || hero.target === 'none') act(() => G.usePower(0));
+                  if (hero.choices) setMode({ k: 'pchoose' });
+                  else if (!hero.target || hero.target === 'none') act(() => G.usePower(0));
+                  else if (hero.target === 'hand' && !me.hand.length) setToast('手牌是空的');
                   else setMode(mode.k === 'power' ? { k: 'idle' } : { k: 'power' });
                 }}
               >
@@ -982,7 +998,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                     m={h.m}
                     p={me}
                     G={G}
-                    className={`in-hand ${mode.k !== 'idle' && 'uid' in mode && mode.uid === h.uid ? 'selected' : ''} ${h.locked === G.round ? 'locked' : ''}`}
+                    className={`in-hand ${mode.k !== 'idle' && 'uid' in mode && mode.uid === h.uid ? 'selected' : ''} ${(h.locked ?? 0) >= G.round ? 'locked' : ''}`}
                     onClick={() => clickHand(h)}
                     draggable
                     onDragStart={() => (drag.current = { from: 'hand', uid: h.uid })}
@@ -991,7 +1007,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   <SpellCard
                     key={h.uid}
                     card={h}
-                    locked={h.locked === G.round}
+                    locked={(h.locked ?? 0) >= G.round}
                     selected={(mode.k === 'hand' || mode.k === 'choose') && mode.uid === h.uid}
                     onClick={() => {
                       clickHand(h);
@@ -1015,6 +1031,27 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
         </main>
       </div>
       {me.discover && <DiscoverModal G={G} onPick={(i) => act(() => G.choose(0, i))} />}
+      {mode.k === 'pchoose' && hero.choices && (
+        <div className="bg-modal" onClick={(e) => (e.stopPropagation(), setMode({ k: 'idle' }))}>
+          <h3>{bgCard(power).name}</h3>
+          <div className="bg-choices">
+            {hero.choices.map((label, i) => (
+              <button
+                key={i}
+                className="btn big"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  act(() => G.usePower(0, undefined, undefined, i));
+                  setMode({ k: 'idle' });
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">點旁邊取消</p>
+        </div>
+      )}
       {mode.k === 'choose' && handCard && (
         <div className="bg-modal" onClick={(e) => (e.stopPropagation(), setMode({ k: 'idle' }))}>
           <h3>{bgCard(handCard.kind === 'spell' ? handCard.id : handCard.m.id).name}：二選一</h3>
@@ -1057,11 +1094,25 @@ function Slot({ onClick }: { onClick: () => void }) {
 function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }) {
   const me = G.human;
   const d = me.discover!;
-  const ms = useMemo(() => (d.spells ? [] : d.options.map((id) => G.make(id, !!d.golden))), [d]);
+  const ms = useMemo(() => (d.spells || d.powers ? [] : d.objs ? d.objs : d.options.map((id) => G.make(id, !!d.golden))), [d]);
   return (
     <div className="bg-modal" onClick={(e) => e.stopPropagation()}>
       <h3>{d.title}</h3>
       <div className="bg-discover">
+        {d.powers &&
+          d.options.map((id, i) => {
+            const pw = bgCard(bgCard(id).power!);
+            return (
+              <div key={id} className="bg-discover-opt" onClick={() => onPick(i)}>
+                <div className="bg-hero-card-art small">
+                  <Art cardId={bgCard(id).power!} label={pw.name.slice(0, 2)} />
+                </div>
+                <b>{pw.name}</b>
+                <div className="muted small">{bgCard(id).name}</div>
+                <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(pw.text) }} />
+              </div>
+            );
+          })}
         {d.spells &&
           d.options.map((id, i) => (
             <div key={id + i} className="bg-discover-opt" onClick={() => onPick(i)}>

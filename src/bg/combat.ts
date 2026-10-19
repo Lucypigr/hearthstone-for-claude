@@ -3,6 +3,7 @@ import type { Combat } from './api';
 import { isRace, tierOf } from './data';
 
 const DEITY = 'BGFYM_000';
+import { SPEC } from './cards';
 import { HERO_SPEC } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { auraOf, BOARD_MAX, makeMinion, specsOf, spellExtraOf } from './rules';
@@ -61,6 +62,9 @@ export class CombatSim implements Combat {
   /** 死掉的畸變體（4 個後神祇甦醒） */
   private aberDeaths: [number, number] = [0, 0];
   private awakened: [boolean, boolean] = [false, false];
+  private died: [string[], string[]] = [[], []];
+  /** 有空位時才召喚的手下（泰朗‧血魔） */
+  private later: [BMinion[], BMinion[]] = [[], []];
 
   constructor(
     private sides: [SideInput, SideInput],
@@ -79,6 +83,15 @@ export class CombatSim implements Combat {
 
   startBoard(side: 0 | 1): string[] {
     return this.starting[side];
+  }
+
+  summonLater(side: 0 | 1, m: BMinion) {
+    this.later[side].push(m);
+    this.flushLater(side);
+  }
+
+  private flushLater(side: 0 | 1) {
+    while (this.later[side].length && this.alive(side).length < BOARD_MAX) this.summon(side, this.later[side].shift()!);
   }
 
   deity(side: 0 | 1, atk: number, hp: number) {
@@ -304,8 +317,9 @@ export class CombatSim implements Combat {
 
   private runDeathrattle(m: BMinion, side: 0 | 1, index: number) {
     const titus = this.alive(side).reduce((n, x) => n + (x.id === 'BG25_354' ? (x.golden ? 2 : 1) : 0), 0);
+    const extra = (m.extraDr ?? []).map((x) => ({ s: SPEC.get(x.id)!, g: x.g })).filter((x) => x.s);
     for (let t = 0; t <= titus; t++) {
-      for (const { s, g } of specsOf(m)) {
+      for (const { s, g } of [...specsOf(m), ...extra]) {
         if (!s.deathrattle) continue;
         s.deathrattle(this, m, g, index);
         this.counter(side, 'drs', 1);
@@ -396,6 +410,7 @@ export class CombatSim implements Combat {
         const b = this.boards[d.side];
         const at = d.left && b.includes(d.left) ? b.indexOf(d.left) + 1 : 0;
         this.deathCount[d.side]++;
+        if (!d.m.temp) this.died[d.side].push(d.m.id);
         if (isRace(d.m.id, 'ABERRATION') && d.m.id !== DEITY) this.aberDeaths[d.side]++;
         this.withGhost(d.m, d.side, at, () => {
           for (const { s, g } of specsOf(d.m)) s.onDeath?.(this, d.m, g);
@@ -413,6 +428,7 @@ export class CombatSim implements Combat {
           }
           for (const { s, g } of specsOf(f)) s.onFriendDeath?.(this, f, d.m, g);
         }
+        HERO_SPEC.get(this.sides[d.side].heroId)?.onFriendDeath?.(this, d.side, d.m);
         const hero = HERO_SPEC.get(this.sides[d.side].heroId);
         if (hero?.avenge) {
           this.heroAvenge[d.side]++;
@@ -441,6 +457,7 @@ export class CombatSim implements Combat {
       for (const side of [0, 1] as const) {
         this.boon(side);
         this.awaken(side);
+        this.flushLater(side);
       }
       this.frame();
     }
@@ -572,7 +589,7 @@ export class CombatSim implements Combat {
     const survivors = winner === null ? [] : this.alive(winner).filter((m) => !m.temp);
     const damage = winner === null ? 0 : this.sides[winner].tier + survivors.reduce((n, m) => n + tierOf(m.id), 0);
     this.frame(undefined, undefined, winner === null ? '平手' : undefined);
-    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first };
+    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first, died: this.died };
   }
 
   private nextAttacker(side: 0 | 1, ptr: [number, number]): BMinion | null {
