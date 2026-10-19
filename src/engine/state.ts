@@ -128,6 +128,12 @@ export interface HandCard {
   lockedUntil?: number;
   /** 畸變怪物：目前的兩種加成效果 */
   bonus?: Keyword[];
+  /** 『魔像塑造者』卡札克斯：魔像的兩種藥草 */
+  golem?: [string, string];
+  /** 隱蔽護罩：這個回合打出時獲得潛行直到你的下個回合 */
+  shroudTurn?: number;
+  /** 陰影鏡像：每當你打出一張牌就變成它的複製 */
+  reflection?: boolean;
   /** 齊利亞斯豪華版 3000 的兩個模組 */
   zilliax?: string[];
   /** 觀星：這個回合打出它會施放兩次 */
@@ -214,8 +220,14 @@ export interface Minion {
   linked?: number;
   /** 記住的卡（過期品商人棄掉的卡） */
   stash?: string;
+  /** 凍結的長毛象：在擁有者施放火焰法術之前保持凍結 */
+  mammoth?: boolean;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 飛行管理員杜加爾：甦醒時的獎勵 */
+  awakenFx?: Effect[];
+  /** 猛羊坐騎：攻擊時免疫 */
+  immuneAttacking?: boolean;
   /** 會背書的伊萊克：記住的法術 */
   remembered?: string[];
   /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
@@ -371,6 +383,23 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 暴風城：下一張火焰法術的法術傷害 / 施放過火焰法術的回合 / 抽到的牌消耗減少 / 下一張抽到的牌消耗減少 */
+  pyromancer?: number;
+  fireTurns?: number[];
+  drawDiscount?: number;
+  nextDrawDiscount?: number;
+  /** 沙德拉斯‧月樹：接下來抽到的幾張法術抽到時施放 */
+  sheldras?: number;
+  /** 荒裔塔姆辛：在你的回合受到的傷害改為由對手承受 */
+  tamsin?: boolean;
+  /** 秘法師瓦登：本場對戰的法術傷害加成 */
+  permSpellDamage?: number;
+  /** 守護矮人區：你的英雄能力可以指定手下為目標 */
+  powerTargetsMinions?: boolean;
+  /** 瞄準射擊：下一次英雄能力額外造成的傷害 */
+  nextPowerDamage?: number;
+  /** 千面女梅斯特拉：偽裝前的英雄能力 */
+  maestraPower?: string;
   /** 『分裂者』克蘇恩：打出過的碎片 / 已經重新組合 */
   cthunPieces?: string[];
   cthunWhole?: boolean;
@@ -384,7 +413,7 @@ export interface PlayerState {
   /** 本場對戰中祈求葛拉克朗的次數 */
   invokes?: number;
   /** 進行中的支線任務（uid 對應掛在 eternal 上的能力） */
-  sidequests?: { uid: number; cardId: string; progress: number; goal: number }[];
+  sidequests?: { uid: number; cardId: string; progress: number; goal: number; questline?: boolean; seen?: (number | string)[] }[];
   /** 禦法珠寶匠：英雄具有法術免疫，直到你的下個回合 */
   heroElusive?: boolean;
   /** 伊斯歐‧風詠：在這個回合你的法術消耗為 (1) */
@@ -666,6 +695,47 @@ export interface PlayerState {
   spellDamageDealt?: { turn: number; amount: number };
   /** 本場對戰中施放的邪能法術數 / 英雄與友方攻擊次數 */
   felSpells?: number;
+  /** 奧特蘭克山谷：施放的冰霜法術數、獲得的護甲總量、在對手回合受到的傷害、上一張二選一的選項等 */
+  /** 貧瘠之地：召喚過的哨所數、英雄能力造成的傷害、本回合恢復的生命值等 */
+  /** 迷你系列：月光指引、艾德溫、拷貝貓、上一張對友方手下施放的法術等 */
+  ded?: {
+    moonlit?: { turn: number; copyUid: number; origUid: number }[];
+    edwin?: { turn: number; drawnUid: number; edwinUid: number };
+    copycat?: number;
+    lastFriendlySpell?: string;
+    noHeroAttackTurn?: number;
+    playedEdge?: boolean;
+    /** 瘋狂天才爆爆博士：你的機械具有突襲 */
+    boomRush?: boolean;
+    /** 每回合隨機換一種的英雄能力（爆爆博士 / 獨行俠里諾） */
+    rotate?: string[];
+  };
+  /** 『空無者』瓦麗拉：英雄潛行到這個回合結束為止 */
+  heroStealthUntil?: number;
+  bar?: {
+    watchPosts?: number;
+    powerDamage?: number;
+    powerBonus?: number;
+    healTurn?: { turn: number; n: number };
+    scabbs?: { turn: number; left: number };
+    yoink?: { original: string; heroCard?: string; left: number };
+    soulsTurn?: number;
+  };
+  av?: {
+    frostSpells?: number;
+    armorGained?: number;
+    oppTurnDamage?: { turn: number; n: number };
+    lastChooseOne?: { cardId: string; option: number };
+    dawngrasp?: number;
+    powerFreeze?: boolean;
+    toFront?: { turn: number; n: number };
+    /** 納亞克·海克森：此手下偷來的手下 */
+    najak?: Record<number, number>;
+    /** 虔信者賽瑞菈 / 元素使布魯坎：英雄能力翻面的起始回合 */
+    flipStart?: number;
+    /** 空軍指揮官艾克曼 / 夾擊戰法：本回合監看的手下 */
+    watch?: { kind: 'ichman' | 'flank'; uid: number; turn: number }[];
+  };
   attacksThisGame?: number;
   /** 本場對戰中打出的 1 費手下 */
   oneCostMinions?: string[];

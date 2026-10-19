@@ -54,6 +54,9 @@ export const UPGRADED_POWER_IDS: Record<Exclude<CardClass, 'NEUTRAL'>, string> =
  * 不屬於基本職業的英雄能力（以卡牌 ID 為 key）：強化後的基本能力、充能戰錘的閃電震盪、
  * 『炎魔』拉格納羅斯的死吧，蟲子！。名稱與敘述由卡牌資料提供（cards.json 的 powers）。
  */
+const ANY_CHAR = { filter: { type: 'character' as const, side: 'any' as const } };
+const hitChosen = (amount: number) => ({ e: 'damage' as const, target: { t: 'chosen' as const }, amount });
+
 export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   // 觀察者奧爾加隆的預視：看對手牌堆頂的牌，可以把它放到牌堆底
   TTN_717t: { effects: [{ e: 'custom', fn: 'tnAlgalon' }] },
@@ -157,6 +160,35 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   JAIL_EVENT_101hp: { effects: [{ e: 'custom', fn: 'coCollapse' }] },
   TLC_632t: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
   UNG_934t2: { effects: [{ e: 'damage', target: { t: 'random', filter: { type: 'character', side: 'enemy' }, count: 1 }, amount: 8 }] },
+  // 瘋狂天才爆爆博士：紅色大按鈕（每回合換一種機甲能力）
+  BOT_238p1: { target: ANY_CHAR, effects: [{ e: 'damage', target: { t: 'chosen' }, amount: 3 }] },
+  BOT_238p2: { effects: [{ e: 'armor', amount: 7 }] },
+  BOT_238p3: { effects: [{ e: 'damage', target: { t: 'all', filter: { type: 'character', side: 'enemy' } }, amount: 1 }] },
+  BOT_238p4: { effects: [{ e: 'discover', pool: { type: 'MINION', race: 'MECHANICAL' } }] },
+  BOT_238p6: { needsBoardSpace: true, effects: [{ e: 'summon', card: 'BOT_312t', count: 3, who: 'self' }] },
+  // 獨行俠里諾：里諾的手持火砲（每回合換一種魔法子彈）
+  WW_0700p1: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'mana', kind: 'refresh', amount: 2 }] },
+  WW_0700p2: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'armor', amount: 4 }] },
+  WW_0700p3: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'enemy' } }, amount: 1 }] },
+  WW_0700p4: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'buff', target: { t: 'random', filter: { type: 'minion', side: 'friendly' }, count: 1 }, atk: 2, hp: 2 }] },
+  WW_0700p5: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'discover', pool: { type: 'SPELL' } }] },
+  WW_0700p6: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'summonRandom', pool: { type: 'MINION', cost: 3 }, count: 1, who: 'self' }] },
+  WW_0700p7: { target: ANY_CHAR, effects: [hitChosen(2), { e: 'draw', count: 1, who: 'self' }] },
+  // 無頭騎士：跳動的南瓜（抽到頭之前 / 之後）
+  TOY_829hp3: { target: ANY_CHAR, effects: [hitChosen(3)] },
+  TOY_829hp: { target: ANY_CHAR, effects: [hitChosen(3), { e: 'discover', pool: { type: 'MINION', race: 'UNDEAD' } }] },
+  // 祖爾金：狂暴擲斧
+  TRL_065h: { target: ANY_CHAR, effects: [hitChosen(2)] },
+  // 女巫哈嘉薩 / 『空無者』瓦麗拉 / 神奇的里諾：被動英雄能力（效果在 game.ts）
+  GIL_504h: { passive: true, effects: [] },
+  ICC_827p: { passive: true, effects: [] },
+  YOD_009h: { passive: true, effects: [] },
+};
+
+/** 每回合隨機換一種的英雄能力 */
+export const ROTATING_POWERS: Record<string, string[]> = {
+  BOT_238: ['BOT_238p1', 'BOT_238p2', 'BOT_238p3', 'BOT_238p4', 'BOT_238p6'],
+  WW_0700: ['WW_0700p1', 'WW_0700p2', 'WW_0700p3', 'WW_0700p4', 'WW_0700p5', 'WW_0700p6', 'WW_0700p7'],
 };
 
 /** 管理者埃克索圖斯：換成『炎魔』拉格納羅斯 */

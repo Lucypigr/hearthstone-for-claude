@@ -228,6 +228,12 @@ export type DynAmount =
   | 'spellDamageDealtThisTurn'
   /** 你本場對戰中施放的邪能法術數 */
   | 'felSpellsCast'
+  /** 場上（雙方）其他魚人的數量 */
+  | 'otherMurlocs'
+  /** 被凍結的敵人數 */
+  | 'frozenEnemies'
+  /** 你本場對戰中施放的冰霜法術數 */
+  | 'frostSpellsCast'
   /** 你本場對戰中英雄 / 友方角色攻擊的次數 */
   | 'attacksThisGame'
   /** 場上（雙方）的手下數 */
@@ -268,7 +274,9 @@ export type DynAmount =
   | 'soulFragments'
   /** 你牌堆中不是一開始就在裡面的卡數 / 你控制的手下有幾種不同類型 */
   | 'nonStartingInDeck'
-  | 'uniqueFriendlyTypes';
+  | 'uniqueFriendlyTypes'
+  /** 本場對戰中你打出過的軍情七處卡數 */
+  | 'si7Played';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -397,6 +405,11 @@ export type Condition =
   | { c: 'itOtherClass' }
   /** 你的手牌中有另一個職業的卡 */
   | { c: 'holdingOtherClass' }
+  /** 你在前三個回合都施放過火焰法術 / 本回合有英雄受到傷害 / 你的手牌已滿 / 本回合你施放過這個派系的法術 */
+  | { c: 'fireLastThreeTurns' }
+  | { c: 'anyHeroDamagedThisTurn' }
+  | { c: 'handFull' }
+  | { c: 'castSchoolThisTurn'; school: string }
   /** 本場對戰中你施放過至少 n 張法術 / 你的英雄的攻擊力至少 n */
   | { c: 'spellsCast'; n: number }
   | { c: 'heroAtk'; n: number }
@@ -435,6 +448,16 @@ export type Condition =
   | { c: 'itPlayedLastTurn' }
   /** 你這個回合恢復過生命值 */
   | { c: 'healedThisTurn' }
+  /** 這張牌是本回合才抽到的 */
+  | { c: 'thisDrawnThisTurn' }
+  /** 剛才的傷害榮譽擊殺了選擇的目標 */
+  | { c: 'honorableKill' }
+  /** 此手下被榮譽擊殺（亡語用） */
+  | { c: 'wasHonorablyKilled' }
+  /** 你在對手的上個回合受到 n 點以上的傷害 */
+  | { c: 'tookOnOppTurn'; n: number }
+  /** 你本場對戰中獲得過 n 點以上的護甲值 */
+  | { c: 'armorGainedGame'; n: number }
   /** 你上個回合施放過法術 */
   | { c: 'castSpellLastTurn' }
   /** 剛剛的攻擊是英雄攻擊手下 */
@@ -716,6 +739,10 @@ export type Trig =
   | { k: 'magnetize' }
   /** 你使用地點牌後 */
   | { k: 'locationUsed' }
+  /** 你的英雄獲得攻擊力後（amount = 獲得多少） */
+  | { k: 'heroAtkGain' }
+  /** 榮譽擊殺：此手下（或你裝備的武器）在你的回合以剛好致命的傷害消滅一個手下 */
+  | { k: 'honorableKill' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -809,6 +836,10 @@ export interface CostAura {
   school?: string;
   /** 只影響你每回合打出的第一個奧秘 */
   firstSecret?: boolean;
+  /** 只影響你每回合打出的第一個嘲諷手下 */
+  firstTaunt?: boolean;
+  /** 只影響不是一開始就在牌堆中的牌 */
+  notStarting?: boolean;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -895,6 +926,8 @@ export interface PendingDiscount {
   keyword?: Keyword;
   /** 只適用於有法術傷害的手下 */
   spellDamage?: boolean;
+  /** 只適用於二選一卡 */
+  chooseOne?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -1019,6 +1052,10 @@ export interface CardDef {
   flags?: MinionFlag[];
   /** 場上時影響手牌消耗的光環 */
   costAuras?: CostAura[];
+  /** 等級法術：你的法力水晶達到 at 時，手牌中的這張牌升級成 into */
+  rankUp?: { at: number; into: string };
+  /** 在你交易這張牌後觸發的效果 */
+  onTrade?: Effect[];
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
   atkIf?: { cond: Condition; atk: number; self?: boolean };
   /** 在手牌中時才會觸發的能力（例如肥油大亨） */
@@ -1174,6 +1211,17 @@ export type MinionFlag =
   | 'inara'
   | 'outcastDiscount'
   | 'lifestealDamagesEnemy'
+  // 暴風城
+  | 'jaxon'
+  | 'heroesTakeExtra'
+  // 奧特蘭克山谷
+  | 'immovableObject'
+  // 貧瘠之地
+  | 'gossiper'
+  | 'natureSpellDamage3'
+  | 'mulverick'
+  | 'saidan'
+  | 'cheatySnobold'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'

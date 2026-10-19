@@ -102,12 +102,18 @@ const STATIC_FLAGS = new Set([
   'stormhammer', 'noFreeze', 'poisonousSpells', 'othersImmuneAttacking', 'weaponAtk2',
   // 暗月馬戲團
   'outcastDiscount', 'lifestealDamagesEnemy', 'inara', 'lightsteed', 'noDeathrattles', 'heroPowerDiscount1',
+  // 暴風城
+  'jaxon', 'heroesTakeExtra',
+  // 奧特蘭克山谷
+  'immovableObject', 'saidan',
+  // 貧瘠之地
+  'natureSpellDamage3',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([
   'lumia', 'anchorite', 'murmur', 'auchenai', 'talgath', 'rangari', 'mutalisk', 'harbinger', 'podling', 'orion',
   'stagSpirit', 'mirrorSpell', 'copyFrozen', 'natureFeeds', 'natureSummons', 'livingPlague', 'grazing',
-  'takNozwhisker',
+  'takNozwhisker', 'mulverick', 'cheatySnobold', 'gossiper',
 ]);
 
 describe('旗標稽核', () => {
