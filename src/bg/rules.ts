@@ -53,6 +53,12 @@ export function auraOf(cnt: Record<string, number>, m: BMinion, heroHp: number):
   }
   if (isRace(m.id, 'UNDEAD')) a += cnt.undeadA ?? 0;
   if (isRace(m.id, 'BEAST')) a += cnt['~beastA'] ?? 0;
+  // 音量機兵：本賽局的加成（吸附在別的機械身上也算）
+  for (const id of [m.id, ...m.mags.map((x) => x.id)]) {
+    if (!id.startsWith('BG34_170t')) continue;
+    a += cnt.volA ?? 0;
+    h += cnt.volH ?? 0;
+  }
   for (const { s, g } of specsOf(m)) {
     if (!s.aura) continue;
     const [x, y] = s.aura(cnt, m, g, heroHp);
@@ -65,7 +71,9 @@ export function auraOf(cnt: Record<string, number>, m: BMinion, heroHp: number):
 export function makeMinion(id: string, golden: boolean, uid: number): BMinion {
   const d = bgCard(id);
   const mech = d.mech ?? [];
-  const k = golden ? 2 : 1;
+  // 金燦桂冠詩人：永遠是金卡（但不給三合一獎勵）
+  if (id === 'BG32_236') golden = true;
+  const k = golden && id !== 'BG32_236' ? 2 : 1;
   return {
     uid,
     id,

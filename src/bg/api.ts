@@ -30,6 +30,30 @@ export interface Recruit {
   make(id: string, golden?: boolean): BMinion;
   /** 從戰場上移除（摧毀） */
   destroy(m: BMinion): void;
+  /** 你的神祇 +X/+Y（畸變體） */
+  deity(atk: number, hp: number): void;
+  /** 棄掉一張手牌 */
+  discard(uid: number): void;
+  /** 磁力吸附一個衍生物到手下身上（增幅器） */
+  magnetize(host: BMinion, id: string): void;
+  /** 惡魔食料：之後 n 次刷新各多一個 */
+  addFodder(refreshes: number): void;
+  /** 帶鎖箱 */
+  lockbox(): void;
+  /** 把一個手下（例如從酒館拿走的）放到手牌 */
+  give(m: BMinion): void;
+  /** 施放一個隨機的酒館法術（盡量以這個手下為目標） */
+  castRandomOn(m: BMinion): void;
+  /** 施放指定的法術（盡量以這個手下為目標） */
+  castOn(id: string, m: BMinion): void;
+  /** 免費刷新酒館 */
+  freeRefresh(): void;
+  /** 在酒館裡觸發手下的奮戰 */
+  rally(m: BMinion): void;
+  /** 拿到兩張成對的卡：打出其中一張時棄掉另一張 */
+  getPair(gen: () => string, spells: boolean): void;
+  /** 從卡池抽一張（會從卡池拿走） */
+  drawId(filter: (id: string) => boolean): string | undefined;
   /** 吃掉酒館裡的手下：獲得它的身材 */
   consume(eater: BMinion, food: BMinion): void;
   /** 觸發手下的戰吼 */
@@ -88,6 +112,12 @@ export interface Combat {
   bump(m: BMinion, n?: number): void;
   /** 這張卡在這一局的卡池裡 */
   inLobby(id: string): boolean;
+  /** 這張酒館法術在這一局會出現 */
+  inLobbySpell(id: string): boolean;
+  /** 你的神祇 +X/+Y（已經甦醒的話也會加在它身上） */
+  deity(side: 0 | 1, atk: number, hp: number): void;
+  /** 戰鬥開始時這一方的手下（卡牌 ID） */
+  startBoard(side: 0 | 1): string[];
 }
 
 export interface MinionSpec {
@@ -110,6 +140,22 @@ export interface MinionSpec {
   /** 你對某個手下施放法術後（鮮血寶石、造法……） */
   onSpell?(r: Recruit, self: BMinion, target: BMinion | null, g: number, spellId: string): void;
   onBuy?(r: Recruit, self: BMinion, bought: BMinion, g: number): void;
+  /** 啟動技能：花金幣發動（每回合一次） */
+  activate?: {
+    cost: number;
+    /** 要選的東西：友方手下 / 酒館的手下 / 手牌（棄牌） */
+    target?: 'friend' | 'shop' | 'hand';
+    filter?: (self: BMinion, t: BMinion | null, p: BPlayer) => boolean;
+    use(r: Recruit, self: BMinion, g: number, target: BMinion | null, handUid: number | null): void;
+    /** 電腦：值多少（0 = 不用） */
+    ai?: (r: Recruit, self: BMinion) => number;
+  };
+  /** 你棄掉一張牌後 */
+  onDiscard?(r: Recruit, self: BMinion, g: number): void;
+  /** 有東西被加入你的手牌後 */
+  onGetCard?(r: Recruit, self: BMinion, g: number): void;
+  /** 你發現一張卡後 */
+  onDiscover?(r: Recruit, self: BMinion, g: number): void;
   /** 你購買酒館法術後 */
   onBuySpell?(r: Recruit, self: BMinion, id: string, g: number): void;
   /** 你花了金幣 */

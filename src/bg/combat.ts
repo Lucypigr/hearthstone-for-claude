@@ -1,6 +1,8 @@
 // 英雄戰場的自動戰鬥（和畫面無關；電腦也用它來模擬戰鬥、決定站位）
 import type { Combat } from './api';
-import { tierOf } from './data';
+import { isRace, tierOf } from './data';
+
+const DEITY = 'BGFYM_000';
 import { HERO_SPEC } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { auraOf, BOARD_MAX, makeMinion, specsOf, spellExtraOf } from './rules';
@@ -23,6 +25,7 @@ export interface CombatOptions {
   record?: boolean;
   nextUid: () => number;
   inLobby: (id: string) => boolean;
+  inLobbySpell?: (id: string) => boolean;
   give?: (p: BPlayer, id: string) => void;
   giveRandom?: (p: BPlayer, filter: (id: string) => boolean) => void;
 }
@@ -53,6 +56,11 @@ export class CombatSim implements Combat {
   private first: 0 | 1 = 0;
   /** 拉法姆：第一個被殺死的手下 */
   private firstKill: [boolean, boolean] = [false, false];
+  /** 戰鬥開始時的手下 */
+  private starting: [string[], string[]];
+  /** 死掉的畸變體（4 個後神祇甦醒） */
+  private aberDeaths: [number, number] = [0, 0];
+  private awakened: [boolean, boolean] = [false, false];
 
   constructor(
     private sides: [SideInput, SideInput],
@@ -66,6 +74,38 @@ export class CombatSim implements Combat {
     ];
     this.hands = [sides[0].persist ? sides[0].hand : sides[0].hand.map(snap), sides[1].persist ? sides[1].hand : sides[1].hand.map(snap)];
     this.frames = o.record ? [] : null;
+    this.starting = [this.boards[0].map((m) => m.id), this.boards[1].map((m) => m.id)];
+  }
+
+  startBoard(side: 0 | 1): string[] {
+    return this.starting[side];
+  }
+
+  deity(side: 0 | 1, atk: number, hp: number) {
+    this.counter(side, 'deityA', atk);
+    this.counter(side, 'deityH', hp);
+    for (const m of this.alive(side)) if (m.id === DEITY) this.buff(m, atk, hp);
+  }
+
+  /** 4 個友方畸變體死亡後，神祇甦醒（克蘇恩：把身材分給其他手下） */
+  private awaken(side: 0 | 1) {
+    if (this.awakened[side] || this.aberDeaths[side] < 4 || this.alive(side).length >= BOARD_MAX) return;
+    this.awakened[side] = true;
+    const d = this.make(DEITY);
+    d.atk = 1 + this.cnt(side, 'deityA');
+    d.hp = 1 + this.cnt(side, 'deityH');
+    const placed = this.summon(side, d);
+    if (!placed) return;
+    const others = this.alive(side).filter((m) => m !== placed);
+    if (!others.length) return;
+    const split = (total: number, f: (m: BMinion, n: number) => void) => {
+      const each = Math.floor(total / others.length);
+      let rest = total - each * others.length;
+      for (const m of others) f(m, each);
+      while (rest-- > 0) f(this.pick(others)!, 1);
+    };
+    split(placed.atk, (m, n) => this.buff(m, n, 0));
+    split(placed.hp, (m, n) => this.buff(m, 0, n));
   }
 
   // —— Combat 介面 ——
@@ -111,6 +151,9 @@ export class CombatSim implements Combat {
   inLobby(id: string): boolean {
     return this.o.inLobby(id);
   }
+  inLobbySpell(id: string): boolean {
+    return this.o.inLobbySpell?.(id) ?? true;
+  }
   make(id: string, golden = false): BMinion {
     return makeMinion(id, golden, this.o.nextUid());
   }
@@ -128,14 +171,35 @@ export class CombatSim implements Combat {
     return this.sides[s].player.board.find((x) => x.uid === m.src);
   }
 
-  buff(m: BMinion, atk: number, hp: number) {
+  private rawBuff(m: BMinion, atk: number, hp: number) {
     if (m.dead) return;
     m.atk = Math.max(0, m.atk + atk);
     m.hp += hp;
     m.maxHp = (m.maxHp ?? m.hp) + hp;
+    // 緋紅倖存者：攻擊力達到 6 時獲得聖盾
+    if (m.id === 'BG35_814' && m.atk >= 6 && !m.n) {
+      m.shield = true;
+      m.n = 1;
+    }
+  }
+  /** 塔瑞克苟薩、堅毅詩人旁邊的龍：戰鬥中獲得的身材與關鍵字永久保留 */
+  private keeps(m: BMinion): boolean {
+    if (m.id === 'BG21_015') return true;
+    const b = this.boards[this.side(m)];
+    const i = b.indexOf(m);
+    if (!isRace(m.id, 'DRAGON')) return false;
+    return [b[i - 1], b[i + 1]].some((x) => x && !x.dead && x.id === 'BG29_813');
+  }
+  buff(m: BMinion, atk: number, hp: number) {
+    if (m.dead) return;
+    this.rawBuff(m, atk, hp);
+    if (this.keeps(m)) {
+      const src = this.source(m);
+      if (src) (src.atk += atk), (src.hp += hp);
+    }
   }
   perm(m: BMinion, atk: number, hp: number) {
-    this.buff(m, atk, hp);
+    this.rawBuff(m, atk, hp);
     const src = this.source(m);
     if (src) {
       src.atk += atk;
@@ -152,6 +216,10 @@ export class CombatSim implements Combat {
   }
   giveKw(m: BMinion, kw: Keyword) {
     m[kw] = true;
+    if (this.keeps(m)) {
+      const src = this.source(m);
+      if (src) src[kw] = true;
+    }
   }
   destroy(m: BMinion) {
     if (m.dead) return;
@@ -328,6 +396,7 @@ export class CombatSim implements Combat {
         const b = this.boards[d.side];
         const at = d.left && b.includes(d.left) ? b.indexOf(d.left) + 1 : 0;
         this.deathCount[d.side]++;
+        if (isRace(d.m.id, 'ABERRATION') && d.m.id !== DEITY) this.aberDeaths[d.side]++;
         this.withGhost(d.m, d.side, at, () => {
           for (const { s, g } of specsOf(d.m)) s.onDeath?.(this, d.m, g);
           this.runDeathrattle(d.m, d.side, at);
@@ -369,7 +438,10 @@ export class CombatSim implements Combat {
           }
         }
       }
-      for (const side of [0, 1] as const) this.boon(side);
+      for (const side of [0, 1] as const) {
+        this.boon(side);
+        this.awaken(side);
+      }
       this.frame();
     }
   }
@@ -422,6 +494,25 @@ export class CombatSim implements Combat {
     while (this.immediate.length) {
       const m = this.immediate.shift()!;
       if (!m.dead && this.alive((1 - this.side(m)) as 0 | 1).length) this.attack(m);
+    }
+  }
+
+  /** 在招募階段觸發奮戰（空育逃亡者）：戰鬥複製上增加的身材加回原本的手下 */
+  rallyOutside(uid: number) {
+    const side = 0;
+    const m = this.boards[side].find((x) => x.src === uid);
+    const target = this.boards[1][0];
+    if (!m || !target) return;
+    const before = new Map(this.boards[side].map((x) => [x, { a: x.atk, h: x.hp, src: this.source(x) && { a: this.source(x)!.atk, h: this.source(x)!.hp } }]));
+    for (const { s, g } of specsOf(m)) s.rally?.(this, m, g, target);
+    for (const [x, b] of before) {
+      const src = this.source(x);
+      if (!src) continue;
+      const da = x.atk - b.a - (b.src ? src.atk - b.src.a : 0);
+      const dh = x.hp - b.h - (b.src ? src.hp - b.src.h : 0);
+      src.atk = Math.max(0, src.atk + da);
+      src.hp = Math.max(1, src.hp + dh);
+      for (const k of ['taunt', 'shield', 'windfury', 'venom', 'reborn'] as Keyword[]) if (x[k] && !src[k]) src[k] = true;
     }
   }
 

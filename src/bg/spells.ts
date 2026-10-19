@@ -610,6 +610,29 @@ export const SPELLS: SpellSpec[] = [
     v: (_G, p) => Math.max(0, ...p.board.map((m) => 40 - m.atk - m.hp)),
   },
   {
+    id: 'BG36_371', // 賦能室
+    target: false,
+    cast: ({ r }, _t, g) => r.deity(7 * g, 7 * g),
+    v: (G) => (G.s.tribes.includes('ABERRATION') ? 8 : 0),
+  },
+  {
+    id: 'BG27_514t', // 海妖之歌
+    target: 'any',
+    filter: (m, ctx) => ctx.p.shop.includes(m) && m.id !== 'BG27_514',
+    cast: ({ G, p }, t) => {
+      if (t) G.addMinion(p, G.make(t.id));
+    },
+    v: fixedV(8),
+  },
+  {
+    id: 'BG31_920t', // 進化策略
+    target: false,
+    cast: ({ r, p }, _t, g) => {
+      const tier = Math.min(6, 1 + (p.c.darkcrest ?? 0));
+      for (let k = 0; k < g; k++) r.getRandom((id) => isRace(id, 'NAGA') && tierOf(id) === tier);
+    },
+  },
+  {
     id: 'BG31_892', // 范達爾的機運
     target: false,
     cast: ({ G, p }) => G.discoverFor(p, (id) => !!G.specOf(id)?.choices, '發現一張二選一的卡（兩個效果都會發動）', { both: true }),

@@ -1,8 +1,12 @@
 // 英雄戰場的一局：8 位玩家（你 + 7 個電腦）、共用的酒館卡池、招募階段、配對與戰鬥
 import type { Recruit } from './api';
-import { COIN, GEM, POOL_IDS, SPEC, TOKENS, TRIPLE_REWARD } from './cards';
+import { COIN, GEM, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TOKENS, TRIPLE_REWARD } from './cards';
+
+const SURPRISE = 'BG26_175';
+const LOCKBOX = 'BG36_520t';
+const FODDER = 'BG35_150t';
 import { BOUNTIES, isTavernSpell, SPELL_SPEC, spellCostOf, TAVERN_SPELLS, type SpellCtx } from './spells';
-import { runCombat, type SideInput } from './combat';
+import { CombatSim, runCombat, type SideInput } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import { HERO_SPEC, heroAvailable, HEROES } from './heroes';
 import { nextRandom } from '../engine/rng';
@@ -267,6 +271,21 @@ export class BgGame {
       m.tmpKw = [];
     }
     p.powerUses = 0;
+    // 戰鬥中加的惡魔食料（陷阱拍手者）
+    for (let k = 0; k < (p.c.fodder3 ?? 0); k++) (p.fodder ??= []).push(3);
+    p.c.fodder3 = 0;
+    // 戰鬥中拿到的帶鎖箱（被鎖住的叛變者）
+    for (let k = 0; k < (p.c.lockbox ?? 0); k++) this.recruit(p).lockbox();
+    p.c.lockbox = 0;
+    // 帶鎖箱：倒數，打開時拿到一張隨機有種族的金卡
+    for (const h of [...p.hand]) {
+      if (h.kind !== 'spell' || h.id !== LOCKBOX) continue;
+      h.turns = (h.turns ?? 5) - 1;
+      if (h.turns > 0) continue;
+      p.hand = p.hand.filter((x) => x !== h);
+      const id = this.draw((x) => tierOf(x) <= p.tier && racesOf(x).length > 0);
+      if (id) this.addMinion(p, this.make(id, true));
+    }
     if (p.frozen) p.frozen = false;
     else this.refreshShop(p);
     const r = this.recruit(p);
@@ -378,6 +397,26 @@ export class BgGame {
         m.hp += n;
       }
     }
+    // 波浪元素：刷新後隨機一個 +4/+4
+    for (let k = 0; k < (p.c.rb4 ?? 0); k++) {
+      const m = this.pick(p.shop);
+      if (m) (m.atk += 4), (m.hp += 4);
+    }
+    // 惡魔食料：餵給隨機的友方惡魔，再補一個手下
+    const fodders = (p.fodder ?? []).filter((n) => n > 0).length;
+    p.fodder = (p.fodder ?? []).map((n) => n - 1).filter((n) => n > 0);
+    for (let k = 0; k < fodders; k++) {
+      const f = this.shopMinion(p, FODDER);
+      const demon = this.pick(p.board.filter((m) => isRace(m.id, 'DEMON')));
+      if (!demon) {
+        p.shop.push(f);
+        continue;
+      }
+      demon.atk += f.atk;
+      demon.hp += f.hp;
+      const id = this.draw((x) => tierOf(x) <= p.tier);
+      if (id) p.shop.push(this.shopMinion(p, id));
+    }
     // 鮮血寶石彈幕：每個手下 +2/+2 的鮮血寶石
     for (let k = 0; k < (p.c.barrage ?? 0); k++) {
       for (const m of p.shop) {
@@ -479,6 +518,10 @@ export class BgGame {
     if (p.hand.length >= HAND_MAX) return false;
     p.hand.push(card);
     if (card.kind === 'minion') this.checkTriple(p, card.m.id);
+    if (this.s.phase === 'recruit' || this.s.phase === 'combat') {
+      const r = this.recruit(p);
+      for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onGetCard?.(r, m, g);
+    }
     return true;
   }
 
@@ -488,14 +531,23 @@ export class BgGame {
 
   private checkTriple(p: BPlayer, id: string) {
     const need = HERO_SPEC.get(p.heroId)?.tripleNeed ?? 3;
-    const copies = [...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), ...p.board].filter((m) => m.id === id && !m.golden);
+    const all = [...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), ...p.board].filter((m) => !m.golden);
+    // 驚奇元素可以和任何元素組成三連
+    if (id === 'BG33_890t') return; // 魔術魚學徒不能三連
+    if (id === SURPRISE) {
+      for (const x of new Set(all.filter((m) => m.id !== SURPRISE && isRace(m.id, 'ELEMENTAL')).map((m) => m.id))) this.checkTriple(p, x);
+      return;
+    }
+    let copies = all.filter((m) => m.id === id);
+    if (isRace(id, 'ELEMENTAL') && copies.length < need) copies = [...copies, ...all.filter((m) => m.id === SURPRISE)];
     if (copies.length < need) return;
     const used = copies.slice(0, need);
     const base = this.make(id, false);
     const golden = this.make(id, true);
     for (const m of used) {
-      golden.atk += m.atk - base.atk;
-      golden.hp += m.hp - base.hp;
+      const b = m.id === id ? base : this.make(m.id, false);
+      golden.atk += m.atk - b.atk;
+      golden.hp += m.hp - b.hp;
       for (const k of ['taunt', 'shield', 'windfury', 'venom', 'reborn'] as Keyword[]) if (m[k] && !base[k]) golden[k] = true;
       golden.mags.push(...m.mags);
       golden.n = Math.max(golden.n, m.n);
@@ -535,6 +587,8 @@ export class BgGame {
     if (!d) throw new BgError('沒有正在發現的卡');
     const id = d.options[Math.max(0, Math.min(d.options.length - 1, i))];
     p.discover = p.dq.shift() ?? null;
+    const rr = this.recruit(p);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onDiscover?.(rr, x, g);
     if (d.spells) {
       this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
       return;
@@ -569,11 +623,19 @@ export class BgGame {
 
   hurtHero(p: BPlayer, n: number) {
     if (n <= 0) return;
+    const r0 = this.recruit(p);
+    for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onHeroHurt?.(r0, m, g, n);
+    // 靈魂倒轉者、灰燼腐化者：把傷害倒轉回去
+    const rewinder = p.board.find((m) => m.id === 'BG26_174' || m.id === 'BG32_873');
+    if (rewinder) {
+      const g = rewinder.golden ? 2 : 1;
+      if (rewinder.id === 'BG26_174') rewinder.hp += 2 * g;
+      else for (const m of p.shop) (m.atk += 2 * g), (m.hp += 2 * g);
+      return;
+    }
     const fromArmor = Math.min(p.armor, n);
     p.armor -= fromArmor;
     p.hp = Math.max(1, p.hp - (n - fromArmor));
-    const r = this.recruit(p);
-    for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onHeroHurt?.(r, m, g, n);
   }
 
   buy(pi: number, uid: number) {
@@ -609,6 +671,8 @@ export class BgGame {
     p.gold += price;
     const r = this.recruit(p);
     for (const { s, g } of specsOf(m)) s.onSell?.(r, m, g);
+    // 扭曲的憤怒守衛：賣掉手下後，下次刷新多一個惡魔食料
+    for (const x of p.board) if (x.id === 'BG35_155') for (let k = 0; k < (x.golden ? 2 : 1); k++) (p.fodder ??= []).push(1);
     HERO_SPEC.get(p.heroId)?.onSell?.(this, p, m);
     this.returnToPool(m);
   }
@@ -675,11 +739,9 @@ export class BgGame {
     const host = target !== undefined ? p.board.find((x) => x.uid === target) : undefined;
     if (host && canMagnetize(m, host)) {
       p.hand = p.hand.filter((h) => h !== card);
-      host.atk += m.atk;
-      host.hp += m.hp;
-      for (const k of ['taunt', 'shield', 'windfury', 'venom', 'reborn'] as Keyword[]) if (m[k]) host[k] = true;
-      host.mags.push({ id: m.id, g: m.golden ? 2 : 1 }, ...m.mags);
+      this.magnetizeCard(p, host, m);
       this.afterPlay(p, m, host);
+      this.discardPair(p, card);
       return;
     }
     if (p.board.length >= BOARD_MAX) throw new BgError('戰場已滿（最多 7 個手下）');
@@ -696,8 +758,83 @@ export class BgGame {
     p.board.splice(pos === undefined ? p.board.length : Math.max(0, Math.min(p.board.length, pos)), 0, m);
     if (isRace(m.id, 'ELEMENTAL')) p.c.elemTurn = (p.c.elemTurn ?? 0) + 1;
     if (spec?.battlecry) this.triggerBattlecry(p, m, bcTarget, r, spec.choices ? (m.both ? -1 : this.chooseOne(p, choice)) : 0);
+    this.volumize(p, m.id, m.golden ? 2 : 1);
     this.afterPlay(p, m, m);
     this.giveSpellcraft(p, m);
+    this.discardPair(p, card);
+  }
+
+  /** 磁力：把手下吸附到機械上（無人機複製器讓它再吸附一次；極化節拍手也會吸附一份） */
+  magnetizeCard(p: BPlayer, host: BMinion, m: BMinion) {
+    const times = host.id === 'BG36_506' && host.act === this.s.round && host.n === this.s.round ? 2 : 1;
+    const targets = [host];
+    for (const b of p.board) if (b.id === 'BG26_149' && b !== host) for (let k = 0; k < (b.golden ? 2 : 1); k++) targets.push(b);
+    for (const t of targets) {
+      for (let k = 0; k < (t === host ? times : 1); k++) {
+        t.atk += m.atk;
+        t.hp += m.hp;
+        for (const kw of ['taunt', 'shield', 'windfury', 'venom', 'reborn'] as Keyword[]) if (m[kw]) t[kw] = true;
+        t.mags.push({ id: m.id, g: m.golden ? 2 : 1 }, ...m.mags);
+      }
+    }
+    if (host.id === 'BG36_506') host.n = 0;
+    this.volumize(p, m.id, m.golden ? 2 : 1);
+  }
+
+  /** 音量機兵第一次打出或吸附：你的音量機兵本賽局變強 */
+  volumize(p: BPlayer, id: string, g: number) {
+    if (id === 'BG34_170t') p.c.volA = (p.c.volA ?? 0) + 3 * g;
+    if (id === 'BG34_170t2') p.c.volH = (p.c.volH ?? 0) + 3 * g;
+    if (id === 'BG34_170t3') (p.c.volA = (p.c.volA ?? 0) + g), (p.c.volH = (p.c.volH ?? 0) + g);
+  }
+
+  /** 打出成對的卡（例如漫遊的意志破壞者給的法術）：另一張會被棄掉 */
+  private discardPair(p: BPlayer, card: HandCard) {
+    if (card.pair === undefined) return;
+    const other = p.hand.find((h) => h.pair === card.pair);
+    if (other) this.discard(p, other.uid);
+  }
+
+  /** 棄掉一張手牌：觸發「棄掉時」的效果 */
+  discard(p: BPlayer, uid: number) {
+    const card = p.hand.find((h) => h.uid === uid);
+    if (!card) return;
+    p.hand = p.hand.filter((h) => h !== card);
+    p.c.discards = (p.c.discards ?? 0) + 1;
+    if (card.kind === 'spell') {
+      // 淤泥腐蝕、賦能室：棄掉時施放兩次；腐化金幣：金幣上限 +2
+      if (card.id === 'BG36_301t' || card.id === 'BG36_371') for (let k = 0; k < 2; k++) this.castSpec(p, card.id, null, card.g, 0);
+      if (card.id === 'BG36_303') p.maxGoldBonus += 2;
+    }
+    const r = this.recruit(p);
+    for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onDiscard?.(r, m, g);
+  }
+
+  /** 啟動技能：花金幣發動（每個手下每回合一次） */
+  activate(pi: number, uid: number, target?: number, handUid?: number) {
+    const p = this.player(pi);
+    this.ensure(p);
+    const m = p.board.find((x) => x.uid === uid);
+    const act = m && SPEC.get(m.id)?.activate;
+    if (!m || !act) throw new BgError('這個手下沒有啟動技能');
+    if (m.act === this.s.round) throw new BgError('這回合已經啟動過了');
+    if (p.gold < act.cost) throw new BgError('金幣不夠');
+    let t: BMinion | null = null;
+    let h: number | null = null;
+    if (act.target === 'friend' || act.target === 'shop') {
+      const pool = act.target === 'friend' ? p.board : p.shop;
+      t = pool.find((x) => x.uid === target) ?? null;
+      if (!t || (act.filter && !act.filter(m, t, p))) throw new BgError('請選擇目標');
+    }
+    if (act.target === 'hand') {
+      const card = p.hand.find((x) => x.uid === handUid);
+      if (!card) throw new BgError('請選擇要棄掉的手牌');
+      h = card.uid;
+    }
+    this.spend(p, act.cost);
+    m.act = this.s.round;
+    if (h !== null) this.discard(p, h);
+    act.use(this.recruit(p), m, m.golden ? 2 : 1, t, h);
   }
 
   /** 荊棘開路者：每回合有一張二選一卡兩個效果都會發動（回傳 -1） */
@@ -756,6 +893,7 @@ export class BgGame {
       this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的手下`);
       return;
     }
+    if (card.id === LOCKBOX) throw new BgError('帶鎖箱不能使用，過幾回合會自己打開');
     const spec = SPELL_SPEC.get(card.id);
     if (!spec) throw new BgError('這張法術還不能使用');
     const needTarget = !!spec.target && (!spec.choiceTarget || spec.choiceTarget(choice));
@@ -765,10 +903,37 @@ export class BgGame {
     p.hand = p.hand.filter((h) => h !== card);
     if (spec.choices) choice = this.chooseOne(p, choice);
     this.castSpec(p, card.id, t, card.g, choice);
+    this.discardPair(p, card);
+  }
+
+  /** 空育逃亡者：在招募階段觸發奮戰，戰鬥中得到的身材永久保留 */
+  rallyOutside(p: BPlayer, m: BMinion) {
+    const spec = specsOf(m).filter(({ s }) => s.rally);
+    if (!spec.length) return;
+    const dummy = newPlayer(-1, '', false);
+    const target = this.make('BG19_010t');
+    target.atk = 0;
+    target.hp = 99;
+    const sim = new CombatSim([this.sideInput(p, true), { player: dummy, board: [target], tier: 1, heroId: '', hand: [], persist: false }], {
+      rng: this.s,
+      turn: this.s.round,
+      nextUid: () => this.nextUid(),
+      inLobby: (id) => id in this.s.pool,
+      inLobbySpell: (id) => this.spellInLobby(id),
+      give: (pl, id) => {
+        if (bgCard(id).type === 'MINION') this.addMinion(pl, this.make(id));
+        else this.addHand(pl, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      },
+      giveRandom: (pl, f) => {
+        const id = this.draw(f);
+        if (id) this.addMinion(pl, this.make(id));
+      },
+    });
+    sim.rallyOutside(m.uid);
   }
 
   /** 尤格薩倫：施放一張隨機法術（隨機目標、隨機選項） */
-  castRandom(p: BPlayer, id: string) {
+  castRandom(p: BPlayer, id: string, prefer?: BMinion) {
     const spec = SPELL_SPEC.get(id);
     if (!spec) return;
     const choice = spec.choices ? Math.floor(this.rand() * spec.choices.length) : 0;
@@ -777,7 +942,7 @@ export class BgGame {
     if (needTarget) {
       const all = this.spellTargets(p, id, choice);
       const friends = all.filter((m) => p.board.includes(m));
-      t = this.pick(friends.length ? friends : all) ?? null;
+      t = (prefer && all.includes(prefer) ? prefer : this.pick(friends.length ? friends : all)) ?? null;
       if (!t) return;
     }
     this.castSpec(p, id, t, 1, choice);
@@ -795,7 +960,19 @@ export class BgGame {
     if (t && p.board.includes(t)) times += p.board.reduce((n, x) => n + (x.id === 'BG35_883' ? (x.golden ? 2 : 1) : 0), 0);
     if (id === GEM) times += p.board.reduce((n, x) => n + (x.id === 'BG30_121' ? (x.golden ? 2 : 1) : 0), 0);
     if (BOUNTIES.includes(id)) times += p.board.reduce((n, x) => n + (x.id === 'BG33_825' ? (x.golden ? 2 : 1) : 0), 0);
+    // 熔岩潛伏者：每回合第一個對它施放的造法法術永久有效
+    const lurker = t && t.id === 'BG23_009' && SPELLCRAFT_SPELLS.has(id) && t.act !== this.s.round ? t : null;
+    const before = lurker ? { a: lurker.tmpAtk, h: lurker.tmpHp, kw: [...lurker.tmpKw] } : null;
     for (let k = 0; k < times; k++) spec.cast(ctx, t, g, choice);
+    if (lurker && before) {
+      lurker.act = this.s.round;
+      lurker.atk += lurker.tmpAtk - before.a;
+      lurker.hp += lurker.tmpHp - before.h;
+      for (const kw of lurker.tmpKw) if (!before.kw.includes(kw)) lurker[kw] = true;
+      lurker.tmpAtk = before.a;
+      lurker.tmpHp = before.h;
+      lurker.tmpKw = before.kw;
+    }
     p.c.spells = (p.c.spells ?? 0) + 1;
     if (tavern) {
       p.c.tspells = (p.c.tspells ?? 0) + 1;
@@ -861,6 +1038,7 @@ export class BgGame {
         record,
         nextUid: () => this.nextUid(),
         inLobby: (id) => id in this.s.pool,
+        inLobbySpell: (id) => this.spellInLobby(id),
         give: (p, id) => {
           if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
           else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
@@ -922,7 +1100,7 @@ export class BgGame {
     }
   }
 
-  private sideInput(p: BPlayer, persist: boolean): SideInput {
+  sideInput(p: BPlayer, persist: boolean): SideInput {
     return { player: p, board: p.board, tier: p.tier, heroId: p.heroId, hand: p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : [])), persist };
   }
 
@@ -1014,6 +1192,57 @@ export class BgGame {
         const valid = spec.target ? p.board.filter((x) => spec.target!(m, x)) : [];
         G.triggerBattlecry(p, m, G.pick(valid) ?? null);
       },
+      deity(atk, hp) {
+        p.c.deityA = (p.c.deityA ?? 0) + atk;
+        p.c.deityH = (p.c.deityH ?? 0) + hp;
+      },
+      discard(uid) {
+        G.discard(p, uid);
+      },
+      magnetize(host, id) {
+        G.magnetizeCard(p, host, G.make(id));
+      },
+      addFodder(n) {
+        (p.fodder ??= []).push(n);
+      },
+      lockbox() {
+        const box = p.hand.find((h) => h.kind === 'spell' && h.id === LOCKBOX);
+        if (box && box.kind === 'spell') {
+          box.turns = (box.turns ?? 5) - 1;
+          return;
+        }
+        G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: LOCKBOX, g: 1, turns: 5 });
+      },
+      give(m) {
+        G.addMinion(p, m);
+      },
+      castOn(id, m) {
+        G.castRandom(p, id, m);
+      },
+      freeRefresh() {
+        p.frozen = false;
+        G.refreshShop(p);
+      },
+      rally(m) {
+        G.rallyOutside(p, m);
+      },
+      castRandomOn(m) {
+        const id = G.randomSpell(p, (x) => tierOf(x) <= p.tier);
+        if (id) G.castRandom(p, id, m);
+      },
+      getPair(gen, spells) {
+        const pair = G.nextUid();
+        for (let k = 0; k < 2; k++) {
+          const id = gen();
+          if (!id) continue;
+          if (spells) G.addHand(p, { kind: 'spell', uid: G.nextUid(), id, g: 1, pair });
+          else {
+            const m = G.make(id);
+            G.addHand(p, { kind: 'minion', uid: m.uid, m, pair });
+          }
+        }
+      },
+      drawId: (filter) => G.draw(filter),
       discoverSpell(filter, title) {
         G.discoverSpell(p, filter, title);
       },

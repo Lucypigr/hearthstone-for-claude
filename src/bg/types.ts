@@ -1,9 +1,9 @@
 // 英雄戰場的資料型別（和一般對戰的引擎分開，規則差很多）
 
-export type Tribe = 'BEAST' | 'DEMON' | 'DRAGON' | 'ELEMENTAL' | 'MECHANICAL' | 'MURLOC' | 'PIRATE' | 'QUILBOAR' | 'UNDEAD' | 'NAGA';
+export type Tribe = 'BEAST' | 'DEMON' | 'DRAGON' | 'ELEMENTAL' | 'MECHANICAL' | 'MURLOC' | 'PIRATE' | 'QUILBOAR' | 'UNDEAD' | 'NAGA' | 'ABERRATION';
 
 /** 有實作的種族（每局隨機抽 5 個） */
-export const TRIBES: Tribe[] = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA'];
+export const TRIBES: Tribe[] = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'];
 
 export const TRIBE_NAMES: Record<Tribe | 'ALL', string> = {
   BEAST: '野獸',
@@ -16,6 +16,7 @@ export const TRIBE_NAMES: Record<Tribe | 'ALL', string> = {
   QUILBOAR: '野豬人',
   UNDEAD: '不死族',
   NAGA: '納迦',
+  ABERRATION: '畸變體',
   ALL: '全部',
 };
 
@@ -30,6 +31,7 @@ export const TRIBE_ICONS: Record<Tribe, string> = {
   QUILBOAR: '🐗',
   UNDEAD: '💀',
   NAGA: '🔱',
+  ABERRATION: '👁️',
 };
 
 /** bg.json 的一筆資料 */
@@ -111,13 +113,19 @@ export interface BMinion {
   doom?: number;
   /** 范達爾的機運：二選一的兩個效果都會發動 */
   both?: boolean;
+  /** 啟動技能：這回合已經用過（回合數） */
+  act?: number;
+  /** 各卡自己記住的卡（例如致命打擊者拿到的不死族） */
+  memo?: string;
+  /** 戰鬥中：記住的手下（縫合拾荒者摧毀的手下） */
+  held?: BMinion;
 }
 
 export type HandCard =
   /** locked = 這個回合還不能打出（時光尋跡） */
-  | { kind: 'minion'; uid: number; m: BMinion; locked?: number }
+  | { kind: 'minion'; uid: number; m: BMinion; locked?: number; pair?: number }
   /** 法術：酒館法術、鮮血寶石、旅店幸運幣、三合一獎勵、造法法術 */
-  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number };
+  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number; pair?: number; turns?: number };
 
 /** 酒館裡賣的法術 */
 export interface ShopSpell {
@@ -207,6 +215,8 @@ export interface BPlayer {
   after: Pending[];
   /** 上一張施放的酒館法術 */
   lastSpell?: string;
+  /** 惡魔食料：每個來源還剩幾次刷新 */
+  fodder?: number[];
   /** 被淘汰時的戰隊（之後當作殘影） */
   deathBoard: BMinion[] | null;
   /** 電腦玩家的個性 */

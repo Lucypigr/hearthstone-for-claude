@@ -1,7 +1,7 @@
 // 英雄戰場的手下效果（每張卡手動實作；g = 1 一般、2 金卡）
 // 只收錄效果能完整執行的卡；沒有實作的卡不會出現在酒館裡
 import type { Combat, MinionSpec } from './api';
-import { isRace, racesOf, tierOf } from './data';
+import { bgCard, isRace, racesOf, tierOf } from './data';
 import { BOUNTIES, isTavernSpell, TAVERN_SPELLS, spellCostOf } from './spells';
 import { BONUS_KEYWORDS, type BMinion, type Keyword, type Tribe } from './types';
 
@@ -21,6 +21,15 @@ const CONFLAG = 'BG35_910';
 const ABSORB = 'BG35_911';
 const TEA_SET = 'BG28_888';
 const SATELLITE = 'BG31_171t';
+const TENTACLE = 'BGFYM_002t';
+const APPRENTICE = 'BG33_890t';
+const DEITY = 'BGFYM_000';
+const SLUDGE = 'BG36_301t';
+const CHAMBER = 'BG36_371';
+const VOLUMIZERS = ['BG34_170t', 'BG34_170t2', 'BG34_170t3'];
+const CHROMADRAKES = ['BG34_634t', 'BG34_635t', 'BG34_636t', 'BG34_637t', 'BG34_638t'];
+/** 二選一的法術（渦輪野豬騎士用） */
+const CHOOSE_SPELLS = new Set(['BG31_880', 'BG31_881', 'BG31_886', 'BG31_890', 'BG31_893']);
 
 const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
 
@@ -1299,10 +1308,774 @@ export const MINIONS: MinionSpec[] = [
   { id: 'BG35_921', aura: (cnt, _s, g) => [2 * g * (cnt.tspells ?? 0), g * (cnt.tspells ?? 0)], syn: 'NAGA', val: 4 }, // 深淵打手
   { id: 'BG32_835', spellcraft: 'BG32_835t', syn: 'NAGA', val: 3, scale: 4 }, // 寧靜冥想者
   { id: 'BG33_319', spellcraft: 'BG33_319t', syn: 'NAGA', val: 5 }, // 霜鱗女祭司
+  // —— 其他（第三批） ——
+  { id: 'BG32_236', val: 2 }, // 金燦桂冠詩人（永遠是金卡）
+  { id: 'BG35_814', syn: 'DRAGON', val: 2 }, // 緋紅倖存者（攻擊力 6 獲得聖盾：在 combat.ts / buff 處理）
+  { id: 'BG36_921', onSpell: (r, s, t, g) => t === s && r.buff(s, 0, g), syn: 'NAGA', val: 2, scale: 2 }, // 逃亡的通緝犯
+  { id: 'BG21_015', syn: 'DRAGON', val: 4, scale: 2 }, // 塔瑞克苟薩（在 combat.ts 處理）
+  { id: 'BG23_009', syn: 'NAGA', val: 3, scale: 3 }, // 熔岩潛伏者（在 game.ts 處理）
+  { id: 'BG26_174', syn: 'DEMON', val: 3, scale: 2 }, // 靈魂倒轉者（在 game.ts 處理）
+  { id: 'BG32_873', syn: 'DEMON', val: 4, scale: 3 }, // 灰燼腐化者（在 game.ts 處理）
+  { id: 'BG34_170t', magnetic: true, syn: 'MECHANICAL', val: 3 }, // 紅音量機兵
+  { id: 'BG34_170t2', magnetic: true, syn: 'MECHANICAL', val: 3 }, // 藍音量機兵
+  { id: 'BG34_170t3', magnetic: true, syn: 'MECHANICAL', val: 3 }, // 綠音量機兵
+  { id: 'BG34_170', battlecry: (r, _s, g) => { for (let k = 0; k < g; k++) r.getRandom((id) => VOLUMIZERS.includes(id)); }, syn: 'MECHANICAL', val: 4 }, // 自動加速器
+  { id: 'BG34_171', deathrattle: (c, s, g) => { for (let k = 0; k < g; k++) c.give(c.side(s), c.pick(VOLUMIZERS)!); }, syn: 'MECHANICAL', val: 4 }, // 輸送帶構裝體
+  {
+    id: 'BG36_366', // 足智多謀的機器人
+    endTurn: (r, s, g) => {
+      for (let k = 0; k < g; k++) {
+        const id = r.pick(VOLUMIZERS)!;
+        r.magnetize(s, id);
+        r.getMinion(id);
+      }
+    },
+    syn: 'MECHANICAL',
+    val: 4,
+    scale: 6,
+  },
+  {
+    id: 'BG36_367', // 自動起床號
+    text: (m) => `在你購買3張卡牌後，吸附一個隨機音量機兵到此手下並獲得一張複製<i>（還差${3 - (m.n % 3)}張！）</i>`,
+    onBuy: (r, s, _m, g) => {
+      s.n++;
+      if (s.n % 3) return;
+      for (let k = 0; k < g; k++) {
+        const id = r.pick(VOLUMIZERS)!;
+        r.magnetize(s, id);
+        r.getMinion(id);
+      }
+    },
+    syn: 'MECHANICAL',
+    val: 4,
+    scale: 5,
+  },
+  { id: 'BG26_149', syn: 'MECHANICAL', val: 6, scale: 6 }, // 極化節拍手（在 game.ts 處理）
+  { id: 'BG35_150', battlecry: (r, _s, g) => { for (let k = 0; k < g; k++) r.addFodder(3); }, syn: 'DEMON', val: 4 }, // 實驗室助手
+  { id: 'BG36_730', deathrattle: (c, s, g) => c.counter(c.side(s), 'fodder3', g), syn: 'DEMON', val: 4 }, // 受困的拍手者
+  { id: 'BG35_155', syn: 'DEMON', val: 4, scale: 4 }, // 扭曲的憤怒守衛（在 game.ts 處理）
+  { id: 'BG36_520', battlecry: (r, _s, g) => { for (let k = 0; k < g; k++) r.lockbox(); }, syn: 'PIRATE', val: 5 }, // 污水越獄者
+  { id: 'BG36_521', deathrattle: (c, s, g) => c.counter(c.side(s), 'lockbox', g), syn: 'PIRATE', val: 5 }, // 被鎖住的叛變者
+  {
+    id: 'BG36_523', // 進取的逃脫者
+    text: (m) => `在你花費6枚金幣後，獲得一個帶鎖箱。如果你已經有一個，改為讓它提早1回合打開<i>（還差${6 - m.n}枚金幣！）</i>`,
+    onSpend: (r, s, amount, g) => {
+      s.n += amount;
+      while (s.n >= 6) {
+        s.n -= 6;
+        for (let k = 0; k < g; k++) r.lockbox();
+      }
+    },
+    syn: 'PIRATE',
+    val: 3,
+    scale: 4,
+  },
+  {
+    id: 'BG34_856', // 波浪元素
+    deathrattle: (c, s, g) => c.counter(c.side(s), 'rb4', g),
+    syn: 'ELEMENTAL',
+    val: 3,
+  },
+  { id: 'BG29_813', syn: 'DRAGON', val: 4 }, // 堅毅詩人（在 combat.ts 處理）
+  { id: 'BG36_242', rally: (c, s, g) => { for (let k = 0; k < g; k++) c.give(c.side(s), c.pick(CHROMADRAKES)!); }, syn: 'DRAGON', val: 6 }, // 青銅時光行者
+  {
+    id: 'BG34_633', // 龍族守衛
+    battlecry: (r, _s, g) => {
+      for (let k = 0; k < g; k++) r.getMinion(r.pick(CHROMADRAKES)!);
+    },
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < g; k++) c.give(c.side(s), c.pick(CHROMADRAKES)!);
+    },
+    syn: 'DRAGON',
+    val: 9,
+  },
+  { id: 'BG34_634t', battlecry: (r, _s, g) => { for (let k = 0; k < g; k++) { const id = r.pick(TAVERN_SPELLS.filter((x) => spellCostOf(x) === 2 && r.spellInLobby(x))); if (id) r.getSpell(id); } }, val: 3 }, // 藍色炫彩龍
+  { id: 'BG34_635t', battlecry: (r, _s, g) => r.counter('tsH', g), val: 3 }, // 黑色炫彩龍
+  { id: 'BG34_636t', battlecry: (r, s, g) => { for (const m of r.p.board) if (m !== s && race(m, 'DRAGON')) r.buff(m, g, 3 * g); }, val: 3 }, // 綠色炫彩龍
+  { id: 'BG34_637t', battlecry: (r, s, g) => { for (const m of r.p.board) if (m !== s && race(m, 'DRAGON')) r.buff(m, 3 * g, g); }, val: 3 }, // 青銅炫彩龍
+  { id: 'BG34_638t', battlecry: (r, _s, g) => r.counter('tsA', g), val: 3 }, // 紅色炫彩龍
+  { id: 'BG36_331', rally: (c, s, g) => { for (let k = 0; k < g; k++) c.giveRandom(c.side(s), (id) => !!SPEC.get(id)?.choices); }, syn: 'QUILBOAR', val: 5 }, // 荊棘穿隧者
+  {
+    id: 'BG36_848', // 巫妖囤積者
+    avenge: [
+      3,
+      (c, s, g) => {
+        for (let k = 0; k < g; k++) {
+          const id = c.pick(c.startBoard(c.side(s)).filter((x) => SPEC.has(x)));
+          if (id) c.give(c.side(s), id);
+        }
+      },
+    ],
+    syn: 'UNDEAD',
+    val: 6,
+  },
+  {
+    id: 'BG31_323', // 渦輪野豬騎士
+    onPlay: (r, _s, m, g) => {
+      if (!SPEC.get(m.id)?.choices) return;
+      for (const x of r.p.board) if (race(x, 'QUILBOAR')) r.gem(x, 2 * g);
+    },
+    onSpell: (r, _s, _t, g, id) => {
+      if (!CHOOSE_SPELLS.has(id)) return;
+      for (const x of r.p.board) if (race(x, 'QUILBOAR')) r.gem(x, 2 * g);
+    },
+    syn: 'QUILBOAR',
+    val: 4,
+    scale: 4,
+  },
+  {
+    id: 'BG31_835', // 致命打擊者
+    avenge: [
+      4,
+      (c, s) => {
+        const id = c.pick(UNDEAD_IDS.filter((x) => c.inLobby(x)));
+        if (!id) return;
+        s.memo = id;
+        c.give(c.side(s), id);
+      },
+    ],
+    deathrattle: (c, s, g, i) => {
+      if (!s.memo) return;
+      for (let k = 0; k < g; k++) {
+        const m = c.summon(c.side(s), c.make(s.memo), i + k);
+        if (m) m.temp = true;
+      }
+    },
+    syn: 'UNDEAD',
+    val: 8,
+  },
+  {
+    id: 'BG36_341', // 老練的盜匪
+    choices: ['對你的所有手下使用3顆鮮血寶石', '施放鮮血寶石彈幕3次'],
+    battlecry: (r, _s, g, _t, c) => {
+      if (c !== 1) for (const m of r.p.board) r.gem(m, 3 * g);
+      if (c !== 0) r.counter('barrage', 3 * g);
+    },
+    syn: 'QUILBOAR',
+    val: 14,
+  },
+  {
+    id: 'BG36_344', // 『劫掠大師』鉤牙
+    onDiscover: (r, s, g) => {
+      const n = (1 + (r.p.c.goldens ?? 0)) * g;
+      for (const m of r.p.board) if (m !== s && race(m, 'PIRATE')) r.buff(m, n, n);
+    },
+    syn: 'PIRATE',
+    val: 3,
+    scale: 4,
+  },
+  { id: 'BG26_175', val: 6 }, // 驚奇元素（可以和任何元素組成三連：在 game.ts 處理）
+  {
+    id: 'BG36_369', // 貪婪密謀者
+    onSell: (r, s) => {
+      if (s.golden) r.discover((id) => tierOf(id) === 7, '發現一個旅店等級 7 的手下');
+    },
+    syn: 'PIRATE',
+    val: 3,
+  },
+  { id: 'BG31_920', spellcraft: 'BG31_920t', endTurn: (r) => r.counter('darkcrest', 1), syn: 'NAGA', val: 5 }, // 暗冠戰略家
+
+  // —— 啟動技能 ——
+  {
+    id: 'BG36_345', // 可疑的獄卒
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => t !== s,
+      use: (r, _s, g, t) => t && r.buff(t, 3 * g, 3 * g),
+      ai: (_r, s) => 6 * (s.golden ? 2 : 1),
+    },
+    val: 4,
+    scale: 5,
+  },
+  {
+    id: 'BG36_201', // 潛伏的獅子魚
+    activate: {
+      cost: 2,
+      target: 'shop',
+      use: (r, _s, g, t) => {
+        if (!t) return;
+        r.p.shop = r.p.shop.filter((x) => x !== t);
+        const beast = r.p.board.find((x) => race(x, 'BEAST'));
+        if (beast) r.buff(beast, 5 * g, 5 * g);
+      },
+      ai: (r) => (r.p.board.some((x) => race(x, 'BEAST')) ? 10 : 0),
+    },
+    syn: 'BEAST',
+    val: 3,
+    scale: 4,
+  },
+  { id: 'BG36_342', activate: { cost: 2, use: (r) => r.discoverSpell((id) => tierOf(id) <= r.p.tier, '發現一個酒館法術'), ai: () => 6 }, syn: 'PIRATE', val: 3, scale: 3 }, // 聰明的流浪者
+  {
+    id: 'BG36_354', // 誘餌召喚師
+    activate: {
+      cost: 2,
+      use: (r) => {
+        if (!r.p.shop.length) return;
+        const best = r.p.shop.reduce((a, b) => (b.atk > a.atk ? b : a));
+        r.p.shop = r.p.shop.filter((x) => x !== best);
+        r.give(best);
+      },
+      ai: (r) => (r.p.shop.length && r.p.hand.length < 9 ? 7 : 0),
+    },
+    val: 3,
+    scale: 3,
+  },
+  { id: 'BG36_240', activate: { cost: 2, use: (r, _s, g) => { for (let k = 0; k < g; k++) r.getMinion(r.pick(CHROMADRAKES)!); }, ai: () => 7 }, syn: 'DRAGON', val: 4, scale: 3 }, // 受雇的坐騎
+  { id: 'BG36_346', activate: { cost: 1, use: (r, _s, g) => { for (let k = 0; k < 2 * g; k++) r.getSpell('BG28_897'); }, ai: () => 9 }, val: 4, scale: 5 }, // 水果小販
+  {
+    id: 'BG36_180', // 活體監獄
+    activate: { cost: 1, use: (r, s) => void (s.n = r.turn), ai: (r) => (r.p.gold >= 4 ? 7 : 0) },
+    onBuy: (r, s, m, g) => {
+      if (s.n !== r.turn) return;
+      s.n = 0;
+      r.buff(s, m.atk * g, m.hp * g);
+    },
+    syn: 'ELEMENTAL',
+    val: 4,
+    scale: 4,
+  },
+  {
+    id: 'BG36_362', // 犧牲的憤怒守衛
+    text: (m) => `<b>亡語：</b>在本賽局中，賦予酒館中的手下+${2 + m.n}/+${2 + m.n}。<b>啟動(1)：</b>強化此手下`,
+    activate: { cost: 1, use: (_r, s) => void s.n++, ai: () => 4 },
+    deathrattle: (c, s, g) => {
+      c.counter(c.side(s), 'tavA', (2 + s.n) * g);
+      c.counter(c.side(s), 'tavH', (2 + s.n) * g);
+    },
+    syn: 'DEMON',
+    val: 4,
+  },
+  {
+    id: 'BG36_503', // 靈魂獄卒
+    activate: {
+      cost: 2,
+      use: (r, _s, g) => {
+        for (let k = 0; k < g; k++) {
+          for (const m of r.p.board) {
+            if (!race(m, 'DEMON')) continue;
+            const food = r.pick(r.p.shop);
+            if (food) r.consume(m, food);
+          }
+        }
+      },
+      ai: (r) => r.p.board.filter((m) => race(m, 'DEMON')).length * 3 + r.turn * 0.5,
+    },
+    syn: 'DEMON',
+    val: 4,
+    scale: 6,
+  },
+  { id: 'BG36_506', activate: { cost: 1, use: (r, s) => void (s.n = r.turn), ai: (r) => (r.p.hand.some((h) => h.kind === 'minion' && SPEC.get(h.m.id)?.magnetic) ? 8 : 0) }, syn: 'MECHANICAL', val: 5 }, // 無人機複製器
+  {
+    id: 'BG36_508', // 謹慎的召喚師
+    activate: {
+      cost: 1,
+      use: (r, s, g) => {
+        for (let k = 0; k < 2 * g; k++) r.castRandomOn(s);
+      },
+      ai: () => 8,
+    },
+    syn: 'NAGA',
+    val: 4,
+    scale: 6,
+  },
+  {
+    id: 'BG36_511', // 死亡鈴手
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => !!t && t !== s && race(t, 'UNDEAD'),
+      use: (r, s, g, t) => {
+        if (!t) return;
+        const i = r.p.board.indexOf(t);
+        r.destroy(t);
+        const back = r.make(t.id, t.golden);
+        back.hp = 1;
+        back.reborn = false;
+        r.p.board.splice(Math.max(0, i), 0, back);
+        r.buff(s, 4 * g, 4 * g);
+      },
+      ai: (r) => (r.p.board.some((m) => race(m, 'UNDEAD') && m.atk + m.hp <= 6) ? 6 : 0),
+    },
+    syn: 'UNDEAD',
+    val: 4,
+  },
+  {
+    id: 'BG36_701', // 海帶看守者
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => !!t && t !== s && !!SPEC.get(t.id)?.battlecry,
+      use: (r, _s, g, t) => {
+        if (t) for (let k = 0; k < g; k++) r.battlecry(t);
+      },
+      ai: (r) => (r.p.board.some((m) => SPEC.get(m.id)?.battlecry) ? 6 : 0),
+    },
+    syn: 'MURLOC',
+    val: 5,
+  },
+  {
+    id: 'BG36_621', // 敏捷的逃兵
+    activate: {
+      cost: 1,
+      use: (r, _s, g) => {
+        for (const m of r.p.shop) {
+          r.buff(m, 8 * g, 8 * g);
+          r.giveKw(m, r.pick(['taunt', 'shield', 'windfury'] as Keyword[])!);
+        }
+      },
+      ai: (r) => (r.p.gold >= 4 ? 10 : 0),
+    },
+    syn: 'DEMON',
+    val: 6,
+  },
+  {
+    id: 'BG36_700', // 下水道逃脫者
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => !!t && t !== s && race(t, 'MURLOC'),
+      use: (r, _s, g, t) => {
+        if (!t) return;
+        r.buff(t, 7 * g, 7 * g);
+        const kw = r.pick(BONUS_KEYWORDS.filter((k) => !t[k]));
+        if (kw) r.giveKw(t, kw);
+      },
+      ai: (r) => (r.p.board.filter((m) => race(m, 'MURLOC')).length > 1 ? 14 : 0),
+    },
+    syn: 'MURLOC',
+    val: 6,
+    scale: 6,
+  },
+  {
+    id: 'BG36_356', // 泰瑞爾
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => !!t && t !== s && t.atk + t.hp < 100,
+      use: (_r, _s, _g, t) => {
+        if (!t) return;
+        t.atk = Math.max(t.atk, 50);
+        t.hp = Math.max(t.hp, 50);
+      },
+      ai: (r) => (r.p.board.some((m) => m.atk + m.hp < 60) ? 40 : 0),
+    },
+    val: 20,
+  },
+  {
+    id: 'BG36_370', // 勝利的地占師
+    activate: {
+      cost: 2,
+      use: (r, _s, g) => {
+        for (let k = 0; k < 6 * g; k++) {
+          if (r.p.hand.length < 10) r.getGems(1);
+          else if (r.p.board[0]) r.gem(r.p.board[0]);
+        }
+      },
+      ai: () => 12,
+    },
+    syn: 'QUILBOAR',
+    val: 6,
+    scale: 6,
+  },
+  {
+    id: 'BG28_582', // 殘破的強盜
+    activate: { cost: 0, target: 'hand', use: (r, _s, g) => r.getGems(3 * g), ai: () => 2 },
+    syn: 'QUILBOAR',
+    val: 3,
+  },
+
+  // —— 畸變體 ——
+  { id: 'BG36_098', onSell: (r, _s, g) => r.getMinion(TENTACLE, g > 1), syn: 'ABERRATION', val: 3 }, // 佐亞觸手
+  { id: 'BG36_110', battlecry: (r, _s, g) => r.deity(2 * g, g), syn: 'ABERRATION', val: 3 }, // 歡愉者
+  { id: 'BG36_099', activate: { cost: 0, target: 'hand', use: (r, _s, g) => r.deity(2 * g, 2 * g), ai: () => 2 }, syn: 'ABERRATION', val: 3, scale: 2 }, // 腦腐者
+  {
+    id: 'BG36_100', // 漫遊的意志破壞者
+    onSell: (r, _s, g) => {
+      for (let k = 0; k < g; k++) r.getPair(() => r.pick(TAVERN_SPELLS.filter((x) => tierOf(x) <= r.p.tier && r.spellInLobby(x)))!, true);
+    },
+    syn: 'ABERRATION',
+    val: 4,
+  },
+  {
+    id: 'BG36_116', // 暗腐卵
+    deathrattle: (c, s, g, i) => {
+      summonAt(c, s, TENTACLE, 1, g > 1, i);
+      for (const m of c.friends(s)) c.buff(m, g, 0);
+    },
+    syn: 'ABERRATION',
+    val: 4,
+  },
+  {
+    id: 'BG36_101', // 不情願的懶鬼
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < g; k++) c.give(c.side(s), c.pick(TAVERN_SPELLS.filter((x) => spellCostOf(x) === 1 && c.inLobbySpell(x)))!);
+    },
+    syn: 'ABERRATION',
+    val: 3,
+  },
+  {
+    id: 'BG36_108', // 惡毒的心靈斬擊者
+    onSpell: (r, s, _t, g, id) => {
+      if (!isTavernSpell(id)) return;
+      r.buff(s, g, 2 * g);
+      r.deity(g, 2 * g);
+    },
+    syn: 'ABERRATION',
+    val: 2,
+    scale: 4,
+  },
+  { id: 'BG36_112', battlecry: (r, _s, g) => { for (let k = 0; k < g; k++) r.getSpell(SLUDGE); }, syn: 'ABERRATION', val: 5 }, // 惡臭腐蝕者
+  { id: 'BG36_113', deathrattle: (c, s, g) => c.deity(c.side(s), 2 * g, g), syn: 'ABERRATION', val: 4 }, // 漂流的祭品
+  {
+    id: 'BG36_311', // 深淵使者
+    activate: { cost: 0, target: 'hand', use: (r, _s, g) => { for (let k = 0; k < g; k++) r.getSpell(r.pick(TAVERN_SPELLS.filter((x) => tierOf(x) <= r.p.tier && r.spellInLobby(x)))!); }, ai: () => 2 },
+    syn: 'ABERRATION',
+    val: 3,
+  },
+  {
+    id: 'BG36_106', // 割喉者卡希爾
+    onDiscard: (r, s, g) => {
+      r.buff(s, 4 * g, 4 * g);
+      r.deity(4 * g, 4 * g);
+    },
+    syn: 'ABERRATION',
+    val: 3,
+    scale: 6,
+  },
+  {
+    id: 'BG36_114', // 寄生肉塊
+    text: (m, p) => `在你的回合結束時，賦予你最左邊的手下+${(2 + (p?.c.discards ?? 0)) * (m.golden ? 2 : 1)}/+${(2 + (p?.c.discards ?? 0)) * (m.golden ? 2 : 1)}<i>（你在本賽局中每棄掉一張牌後強化！）</i>`,
+    endTurn: (r, _s, g) => {
+      const n = (2 + (r.p.c.discards ?? 0)) * g;
+      if (r.p.board[0]) r.buff(r.p.board[0], n, n);
+    },
+    syn: 'ABERRATION',
+    val: 3,
+    scale: 6,
+  },
+  { id: 'BG36_115', endTurn: (r, _s, g) => { for (let k = 0; k < g; k++) r.getSpell(SLUDGE); }, syn: 'ABERRATION', val: 3, scale: 4 }, // 夢魘腐蝕者
+  {
+    id: 'BG36_308', // 無面特務
+    onSell: (r, _s, g) => {
+      for (let k = 0; k < g; k++) r.getPair(() => r.drawId((id) => isRace(id, 'ABERRATION'))!, false);
+    },
+    syn: 'ABERRATION',
+    val: 5,
+  },
+  {
+    id: 'BG36_312', // 心靈扭曲招募官
+    activate: { cost: 0, target: 'hand', use: (r, _s, g) => { for (let k = 0; k < g; k++) r.getRandom((id) => isRace(id, 'ABERRATION')); }, ai: () => 3 },
+    syn: 'ABERRATION',
+    val: 4,
+  },
+  {
+    id: 'BG36_097', // 心靈扭曲者古爾沙
+    onDiscard: (r, s, g) => {
+      for (const m of r.p.board) if (m !== s) r.buff(m, 4 * g, 4 * g);
+    },
+    syn: 'ABERRATION',
+    val: 4,
+    scale: 8,
+  },
+  {
+    id: 'BG36_102', // 意志剝奪者
+    afterAttack: (c, s, g) => {
+      for (let k = 0; k < g; k++) {
+        const foes = c.enemies(s);
+        if (!foes.length || s.dead) return;
+        const t = foes.reduce((a, b) => (b.hp > a.hp ? b : a));
+        c.damage(t, s.atk, s);
+      }
+    },
+    syn: 'ABERRATION',
+    val: 8,
+  },
+  {
+    id: 'BG36_103', // 恩拉其工兵
+    battlecry: (r, _s, g) => {
+      for (let k = 0; k < g; k++) r.getSpell(CHAMBER);
+    },
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < g; k++) c.give(c.side(s), CHAMBER);
+    },
+    syn: 'ABERRATION',
+    val: 7,
+  },
+  {
+    id: 'BG36_300', // 恩拉其霜喚者
+    activate: {
+      cost: 0,
+      target: 'hand',
+      use: (r, _s, g) => {
+        r.counter('tsA', g);
+        r.counter('tsH', g);
+      },
+      ai: () => 4,
+    },
+    syn: 'ABERRATION',
+    val: 4,
+  },
+  {
+    id: 'BG36_318', // 無面轉化者
+    deathrattle: (c, s, g) => {
+      const n = c.cnt(c.side(s), 'tspells');
+      c.deity(c.side(s), (2 + n) * g, (1 + n) * g);
+    },
+    syn: 'ABERRATION',
+    val: 5,
+  },
+  {
+    id: 'BG36_320', // 神秘的卡希爾
+    endTurn: (r, s, g) => {
+      const spells = r.p.hand.filter((h) => h.kind === 'spell' && isTavernSpell(h.id)).slice(0, 3);
+      for (const h of spells) {
+        r.discard(h.uid);
+        r.buff(s, 7 * g, 7 * g);
+      }
+    },
+    syn: 'ABERRATION',
+    val: 4,
+    scale: 4,
+  },
+  { id: 'BG36_104', deathrattle: (c, s, g) => c.counter(c.side(s), 'tsH', 4 * g), syn: 'ABERRATION', val: 8 }, // 黑暗傀儡師
+  { id: 'BG36_109', onGetCard: (r, _s, g) => r.deity(4 * g, 5 * g), syn: 'ABERRATION', val: 4, scale: 8 }, // 疑慮之影
+  {
+    id: 'BGFYM_005', // 先驅者阿菲拉斯
+    text: (m) => `每當你棄掉一張牌，賦予你的神祇+${(2 + m.n) * (m.golden ? 2 : 1)}/+${(1 + m.n) * (m.golden ? 2 : 1)}並強化此手下`,
+    onDiscard: (r, s, g) => {
+      r.deity((2 + s.n) * g, (1 + s.n) * g);
+      s.n++;
+    },
+    syn: 'ABERRATION',
+    val: 4,
+    scale: 6,
+  },
+  {
+    id: 'BG36_206', // 尖酸鯊魚
+    onSell: (r, _s, g) => {
+      r.freeRefresh();
+      const beast = r.p.board.find((x) => race(x, 'BEAST'));
+      if (beast) r.buff(beast, 5 * g, 5 * g);
+    },
+    syn: 'BEAST',
+    val: 6,
+  },
+  {
+    id: 'BG36_243', // 空育逃亡者
+    activate: {
+      cost: 1,
+      target: 'friend',
+      filter: (s, t) => !!t && t !== s && !!SPEC.get(t.id)?.rally,
+      use: (r, _s, g, t) => {
+        if (t) for (let k = 0; k < g; k++) r.rally(t);
+      },
+      ai: (r) => (r.p.board.some((m) => SPEC.get(m.id)?.rally) ? 7 : 0),
+    },
+    syn: 'DRAGON',
+    val: 5,
+  },
+  {
+    id: 'BG33_891', // 魔術魚真菌學家
+    onBuySpell: (r, s, id, g) => {
+      if (s.act === r.turn && s.n >= g) return;
+      if (s.act !== r.turn) (s.act = r.turn), (s.n = 0);
+      s.n++;
+      const m = r.make(APPRENTICE);
+      m.memo = id;
+      r.give(m);
+    },
+    syn: 'MURLOC',
+    val: 4,
+    scale: 4,
+  },
+  {
+    id: APPRENTICE, // 魔術魚學徒
+    text: (m) => (m.memo ? `<b>戰吼：</b>施放${bgCard(m.memo).name}<i>（不能三連）</i>` : null),
+    battlecry: (r, s) => {
+      if (s.memo) r.castOn(s.memo, s);
+    },
+  },
+  { id: TENTACLE, val: 0 },
+  { id: DEITY, val: 0 },
+
+  // —— 旅店等級 7 ——
+  {
+    id: 'BG25_034', // 山德斯船長
+    target: (_s, t) => !t.golden && tierOf(t.id) <= 6,
+    battlecry: (r, _s, _g, t) => {
+      if (!t) return;
+      const base = r.make(t.id, false);
+      t.golden = true;
+      t.atk += base.atk;
+      t.hp += base.hp;
+      r.p.c.goldens = (r.p.c.goldens ?? 0) + 1;
+    },
+    syn: 'PIRATE',
+    val: 20,
+  },
+  {
+    id: 'BG27_016', // 薩格拉斯的勇士
+    battlecry: (r, _s, g) => r.tavernBuff(8 * g, 8 * g),
+    deathrattle: (c, s, g) => {
+      c.counter(c.side(s), 'tavA', 8 * g);
+      c.counter(c.side(s), 'tavH', 8 * g);
+    },
+    syn: 'DEMON',
+    val: 14,
+  },
+  {
+    id: 'BG27_017', // 黑曜石劫掠者
+    rally: (c, s, g, t) => {
+      for (let k = 0; k < g; k++) {
+        const foes = c.board(c.side(t));
+        const i = foes.indexOf(t);
+        const near = c.pick([foes[i - 1], foes[i + 1]].filter((m) => m && !m.dead));
+        c.damage(t, s.atk, s);
+        if (near) c.damage(near, s.atk, s);
+      }
+    },
+    syn: 'DRAGON',
+    val: 15,
+  },
+  { id: 'BG27_514', spellcraft: 'BG27_514t', syn: 'NAGA', val: 10 }, // 海巫札爾吉拉
+  {
+    id: 'BG31_999', // 縫合拾荒者
+    soc: (c, s) => {
+      const b = c.board(c.side(s));
+      const left = b[b.indexOf(s) - 1];
+      if (!left || left.dead || left.id === s.id) return;
+      s.held = { ...left, mags: left.mags.slice(), tmpKw: [] };
+      c.destroy(left);
+    },
+    deathrattle: (c, s, g, i) => {
+      if (!s.held) return;
+      for (let k = 0; k < g; k++) {
+        const copy = { ...s.held, uid: c.make(s.held.id).uid, dead: false, src: undefined, mags: s.held.mags.slice() };
+        copy.hp = copy.maxHp ?? copy.hp;
+        c.summon(c.side(s), copy, i + k);
+      }
+    },
+    syn: 'UNDEAD',
+    val: 12,
+  },
+  {
+    id: 'BG34_145', // 未來鰭
+    endTurn: (r, s) => {
+      const h = r.p.hand.find((x) => x.kind === 'minion');
+      if (h && h.kind === 'minion') r.buff(h.m, s.atk, s.hp);
+    },
+    syn: 'MURLOC',
+    val: 6,
+    scale: 12,
+  },
+  {
+    id: 'BG34_319', // 高階守護者拉
+    battlecry: (r, _s, g) => {
+      for (let k = 0; k < g; k++) r.getRandom((id) => tierOf(id) === 6);
+    },
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < g; k++) c.giveRandom(c.side(s), (id) => tierOf(id) === 6);
+    },
+    rally: (c, s, g) => {
+      for (let k = 0; k < g; k++) c.giveRandom(c.side(s), (id) => tierOf(id) === 6);
+    },
+    val: 18,
+  },
+  {
+    id: 'BG34_320', // 最後的倖存者
+    rally: (c, s, g) => {
+      const done = new Set<BMinion>();
+      for (const t of TRIBES_ALL) {
+        const m = c.pick(c.friends(s).filter((x) => !done.has(x) && race(x, t)));
+        if (!m) continue;
+        done.add(m);
+        c.perm(m, 15 * g, 15 * g);
+      }
+    },
+    val: 20,
+  },
+  {
+    id: 'BG34_322', // 堅定的科多獸
+    onSummon: (c, s, m) => {
+      if ((s.uses ?? 0) >= 3 * (s.golden ? 2 : 1)) return;
+      s.uses = (s.uses ?? 0) + 1;
+      c.buff(m, s.atk, s.maxHp ?? s.hp);
+    },
+    syn: 'BEAST',
+    val: 15,
+  },
+  {
+    id: 'BG34_950', // 石器時代石板
+    onBuy: (r, s, m, g) => {
+      if (s.act === r.turn) return;
+      s.act = r.turn;
+      for (let k = 0; k < g; k++) {
+        r.buff(m, 20, 20);
+        r.buff(m, m.atk, m.hp);
+      }
+    },
+    syn: 'ELEMENTAL',
+    val: 12,
+    scale: 20,
+  },
+  {
+    id: 'BG36_111', // 恐懼之煞
+    onSpell: (r, _s, _t, g, id) => {
+      if (!isTavernSpell(id)) return;
+      for (const m of r.p.board) r.buff(m, 3 * g, 3 * g);
+      r.deity(3 * g, 3 * g);
+    },
+    syn: 'ABERRATION',
+    val: 10,
+    scale: 12,
+  },
+  {
+    id: 'BG36_333', // 監獄巨像
+    rally: (c, s, g, t) => {
+      for (let k = 0; k < g; k++) {
+        const golem = c.make(s.id);
+        golem.atk = s.atk;
+        golem.hp = s.hp;
+        golem.temp = true;
+        const placed = c.summon(c.side(s), golem, c.index(s));
+        if (placed && !t.dead) c.damage(t, placed.atk, placed);
+        if (placed && !t.dead) c.damage(placed, t.atk, t);
+      }
+    },
+    syn: 'QUILBOAR',
+    val: 15,
+  },
 ];
 
 /** 衍生物（不在酒館卡池裡） */
-export const TOKENS = new Set(['BG28_603t', 'BG_BOT_312t', 'BG_ICC_026t', 'BGS_115t', 'BG25_010t', 'BG36_200t', 'BG19_010', 'BG19_010t', 'BG23_HERO_201pt', 'BG22_HERO_305t']);
+export const TOKENS = new Set([
+  'BG28_603t',
+  'BG_BOT_312t',
+  'BG_ICC_026t',
+  'BGS_115t',
+  'BG25_010t',
+  'BG36_200t',
+  'BG19_010',
+  'BG19_010t',
+  'BG23_HERO_201pt',
+  'BG22_HERO_305t',
+  'BG34_634t',
+  'BG34_635t',
+  'BG34_636t',
+  'BG34_637t',
+  'BG34_638t',
+  'BG35_150t',
+  'BG36_205',
+  TENTACLE,
+  DEITY,
+  APPRENTICE,
+]);
+
+/** 不死族（致命打擊者用） */
+const UNDEAD_IDS: string[] = [];
+/** 所有種族（最後的倖存者用） */
+const TRIBES_ALL = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'] as Tribe[];
 
 export const SPEC = new Map<string, MinionSpec>(MINIONS.map((s) => [s.id, s]));
 
@@ -1311,6 +2084,7 @@ export const POOL_IDS = MINIONS.map((s) => s.id).filter((id) => !TOKENS.has(id))
 
 /** 亡語手下（食屍鬼蛇用） */
 export const DEATHRATTLE_POOL = POOL_IDS.filter((id) => SPEC.get(id)?.deathrattle);
+UNDEAD_IDS.push(...POOL_IDS.filter((id) => isRace(id, 'UNDEAD')));
 
 export const SPELLCRAFT_SPELLS = new Set(MINIONS.map((s) => s.spellcraft).filter((x): x is string => !!x));
 export const TRIPLE_REWARD = 'TB_BaconShop_Triples_01';

@@ -255,6 +255,8 @@ function step(M: Mind): boolean {
   if (usePower(M)) return true;
   // 6. 買手下
   if (buySomething(M)) return true;
+  // 7. 啟動技能
+  if (activateSomething(M)) return true;
   // 7. 刷新
   if (rollOrFreeze(M)) return true;
   return false;
@@ -440,6 +442,52 @@ function buySomething(M: Mind): boolean {
   G.buy(p.idx, best.m.uid);
   M.bought.push(bgCard(best.m.id).name);
   return true;
+}
+
+/** 啟動技能：值得花錢就用 */
+function activateSomething(M: Mind): boolean {
+  const { G, p, persona } = M;
+  for (const m of p.board) {
+    const act = SPEC.get(m.id)?.activate;
+    if (!act || m.act === G.round || p.gold < act.cost) continue;
+    // 新手常常忘記有啟動技能
+    if (persona.skill < 0.35 && M.r() < 0.6) continue;
+    const v = act.ai ? act.ai(G.recruit(p), m) : 3;
+    if (v <= 0 || v < act.cost * 3) continue;
+    let target: number | undefined;
+    let hand: number | undefined;
+    if (act.target === 'friend') {
+      const t = pickFriendlyTarget(M, (x) => !act.filter || act.filter(m, x, p));
+      if (!t) continue;
+      target = t.uid;
+    } else if (act.target === 'shop') {
+      if (!p.shop.length) continue;
+      target = p.shop.reduce((a, b) => (buyValue(M, b) < buyValue(M, a) ? b : a)).uid;
+    } else if (act.target === 'hand') {
+      const card = discardChoice(M);
+      if (!card) continue;
+      hand = card.uid;
+    }
+    try {
+      G.activate(p.idx, m.uid, target, hand);
+    } catch {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** 要棄掉哪張牌：棄掉有好處的優先，其次是最沒用的 */
+function discardChoice(M: Mind): HandCard | undefined {
+  const { G, p } = M;
+  const good = p.hand.find((h) => h.kind === 'spell' && ['BG36_301t', 'BG36_371', 'BG36_303'].includes(h.id));
+  if (good) return good;
+  const spells = p.hand.filter((h) => h.kind === 'spell' && h.id !== TRIPLE_REWARD && h.id !== 'BG36_520t');
+  if (spells.length) return spells.reduce((a, b) => (spellValue(M, a.kind === 'spell' ? a.id : '') <= spellValue(M, b.kind === 'spell' ? b.id : '') ? a : b));
+  const minions = p.hand.filter((h): h is HandCard & { kind: 'minion' } => h.kind === 'minion' && !h.m.golden);
+  if (minions.length && (p.board.length >= BOARD_MAX || minions.length > 2)) return minions.reduce((a, b) => (minionValue(G, p, a.m, M.focus) <= minionValue(G, p, b.m, M.focus) ? a : b));
+  return undefined;
 }
 
 /** 酒館法術值多少（大約幾點身材）；新手看不太懂法術 */

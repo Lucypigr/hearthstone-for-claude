@@ -191,6 +191,7 @@ function MinionTip({ m, p, G }: { m: BMinion; p: BPlayer | null; G: BgGame }) {
       {m.both && <div className="bg-tip-note">二選一的兩個效果都會發動</div>}
       {m.mags.length > 0 && <div className="bg-tip-note">磁力：{m.mags.map((x) => bgCard(x.id).name).join('、')}</div>}
       {kws.length > 0 && <div className="bg-tip-note">{kws.map((k) => KEYWORD_NAMES[k]).join('・')}</div>}
+      {m.memo && <div className="bg-tip-note">記住的手下：{bgCard(m.memo).name}</div>}
       {(m.tmpAtk || m.tmpHp || m.tmpKw.length) > 0 && (
         <div className="bg-tip-note">
           直到下回合：{m.tmpAtk || m.tmpHp ? `+${m.tmpAtk}/+${m.tmpHp}` : ''} {m.tmpKw.map((k) => KEYWORD_NAMES[k]).join('・')}
@@ -262,6 +263,7 @@ function MinionToken({
         {e.kw.windfury && <span title="風怒">🌀</span>}
         {e.kw.reborn && <span title="復生">👼</span>}
         {m.mags.length > 0 && <span title="磁力">🧲{m.mags.length}</span>}
+        {!combat && specs.some(({ s }) => s.activate) && <span title={m.act === G.round ? '本回合已啟動' : '啟動技能：點這個手下來使用'}>{m.act === G.round ? '✔' : '🔆'}</span>}
         {avenge && combat && <span title="報復">{avenge[0] - (m.avenge ?? 0)}</span>}
       </div>
       {!combat && <div className="bg-minion-tier">{tierOf(m.id)}</div>}
@@ -279,7 +281,7 @@ function SpellCard({
   locked,
   tipSide = 'top',
 }: {
-  card: { id: string; g: number; temp?: boolean; tier?: number };
+  card: { id: string; g: number; temp?: boolean; tier?: number; turns?: number; pair?: number };
   onClick: () => void;
   selected: boolean;
   /** 酒館裡的價錢（手牌不用顯示） */
@@ -315,6 +317,8 @@ function SpellCard({
             {card.g > 1 && <div className="bg-tip-note">金卡：效果加倍</div>}
             {card.temp && <div className="bg-tip-note">回合結束時會消失</div>}
             {locked && <div className="bg-tip-note">鎖定中：下回合才能使用</div>}
+            {card.turns !== undefined && <div className="bg-tip-note">還有 {card.turns} 回合打開</div>}
+            {card.pair !== undefined && <div className="bg-tip-note">成對：打出其中一張時，另一張會被棄掉</div>}
             {d.pool && <div className="bg-tip-note">酒館法術</div>}
           </div>
         </div>
@@ -455,6 +459,8 @@ type Mode =
   | { k: 'choose'; uid: number }
   | { k: 'target'; uid: number; pos: number; choice?: number }
   | { k: 'board'; uid: number }
+  /** 啟動技能選目標 */
+  | { k: 'act'; uid: number }
   | { k: 'power' };
 
 export function BgMatch({ onExit }: { onExit: () => void }) {
@@ -572,7 +578,14 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   const busy = !!me.discover;
   const nextOpp = G.opponentOf(0);
 
+  const actMinion = mode.k === 'act' ? me.board.find((x) => x.uid === mode.uid) : undefined;
+  const actSpec = actMinion ? SPEC.get(actMinion.id)?.activate : undefined;
+
   const isTarget = (m: BMinion, where: 'board' | 'shop'): boolean => {
+    if (mode.k === 'act' && actMinion && actSpec) {
+      if ((actSpec.target === 'friend' && where !== 'board') || (actSpec.target === 'shop' && where !== 'shop') || actSpec.target === 'hand') return false;
+      return !actSpec.filter || actSpec.filter(actMinion, m, me);
+    }
     if (mode.k === 'power') {
       if (hero.target === 'friend' && where !== 'board') return false;
       if (hero.target === 'shop' && where !== 'shop') return false;
@@ -618,8 +631,25 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
     setMode({ k: 'idle' });
   };
 
+  /** 啟動技能 */
+  const startActivate = (m: BMinion) => {
+    const a = SPEC.get(m.id)?.activate;
+    if (!a) return;
+    if (!a.target) {
+      act(() => G.activate(0, m.uid));
+      return setMode({ k: 'idle' });
+    }
+    if (a.target === 'hand' && !me.hand.length) return setToast('手牌裡沒有可以棄掉的牌');
+    setMode({ k: 'act', uid: m.uid });
+  };
+
   const clickBoard = (m: BMinion) => {
     if (busy) return;
+    if (mode.k === 'act' && actMinion) {
+      if (!isTarget(m, 'board')) return setToast('不能選這個目標');
+      act(() => G.activate(0, actMinion.uid, m.uid));
+      return setMode({ k: 'idle' });
+    }
     if (mode.k === 'power') {
       if (!isTarget(m, 'board')) return setToast('不能選這個目標');
       act(() => G.usePower(0, m.uid));
@@ -644,6 +674,11 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
 
   const clickShop = (m: BMinion) => {
     if (busy) return;
+    if (mode.k === 'act' && actMinion) {
+      if (!isTarget(m, 'shop')) return setToast('不能選這個目標');
+      act(() => G.activate(0, actMinion.uid, m.uid));
+      return setMode({ k: 'idle' });
+    }
     if (mode.k === 'power') {
       if (!isTarget(m, 'shop')) return setToast('不能選這個目標');
       act(() => G.usePower(0, m.uid));
@@ -661,6 +696,10 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
 
   const clickHand = (h: HandCard) => {
     if (busy) return;
+    if (mode.k === 'act' && actMinion && actSpec?.target === 'hand') {
+      act(() => G.activate(0, actMinion.uid, undefined, h.uid));
+      return setMode({ k: 'idle' });
+    }
     if (h.locked === G.round) return setToast('這張卡鎖定中，下回合才能使用');
     if (mode.k === 'hand' && mode.uid === h.uid) {
       // 再點一次：放到最右邊
@@ -863,12 +902,24 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                 <button className="btn small danger" onClick={() => (act(() => G.sell(0, selectedBoard.uid)), setMode({ k: 'idle' }))}>
                   賣出 🪙{G.sellPrice(me, selectedBoard)}
                 </button>
+                {SPEC.get(selectedBoard.id)?.activate && (
+                  <button
+                    className="btn small primary"
+                    disabled={selectedBoard.act === G.round || me.gold < SPEC.get(selectedBoard.id)!.activate!.cost}
+                    onClick={() => startActivate(selectedBoard)}
+                  >
+                    {selectedBoard.act === G.round ? '本回合已啟動' : `啟動 🪙${SPEC.get(selectedBoard.id)!.activate!.cost}`}
+                  </button>
+                )}
                 <button className="btn small" onClick={() => act(() => G.move(0, selectedBoard.uid, me.board.indexOf(selectedBoard) + 1))}>
                   右移 ▶
                 </button>
               </div>
             )}
             {mode.k === 'target' && <div className="bg-hint">選擇戰吼的目標</div>}
+            {mode.k === 'act' && (
+              <div className="bg-hint">{actSpec?.target === 'hand' ? '選擇一張要棄掉的手牌' : actSpec?.target === 'shop' ? '選擇酒館裡的一個手下' : '選擇一個友方手下'}</div>
+            )}
             {mode.k === 'power' && <div className="bg-hint">選擇英雄能力的目標</div>}
             {mode.k === 'hand' && handMinion && <div className="bg-hint">點空格放置手下{me.board.some((x) => canMagnetize(handMinion, x)) ? '，或點機械吸附上去' : ''}（再點一次手牌放到最右邊）</div>}
             {mode.k === 'hand' && spellSpec && <div className="bg-hint">選擇法術的目標{spellSpec.target === 'any' ? '（可以選酒館裡的手下）' : ''}</div>}
@@ -908,6 +959,11 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
               <div className="bg-gold" title="金幣">
                 🪙 {me.gold}
                 <small> / {goldForTurn(G.round) + me.maxGoldBonus}</small>
+                {G.s.tribes.includes('ABERRATION') && (
+                  <div className="bg-extra" title="你的神祇：4 個友方畸變體在戰鬥中死亡後甦醒">
+                    👁️ 克蘇恩 {1 + (me.c.deityA ?? 0)}/{1 + (me.c.deityH ?? 0)}
+                  </div>
+                )}
                 {(() => {
                   const [a, h] = G.spellExtra(me);
                   return a || h ? (
