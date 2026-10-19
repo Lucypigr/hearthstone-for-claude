@@ -268,7 +268,9 @@ export type DynAmount =
   | 'soulFragments'
   /** 你牌堆中不是一開始就在裡面的卡數 / 你控制的手下有幾種不同類型 */
   | 'nonStartingInDeck'
-  | 'uniqueFriendlyTypes';
+  | 'uniqueFriendlyTypes'
+  /** 本場對戰中你打出過的軍情七處卡數 */
+  | 'si7Played';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -397,6 +399,11 @@ export type Condition =
   | { c: 'itOtherClass' }
   /** 你的手牌中有另一個職業的卡 */
   | { c: 'holdingOtherClass' }
+  /** 你在前三個回合都施放過火焰法術 / 本回合有英雄受到傷害 / 你的手牌已滿 / 本回合你施放過這個派系的法術 */
+  | { c: 'fireLastThreeTurns' }
+  | { c: 'anyHeroDamagedThisTurn' }
+  | { c: 'handFull' }
+  | { c: 'castSchoolThisTurn'; school: string }
   /** 本場對戰中你施放過至少 n 張法術 / 你的英雄的攻擊力至少 n */
   | { c: 'spellsCast'; n: number }
   | { c: 'heroAtk'; n: number }
@@ -716,6 +723,8 @@ export type Trig =
   | { k: 'magnetize' }
   /** 你使用地點牌後 */
   | { k: 'locationUsed' }
+  /** 你的英雄獲得攻擊力後（amount = 獲得多少） */
+  | { k: 'heroAtkGain' }
   | { k: 'secret'; ev: SecretEvent };
 
 export type SecretEvent =
@@ -1174,6 +1183,9 @@ export type MinionFlag =
   | 'inara'
   | 'outcastDiscount'
   | 'lifestealDamagesEnemy'
+  // 暴風城
+  | 'jaxon'
+  | 'heroesTakeExtra'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'

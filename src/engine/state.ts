@@ -216,6 +216,10 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 飛行管理員杜加爾：甦醒時的獎勵 */
+  awakenFx?: Effect[];
+  /** 猛羊坐騎：攻擊時免疫 */
+  immuneAttacking?: boolean;
   /** 會背書的伊萊克：記住的法術 */
   remembered?: string[];
   /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
@@ -371,6 +375,23 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 暴風城：下一張火焰法術的法術傷害 / 施放過火焰法術的回合 / 抽到的牌消耗減少 / 下一張抽到的牌消耗減少 */
+  pyromancer?: number;
+  fireTurns?: number[];
+  drawDiscount?: number;
+  nextDrawDiscount?: number;
+  /** 沙德拉斯‧月樹：接下來抽到的幾張法術抽到時施放 */
+  sheldras?: number;
+  /** 荒裔塔姆辛：在你的回合受到的傷害改為由對手承受 */
+  tamsin?: boolean;
+  /** 秘法師瓦登：本場對戰的法術傷害加成 */
+  permSpellDamage?: number;
+  /** 守護矮人區：你的英雄能力可以指定手下為目標 */
+  powerTargetsMinions?: boolean;
+  /** 瞄準射擊：下一次英雄能力額外造成的傷害 */
+  nextPowerDamage?: number;
+  /** 千面女梅斯特拉：偽裝前的英雄能力 */
+  maestraPower?: string;
   /** 『分裂者』克蘇恩：打出過的碎片 / 已經重新組合 */
   cthunPieces?: string[];
   cthunWhole?: boolean;
@@ -384,7 +405,7 @@ export interface PlayerState {
   /** 本場對戰中祈求葛拉克朗的次數 */
   invokes?: number;
   /** 進行中的支線任務（uid 對應掛在 eternal 上的能力） */
-  sidequests?: { uid: number; cardId: string; progress: number; goal: number }[];
+  sidequests?: { uid: number; cardId: string; progress: number; goal: number; questline?: boolean; seen?: (number | string)[] }[];
   /** 禦法珠寶匠：英雄具有法術免疫，直到你的下個回合 */
   heroElusive?: boolean;
   /** 伊斯歐‧風詠：在這個回合你的法術消耗為 (1) */

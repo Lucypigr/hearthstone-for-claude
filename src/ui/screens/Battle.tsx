@@ -1474,7 +1474,7 @@ function HeroView({ p, g, className, onClick, onPointerDown, children }: { p: Pl
             </span>
           )}
           {(p.sidequests ?? []).map((q) => (
-            <span key={q.uid} className="secret quest" title={`支線任務：${getCard(q.cardId).name}（${q.progress}/${q.goal}）`}>
+            <span key={q.uid} className="secret quest" title={`${q.questline ? '任務線' : '支線任務'}：${getCard(q.cardId).name}（${q.progress}/${q.goal}）`}>
               !
             </span>
           ))}

@@ -102,6 +102,8 @@ const STATIC_FLAGS = new Set([
   'stormhammer', 'noFreeze', 'poisonousSpells', 'othersImmuneAttacking', 'weaponAtk2',
   // 暗月馬戲團
   'outcastDiscount', 'lifestealDamagesEnemy', 'inara', 'lightsteed', 'noDeathrattles', 'heroPowerDiscount1',
+  // 暴風城
+  'jaxon', 'heroesTakeExtra',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([
