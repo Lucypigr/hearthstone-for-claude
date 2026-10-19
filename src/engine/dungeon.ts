@@ -63,6 +63,7 @@ export const EVENT_FLAGS: Record<string, string> = {
   doubleDeathrattle: '亡語 ×2！',
   endTurnTriggerDeathrattle: '觸發亡語！',
   doubleEndTurn: '回合結束效果 ×2！',
+  secretsTwice: '奧秘觸發兩次！',
   heroPowerKillDraw: '抽牌！',
   khadgar: '召喚 ×2！',
   toreth: '聖盾加強',

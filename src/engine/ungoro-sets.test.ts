@@ -190,7 +190,9 @@ describe('地圖與發現', () => {
     const picked = hand[hand.length - 1];
     expect(picked.mapOthers).toHaveLength(2);
     g.s.players[0].mana = 10;
-    expect(g.apply({ type: 'play', handUid: picked.uid })).toBe(true);
+    // 發現的魚人可能有需要指定目標的戰吼
+    const target = getCard(picked.cardId).target ? g.s.players[1].hero.uid : undefined;
+    expect(g.apply({ type: 'play', handUid: picked.uid, target })).toBe(true);
     expect(g.s.pendingChoice?.options).toEqual(picked.mapOthers);
   });
 

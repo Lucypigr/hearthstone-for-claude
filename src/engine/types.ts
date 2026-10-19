@@ -257,7 +257,18 @@ export type DynAmount =
   | 'dragonsInHand'
   | 'oneCostPlayed'
   | 'drawnThisGame'
-  | 'holySpellsCast';
+  | 'holySpellsCast'
+  /** 你控制的其他同名手下數（恐懼烏鴉）/ 你控制的樹人數 */
+  | 'otherSameName'
+  | 'treantsOnBoard'
+  /** 本場對戰中你對友方角色施放的法術數 / 你的英雄生命值在你的回合改變的次數 */
+  | 'spellsOnFriendly'
+  | 'ownTurnHealthChanges'
+  /** 你牌堆中的靈魂碎片數 */
+  | 'soulFragments'
+  /** 你牌堆中不是一開始就在裡面的卡數 / 你控制的手下有幾種不同類型 */
+  | 'nonStartingInDeck'
+  | 'uniqueFriendlyTypes';
 
 export type Amount = number | { dyn: DynAmount; mult?: number; base?: number; race?: Race };
 
@@ -384,6 +395,13 @@ export type Condition =
   /** 觸發事件的卡：是奧秘 / 來自其他職業 / 消耗為 n / 攻擊力為 n / 是某張卡 / 有連擊 */
   | { c: 'itSecret' }
   | { c: 'itOtherClass' }
+  /** 你的手牌中有另一個職業的卡 */
+  | { c: 'holdingOtherClass' }
+  /** 本場對戰中你施放過至少 n 張法術 / 你的英雄的攻擊力至少 n */
+  | { c: 'spellsCast'; n: number }
+  | { c: 'heroAtk'; n: number }
+  /** 本場對戰中你祈求過葛拉克朗至少 n 次 */
+  | { c: 'invoked'; n: number }
   | { c: 'itCost'; n: number }
   | { c: 'itAttack'; n: number }
   | { c: 'itCard'; id: string }
@@ -728,7 +746,9 @@ export type SecretEvent =
   /** 對手打出一張手下、法術或武器之後 */
   | 'afterEnemyCard'
   /** 對手打出在這個回合進入手牌的卡 */
-  | 'enemyQuickdraw';
+  | 'enemyQuickdraw'
+  /** 對手在一個回合中抽到第二張牌（it = 那張牌） */
+  | 'enemySecondDraw';
 
 export interface Ability {
   on: Trig;
@@ -787,6 +807,8 @@ export interface CostAura {
   firstOfRace?: boolean;
   /** 只影響這個派系的法術 */
   school?: string;
+  /** 只影響你每回合打出的第一個奧秘 */
+  firstSecret?: boolean;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -869,6 +891,10 @@ export interface PendingDiscount {
   deathrattle?: boolean;
   /** 只適用於這個派系的法術 */
   school?: string;
+  /** 只適用於具有這個關鍵字的手下（例如突襲） */
+  keyword?: Keyword;
+  /** 只適用於有法術傷害的手下 */
+  spellDamage?: boolean;
 }
 
 /** 出牌時需要選擇的目標 */
@@ -994,7 +1020,7 @@ export interface CardDef {
   /** 場上時影響手牌消耗的光環 */
   costAuras?: CostAura[];
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
-  atkIf?: { cond: Condition; atk: number };
+  atkIf?: { cond: Condition; atk: number; self?: boolean };
   /** 在手牌中時才會觸發的能力（例如肥油大亨） */
   handAbilities?: Ability[];
   /** 在你打出某種族的牌後，從你的牌堆召喚這張卡（海盜派奇） */
@@ -1128,6 +1154,26 @@ export interface CardDef {
  */
 export type MinionFlag =
   | 'attackIfHeroAttacked'
+  // 外域灰燼 / 暗影崛起
+  | 'moargArtificer'
+  | 'permanentStealth'
+  | 'megaWindfuryAura'
+  | 'secretsTwice'
+  | 'takNozwhisker'
+  // 巨龍降臨
+  | 'stormhammer'
+  | 'noFreeze'
+  // 通靈學院
+  | 'poisonousSpells'
+  | 'othersImmuneAttacking'
+  | 'weaponAtk2'
+  // 暗月馬戲團
+  | 'noDeathrattles'
+  | 'heroPowerDiscount1'
+  | 'lightsteed'
+  | 'inara'
+  | 'outcastDiscount'
+  | 'lifestealDamagesEnemy'
   | 'spitefulSmith'
   | 'pintSized'
   | 'enrageWindfury'

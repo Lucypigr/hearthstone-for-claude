@@ -22,6 +22,8 @@ export interface HandCard {
   boons?: number;
   /** 高等精靈學徒：傳授的法術 */
   taught?: string;
+  /** 佐司瓦邪偶：學會的法術（打出時施放） */
+  taughtSpells?: string[];
   /** 時間循環者托奇：這張法術屬於哪一組 */
   looping?: number;
   /** 黑暗禮物：打出時召喚 2/2 的複製（活生生的噩夢） / 戰吼觸發兩次（魯莽的覺醒） / 聖盾要被打破幾次（夢魘鱗片） */
@@ -95,6 +97,10 @@ export interface HandCard {
   fromOpp?: boolean;
   /** 進入手牌的回合 */
   enteredTurn?: number;
+  /** 從牌堆抽到的回合（『破壞者』凱利丹） */
+  drawnTurn?: number;
+  /** 炎心講師發現的法術：這個回合打出就再發現一次 */
+  fireheartTurn?: number;
   /** 被賦予了預備 */
   canPrepare?: boolean;
   /** 打出時施放兩次 */
@@ -210,6 +216,8 @@ export interface Minion {
   stash?: string;
   /** 你對此手下施放過的法術 */
   spellsOn?: string[];
+  /** 會背書的伊萊克：記住的法術 */
+  remembered?: string[];
   /** 罪惡烙印：被誰烙印（受到傷害時對其對手英雄造成 1 點傷害） */
   brand?: PlayerId;
   /** 到這個回合為止攻擊時免疫（飢餓猛禽） */
@@ -363,6 +371,24 @@ export interface PlayerState {
   /** 深暗領域：「你打出的下一個德萊尼」會獲得的效果 */
   draeneiFx?: { k: 'buff' | 'refresh' | 'attack' | 'heroAtk' | 'overload' | 'copy' | 'bonus2'; atk?: number; hp?: number; kw?: string[]; n: number; src?: number }[];
   libramDiscount?: number;
+  /** 『分裂者』克蘇恩：打出過的碎片 / 已經重新組合 */
+  cthunPieces?: string[];
+  cthunWhole?: boolean;
+  /** 空中特技：這個回合還要打出幾張抽到的牌 */
+  acrobatics?: { turn: number; left: number };
+  /** 秘密通道：從牌堆拿進手牌的牌（回合結束時放回去） */
+  passageUids?: number[];
+  /** 本場對戰中你對友方角色施放的法術數 / 英雄生命值在你的回合改變的次數 */
+  spellsOnFriendly?: number;
+  ownTurnHealthChanges?: number;
+  /** 本場對戰中祈求葛拉克朗的次數 */
+  invokes?: number;
+  /** 進行中的支線任務（uid 對應掛在 eternal 上的能力） */
+  sidequests?: { uid: number; cardId: string; progress: number; goal: number }[];
+  /** 禦法珠寶匠：英雄具有法術免疫，直到你的下個回合 */
+  heroElusive?: boolean;
+  /** 伊斯歐‧風詠：在這個回合你的法術消耗為 (1) */
+  spellsCostOneTurn?: number;
   /** 本場對戰中你發現的牌數 */
   discoverCount?: number;
   /** 不是開局在牌堆裡的惡魔消耗減少 / 本場對戰打出過的這類惡魔 */
