@@ -59,7 +59,6 @@ function endTurns(g: Game, n: number) {
 }
 
 const ids = (g: Game, pid: PlayerId) => g.s.players[pid].board.map((m) => m.cardId);
-const quests = (g: Game) => (g.s.players[0].sidequests ?? []).map((q) => q.cardId);
 
 describe('奧特蘭克山谷', () => {
   it('收錄全部可收藏卡', () => {
