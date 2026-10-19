@@ -228,6 +228,8 @@ export type DynAmount =
   | 'spellDamageDealtThisTurn'
   /** 你本場對戰中施放的邪能法術數 */
   | 'felSpellsCast'
+  /** 被凍結的敵人數 */
+  | 'frozenEnemies'
   /** 你本場對戰中施放的冰霜法術數 */
   | 'frostSpellsCast'
   /** 你本場對戰中英雄 / 友方角色攻擊的次數 */
@@ -830,6 +832,10 @@ export interface CostAura {
   school?: string;
   /** 只影響你每回合打出的第一個奧秘 */
   firstSecret?: boolean;
+  /** 只影響你每回合打出的第一個嘲諷手下 */
+  firstTaunt?: boolean;
+  /** 只影響不是一開始就在牌堆中的牌 */
+  notStarting?: boolean;
 }
 
 /** 任務：達成目標後，英雄能力換成獎勵（或獲得被動效果） */
@@ -1042,6 +1048,8 @@ export interface CardDef {
   flags?: MinionFlag[];
   /** 場上時影響手牌消耗的光環 */
   costAuras?: CostAura[];
+  /** 等級法術：你的法力水晶達到 at 時，手牌中的這張牌升級成 into */
+  rankUp?: { at: number; into: string };
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
   atkIf?: { cond: Condition; atk: number; self?: boolean };
   /** 在手牌中時才會觸發的能力（例如肥油大亨） */
@@ -1202,6 +1210,9 @@ export type MinionFlag =
   | 'heroesTakeExtra'
   // 奧特蘭克山谷
   | 'immovableObject'
+  // 貧瘠之地
+  | 'gossiper'
+  | 'natureSpellDamage3'
   | 'mulverick'
   | 'saidan'
   | 'cheatySnobold'

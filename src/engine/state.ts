@@ -128,6 +128,10 @@ export interface HandCard {
   lockedUntil?: number;
   /** 畸變怪物：目前的兩種加成效果 */
   bonus?: Keyword[];
+  /** 『魔像塑造者』卡札克斯：魔像的兩種藥草 */
+  golem?: [string, string];
+  /** 隱蔽護罩：這個回合打出時獲得潛行直到你的下個回合 */
+  shroudTurn?: number;
   /** 齊利亞斯豪華版 3000 的兩個模組 */
   zilliax?: string[];
   /** 觀星：這個回合打出它會施放兩次 */
@@ -690,6 +694,16 @@ export interface PlayerState {
   /** 本場對戰中施放的邪能法術數 / 英雄與友方攻擊次數 */
   felSpells?: number;
   /** 奧特蘭克山谷：施放的冰霜法術數、獲得的護甲總量、在對手回合受到的傷害、上一張二選一的選項等 */
+  /** 貧瘠之地：召喚過的哨所數、英雄能力造成的傷害、本回合恢復的生命值等 */
+  bar?: {
+    watchPosts?: number;
+    powerDamage?: number;
+    powerBonus?: number;
+    healTurn?: { turn: number; n: number };
+    scabbs?: { turn: number; left: number };
+    yoink?: { original: string; heroCard?: string; left: number };
+    soulsTurn?: number;
+  };
   av?: {
     frostSpells?: number;
     armorGained?: number;
