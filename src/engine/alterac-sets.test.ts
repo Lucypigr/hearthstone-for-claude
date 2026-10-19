@@ -62,7 +62,7 @@ const ids = (g: Game, pid: PlayerId) => g.s.players[pid].board.map((m) => m.card
 
 describe('奧特蘭克山谷', () => {
   it('收錄全部可收藏卡', () => {
-    expect(ALL_CARDS().filter((c) => c.collectible && c.set === 1626).length).toBe(143);
+    expect(ALL_CARDS().filter((c) => c.collectible && c.set === 1626).length).toBe(170);
   });
 
   it('榮譽擊殺：剛好致命才觸發，滅殺不算', () => {

@@ -695,6 +695,15 @@ export interface PlayerState {
   felSpells?: number;
   /** 奧特蘭克山谷：施放的冰霜法術數、獲得的護甲總量、在對手回合受到的傷害、上一張二選一的選項等 */
   /** 貧瘠之地：召喚過的哨所數、英雄能力造成的傷害、本回合恢復的生命值等 */
+  /** 迷你系列：月光指引、艾德溫、拷貝貓、上一張對友方手下施放的法術等 */
+  ded?: {
+    moonlit?: { turn: number; copyUid: number; origUid: number }[];
+    edwin?: { turn: number; drawnUid: number; edwinUid: number };
+    copycat?: number;
+    lastFriendlySpell?: string;
+    noHeroAttackTurn?: number;
+    playedEdge?: boolean;
+  };
   bar?: {
     watchPosts?: number;
     powerDamage?: number;

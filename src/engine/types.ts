@@ -228,6 +228,8 @@ export type DynAmount =
   | 'spellDamageDealtThisTurn'
   /** 你本場對戰中施放的邪能法術數 */
   | 'felSpellsCast'
+  /** 場上（雙方）其他魚人的數量 */
+  | 'otherMurlocs'
   /** 被凍結的敵人數 */
   | 'frozenEnemies'
   /** 你本場對戰中施放的冰霜法術數 */
@@ -446,6 +448,8 @@ export type Condition =
   | { c: 'itPlayedLastTurn' }
   /** 你這個回合恢復過生命值 */
   | { c: 'healedThisTurn' }
+  /** 這張牌是本回合才抽到的 */
+  | { c: 'thisDrawnThisTurn' }
   /** 剛才的傷害榮譽擊殺了選擇的目標 */
   | { c: 'honorableKill' }
   /** 此手下被榮譽擊殺（亡語用） */
@@ -1050,6 +1054,8 @@ export interface CardDef {
   costAuras?: CostAura[];
   /** 等級法術：你的法力水晶達到 at 時，手牌中的這張牌升級成 into */
   rankUp?: { at: number; into: string };
+  /** 在你交易這張牌後觸發的效果 */
+  onTrade?: Effect[];
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
   atkIf?: { cond: Condition; atk: number; self?: boolean };
   /** 在手牌中時才會觸發的能力（例如肥油大亨） */

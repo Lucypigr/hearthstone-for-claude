@@ -63,7 +63,7 @@ const quests = (g: Game) => (g.s.players[0].sidequests ?? []).map((q) => q.cardI
 
 describe('暴風城', () => {
   it('收錄全部可收藏卡', () => {
-    expect(ALL_CARDS().filter((c) => c.collectible && c.set === 1578).length).toBe(142);
+    expect(ALL_CARDS().filter((c) => c.collectible && c.set === 1578).length).toBe(170);
   });
 
   it('任務線：完成一段後自動開始下一段，最後獲得傳說手下', () => {
