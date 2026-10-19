@@ -8,6 +8,7 @@ import { buildDeck, maxCopies, type Deck, type HeroClass } from './decks';
 import { DUNGEON_BOSSES } from '../cards/dungeonBosses';
 import { newDungeonState, type DungeonState } from './dungeon';
 import { sanitizeLadder, type LadderState } from './ladder';
+import { sanitizeBg, type BgStats } from './battlegrounds';
 import {
   CARDS_PER_PACK,
   CRAFT_COST,
@@ -53,6 +54,8 @@ export interface Profile {
   ladder?: LadderState;
   /** 地城探險（狗頭人與地下城） */
   dungeon?: DungeonState;
+  /** 英雄戰場 */
+  bg?: BgStats;
 }
 
 export type Rand = () => number;
@@ -119,6 +122,7 @@ export function sanitizeProfile(raw: unknown): Profile {
     settings: { ...base.settings, ...(p.settings ?? {}) },
     ladder: p.ladder ? sanitizeLadder(p.ladder) : undefined,
     dungeon: p.dungeon ? sanitizeDungeon(p.dungeon) : undefined,
+    bg: p.bg ? sanitizeBg(p.bg) : undefined,
   };
 }
 

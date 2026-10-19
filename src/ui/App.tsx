@@ -5,6 +5,7 @@ import type { DungeonRun } from '../game/dungeon';
 import type { LadderOpponent } from '../game/ladder';
 import { useProfile } from './store';
 import { Battle } from './screens/Battle';
+import { BgLobby, BgMatch } from './screens/Battlegrounds';
 import { Collection } from './screens/Collection';
 import { Dungeon } from './screens/Dungeon';
 import { Home } from './screens/Home';
@@ -15,7 +16,7 @@ import { GlossaryBrowser } from './components/GlossaryBrowser';
 import { Settings } from './screens/Settings';
 import { Shop } from './screens/Shop';
 
-export type Screen = 'home' | 'play' | 'ladder' | 'dungeon' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings' | 'help';
+export type Screen = 'home' | 'play' | 'ladder' | 'dungeon' | 'bg' | 'bg-match' | 'battle' | 'collection' | 'shop' | 'packs' | 'settings' | 'help';
 
 export interface BattleConfig {
   deckId: string;
@@ -55,6 +56,8 @@ export function App() {
     );
   }
 
+  if (screen === 'bg-match') return <BgMatch onExit={() => setScreen('bg')} />;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -67,6 +70,9 @@ export function App() {
           </button>
           <button className={screen === 'play' ? 'active' : ''} onClick={() => setScreen('play')}>
             練習
+          </button>
+          <button className={screen === 'bg' ? 'active' : ''} onClick={() => setScreen('bg')}>
+            英雄戰場
           </button>
           <button className={screen === 'dungeon' ? 'active' : ''} onClick={() => setScreen('dungeon')}>
             地城探險
@@ -129,6 +135,7 @@ export function App() {
             }}
           />
         )}
+        {screen === 'bg' && <BgLobby onStart={() => setScreen('bg-match')} />}
         {screen === 'collection' && <Collection />}
         {screen === 'shop' && <Shop go={setScreen} />}
         {screen === 'packs' && <PackOpen go={setScreen} />}
