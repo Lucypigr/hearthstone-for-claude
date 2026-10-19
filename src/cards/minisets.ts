@@ -175,6 +175,24 @@ export const MINISET_OVERRIDES: Record<string, Override> = {
   // 刃爪哨兵：在你打出手牌中最左邊或最右邊的牌後，抽一張牌
   ONY_036: { abilities: [{ on: { k: 'cardPlayed', side: 'friendly' }, effects: [fn('dedRazorglaive')] }] },
 
+  // ================================================================ 英雄卡
+  // 瘋狂天才爆爆博士：戰吼：本場對戰剩下的時間，你的機械具有突襲。英雄能力：紅色大按鈕（每回合換一種）
+  BOT_238: { abilities: play(fn('dedHeroBoom')), heroPower: { target: anyChar, effects: [hit(3, false)] }, tokens: ['BOT_312t'] },
+  // 『空無者』瓦麗拉：戰吼：獲得潛行直到你的下個回合。英雄能力（被動）：你的回合中把一張陰影鏡像加入手牌
+  ICC_827: { abilities: play(fn('dedHeroValeera')), heroPower: { passive: true, effects: [] }, tokens: ['ICC_827t'] },
+  ICC_827t: {},
+  // 女巫哈嘉薩：戰吼：對所有手下造成 3 點傷害。英雄能力（被動）：在你打出一個手下後，把一張隨機薩滿法術加入你的手牌
+  GIL_504: { abilities: play({ e: 'damage', target: { t: 'all', filter: { type: 'minion', side: 'any' } }, amount: 3 }), heroPower: { passive: true, effects: [] } },
+  // 無頭騎士：戰吼：消滅攻擊力最高的敵方手下，把我的頭洗入你的牌堆
+  TOY_829: { abilities: play(fn('dedHeroHorseman')), heroPower: { target: anyChar, effects: [hit(3, false)] }, tokens: ['TOY_829t'] },
+  TOY_829t: { castsWhenDrawn: true, abilities: play(fn('dedHorsemanHead')) },
+  // 祖爾金：戰吼：施放本場對戰中你打出過的所有法術（目標隨機）
+  TRL_065: { abilities: play(fn('dedHeroZuljin')), heroPower: { target: anyChar, effects: [hit(2, false)] } },
+  // 獨行俠里諾：戰吼：若你的牌堆開局時沒有重複的卡，把所有敵方手下移出遊戲。英雄能力：里諾的手持火砲（每回合換一種子彈）
+  WW_0700: { abilities: play(fn('dedHeroLoneRanger')), heroPower: { target: anyChar, effects: [hit(2, false)] } },
+  // 神奇的里諾：戰吼：讓所有手下消失。英雄能力（被動）：在你的回合開始時，施放一張隨機法術
+  YOD_009: { abilities: play(fn('dedHeroAmazingReno')), heroPower: { passive: true, effects: [] } },
+
   // ================================================================ 傳統
   // 酒保鮑伯：戰吼：選擇英雄戰場的一個行動
   BG31_BOB: { abilities: play(fn('dedBob')), tokens: BOB_ACTIONS },

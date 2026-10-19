@@ -6,7 +6,7 @@ import type { HandCard, Minion, PlayerId } from './state';
 
 const FILLER = 'CS2_182'; // 冰風雪人 4/5
 
-type Cls = 'MAGE' | 'ROGUE' | 'PALADIN' | 'WARRIOR' | 'HUNTER' | 'DRUID' | 'WARLOCK' | 'DEMONHUNTER' | 'PRIEST' | 'SHAMAN';
+type Cls = 'MAGE' | 'ROGUE' | 'PALADIN' | 'WARRIOR' | 'HUNTER' | 'DRUID' | 'WARLOCK' | 'DEMONHUNTER' | 'PRIEST' | 'SHAMAN' | 'DEATHKNIGHT';
 
 function newGame(opts: { seed?: number; cls?: Cls; deck?: string[] } = {}): Game {
   const g = Game.create({
@@ -173,5 +173,83 @@ describe('迷你系列與傳統卡', () => {
     const got = g.s.players[0].hand.slice(n);
     expect(got.length).toBe(2);
     for (const h of got) expect(h.costMod).toBe(-2);
+  });
+
+  it('瘋狂天才爆爆博士：機械具有突襲，英雄能力每回合換一種', () => {
+    const g = newGame({ cls: 'WARRIOR' });
+    play(g, 'BOT_238');
+    const p = g.s.players[0];
+    expect(p.heroPower.id).toMatch(/^BOT_238p\d$/);
+    const mech = put(g, 'BOT_312t', 0);
+    expect(g.hasKw(mech, 'RUSH')).toBe(true);
+    const first = p.heroPower.id;
+    endTurns(g, 2);
+    expect(p.heroPower.id).toMatch(/^BOT_238p\d$/);
+    expect(p.heroPower.id).not.toBe(first);
+  });
+
+  it('『空無者』瓦麗拉：英雄潛行，並獲得會變成上一張牌的陰影鏡像', () => {
+    const g = newGame({ cls: 'ROGUE' });
+    play(g, 'ICC_827');
+    const p = g.s.players[0];
+    const refl = p.hand.find((h) => h.cardId === 'ICC_827t')!;
+    expect(refl).toBeTruthy();
+    play(g, 'CS2_168');
+    expect(refl.cardId).toBe('CS2_168');
+    endTurns(g, 1);
+    const foe = put(g, FILLER, 1);
+    expect(g.apply({ type: 'attack', attacker: foe.uid, target: p.hero.uid })).toBe(false);
+  });
+
+  it('女巫哈嘉薩：打出手下後獲得一張薩滿法術', () => {
+    const g = newGame({ cls: 'SHAMAN' });
+    play(g, 'GIL_504');
+    const n = g.s.players[0].hand.length;
+    play(g, 'CS2_168');
+    expect(g.s.players[0].hand.length).toBe(n + 1);
+    const got = g.s.players[0].hand[n];
+    expect(got && ALL_CARDS().find((c) => c.id === got.cardId)?.cardClass).toBe('SHAMAN');
+  });
+
+  it('無頭騎士：消滅攻擊力最高的敵方手下；抽到頭後英雄能力升級', () => {
+    const g = newGame({ cls: 'DEATHKNIGHT' });
+    put(g, 'CS2_168', 1);
+    put(g, FILLER, 1);
+    play(g, 'TOY_829');
+    expect(ids(g, 1)).toEqual(['CS2_168']);
+    const p = g.s.players[0];
+    expect(p.heroPower.id).toBe('TOY_829hp3');
+    const head = p.deck.find((h) => h.cardId === 'TOY_829t')!;
+    p.deck = p.deck.filter((h) => h !== head);
+    p.deck.push(head);
+    endTurns(g, 2);
+    expect(p.heroPower.id).toBe('TOY_829hp');
+  });
+
+  it('祖爾金：重新施放本場對戰中打出過的法術', () => {
+    const g = newGame({ cls: 'HUNTER' });
+    play(g, 'CS2_029', { target: g.s.players[1].hero.uid }); // 火球術 6 點
+    play(g, 'TRL_065');
+    expect(g.s.players[1].hero.hp).toBeLessThan(24);
+  });
+
+  it('獨行俠里諾：牌堆開局沒有重複時把敵方手下移出遊戲', () => {
+    const deck = ALL_CARDS().filter((c) => c.collectible && c.type === 'MINION' && c.cardClass === 'NEUTRAL').slice(0, 30).map((c) => c.id);
+    const g = newGame({ cls: 'HUNTER', deck });
+    put(g, 'FP1_007', 1); // 蛛魔之卵（亡語不會觸發）
+    play(g, 'WW_0700');
+    expect(ids(g, 1)).toEqual([]);
+    expect(g.s.players[0].heroPower.id).toMatch(/^WW_0700p\d$/);
+  });
+
+  it('神奇的里諾：讓所有手下消失，回合開始時施放隨機法術', () => {
+    const g = newGame({ cls: 'MAGE' });
+    put(g, FILLER, 0);
+    put(g, 'FP1_007', 1);
+    play(g, 'YOD_009');
+    expect(ids(g, 0)).toEqual([]);
+    expect(ids(g, 1)).toEqual([]);
+    expect(g.s.players[0].heroPower.id).toBe('YOD_009h');
+    endTurns(g, 2);
   });
 });

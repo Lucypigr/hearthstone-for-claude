@@ -132,6 +132,8 @@ export interface HandCard {
   golem?: [string, string];
   /** 隱蔽護罩：這個回合打出時獲得潛行直到你的下個回合 */
   shroudTurn?: number;
+  /** 陰影鏡像：每當你打出一張牌就變成它的複製 */
+  reflection?: boolean;
   /** 齊利亞斯豪華版 3000 的兩個模組 */
   zilliax?: string[];
   /** 觀星：這個回合打出它會施放兩次 */
@@ -703,7 +705,13 @@ export interface PlayerState {
     lastFriendlySpell?: string;
     noHeroAttackTurn?: number;
     playedEdge?: boolean;
+    /** 瘋狂天才爆爆博士：你的機械具有突襲 */
+    boomRush?: boolean;
+    /** 每回合隨機換一種的英雄能力（爆爆博士 / 獨行俠里諾） */
+    rotate?: string[];
   };
+  /** 『空無者』瓦麗拉：英雄潛行到這個回合結束為止 */
+  heroStealthUntil?: number;
   bar?: {
     watchPosts?: number;
     powerDamage?: number;

@@ -19,7 +19,7 @@ import { trialDef } from '../cards/trial';
 import { ALL_CARDS, COLLECTIBLE, cardClasses, getCard, hasCard, HEROES, poolCards, POWER_INFO } from '../cards/registry';
 import { LAUNCH_COST, starshipDef, starshipIdFor } from '../cards/starship';
 import { ZOMBEAST_ID, ZOMBEAST_PARTS, zombeastDef } from '../cards/zombeast';
-import { BASIC_TOTEMS, CLASS_NAMES, EXTRA_POWERS, HERO_POWERS, RAGNAROS_HERO, RAGNAROS_POWER, UPGRADED_POWER_IDS } from './heroes';
+import { BASIC_TOTEMS, CLASS_NAMES, EXTRA_POWERS, HERO_POWERS, RAGNAROS_HERO, RAGNAROS_POWER, ROTATING_POWERS, UPGRADED_POWER_IDS } from './heroes';
 import { nextRandom, pick, randomInt, shuffle } from './rng';
 import { PASSIVE_FLAGS } from './dungeon';
 import { EVENT_FLAGS } from './dungeon';
@@ -1546,6 +1546,7 @@ export class Game {
       .filter((c) => this.alive(c) && this.pass(c, req.filter, ctx))
       .filter((c) => {
         // 狗頭人武僧：你的英雄無法成為法術或英雄能力的目標
+        if (isHero(c) && c.owner !== player && (this.s.players[c.owner].heroStealthUntil ?? -1) >= this.s.turn) return false;
         if (isHero(c)) return !(bySpell && ((c.owner !== player && (this.flagOnBoard('heroElusive', c.owner) || this.s.players[c.owner].heroElusive)) || this.s.players[player].lk?.noHeroTurn === this.s.turn));
         if (c.owner !== player && this.hasKw(c, 'STEALTH')) return false;
         if (bySpell && this.hasKw(c, 'ELUSIVE')) return false;
@@ -1758,6 +1759,7 @@ export class Game {
       if (this.hasKw(c, 'CANT_ATTACK_HEROES')) heroAllowed = false;
       if (c.sleeping && !this.hasKw(c, 'CHARGE')) heroAllowed = false; // 突襲
     } else if (this.s.players[c.owner].weapon?.keywords.includes('CANT_ATTACK_HEROES') || this.s.players[c.owner].ded?.noHeroAttackTurn === this.s.turn) heroAllowed = false;
+    if ((enemy.heroStealthUntil ?? -1) >= this.s.turn) heroAllowed = false;
     if (heroAllowed) targets = [...targets, enemy.hero];
     return targets.map((t) => t.uid);
   }
@@ -2349,6 +2351,8 @@ export class Game {
     yield* this.emit({ k: 'turnStart', player: pid });
     yield* this.checkSecrets(pid, 'turnStart', {});
     yield* this.processDeaths();
+    if (this.over) return;
+    yield* this.heroCardTurnStart(p);
     if (this.over) return;
     // 延遲的效果（例如不祥之兆「2 回合後召喚…」）
     if (p.delayed?.length) {
@@ -3609,6 +3613,8 @@ export class Game {
     }
     this.lastAttack = { attacker: a.uid, defender: d.uid, defenderIsHero: isHero(d), killed, defenderCardId: isHero(d) ? undefined : d.cardId };
     if (isHero(a)) this.reopenLocations(s.players[pid], 'heroAttack');
+    // 英雄攻擊後失去潛行（『空無者』瓦麗拉）
+    if (isHero(a)) s.players[pid].heroStealthUntil = undefined;
     yield* this.emit({ k: 'attack', player: pid, subject: attackerUid, isHero: isHero(a), after: true });
     // 裂魔者克圖斯：友方手下攻擊後，灰殞之怒可以再次使用
     if (!isHero(a) && s.players[pid].heroPower.heroCard === 'AV_204') {
@@ -4755,6 +4761,8 @@ export class Game {
         atk = 10 - (m.baseAtk + m.atkBuff);
         hp = 10 - (m.maxHp - m.auraHp);
       }
+      // 瘋狂天才爆爆博士：你的機械具有突襲
+      if (own.ded?.boomRush && this.isRace(m.cardId, 'MECHANICAL')) kws.push('RUSH');
       // 征戰平原：你的手下 +1 攻擊力
       if (own.eternal?.some((e) => e.sourceCardId === 'AV_661')) atk += 1;
       // 蟲族增生：你的蟲族手下 +1 攻擊力與突襲；基因鞭笞等
@@ -25156,6 +25164,33 @@ export class Game {
     }
   }
 
+  /** 英雄卡在你的回合開始時：換英雄能力（爆爆博士 / 獨行俠里諾）、陰影鏡像、神奇的里諾 */
+  private *heroCardTurnStart(p: PlayerState): Gen {
+    const s = this.s;
+    const rot = p.ded?.rotate;
+    if (rot?.length) {
+      const id = pick(s, rot.filter((x) => x !== p.heroPower.id)) ?? rot[0];
+      p.heroPower = { id, used: false, uses: 0, cost: POWER_INFO[id]?.cost ?? 2 };
+    }
+    // 『空無者』瓦麗拉：你的回合中把一張陰影鏡像加入你的手牌
+    if (p.heroPower.id === 'ICC_827p') {
+      const hc = this.addToHand(p, 'ICC_827t');
+      if (hc) {
+        hc.reflection = true;
+        hc.temporary = true;
+      }
+    }
+    // 神奇的里諾：在你的回合開始時，施放一張隨機法術
+    if (p.heroPower.id === 'YOD_009h') {
+      const c = pick(s, this.randomPool({ type: 'SPELL', anyClass: true }, p.id, false).filter((d) => !d.secret || p.secrets.length < MAX_SECRETS));
+      if (c) {
+        this.pulse(p.hero.uid, 'YOD_009', p.id, `施放${c.name}`);
+        yield* this.castRandomly(p.id, c.id);
+        yield* this.processDeaths();
+      }
+    }
+  }
+
   /** 迷你系列：打出一張牌後（月光指引、迪菲亞老大艾德溫、拷貝貓） */
   private *minisetOnPlay(p: PlayerState, hc: HandCard): Gen {
     const s = this.s;
@@ -25177,6 +25212,19 @@ export class Game {
         const [next] = yield* this.draw(p, 1);
         if (next) d.edwin = { turn: s.turn, drawnUid: next.uid, edwinUid: ed.uid };
       }
+    }
+    // 女巫哈嘉薩：在你打出一個手下後，把一張隨機薩滿法術加入你的手牌
+    if (p.heroPower.id === 'GIL_504h' && getCard(hc.cardId).type === 'MINION') {
+      const c = pick(s, this.randomPool({ type: 'SPELL', cls: 'SHAMAN' }, p.id, false));
+      if (c) this.addToHand(p, c.id);
+    }
+    // 陰影鏡像：每當你打出一張牌，變成它的複製
+    for (const h of p.hand) {
+      if (!h.reflection || h.uid === hc.uid) continue;
+      h.cardId = hc.cardId;
+      h.costMod = 0;
+      h.atkBuff = 0;
+      h.hpBuff = 0;
     }
     // 拷貝貓：把對手打出的下一張牌的複製加入手牌
     const foe = s.players[opp(p.id)];
@@ -25545,6 +25593,59 @@ export class Game {
       case 'dedRazorglaive':
         if (ded.playedEdge) yield* this.draw(me, 1);
         return true;
+      // ------------------------------------------------------------ 英雄卡
+      case 'dedHeroBoom':
+        // 瘋狂天才爆爆博士：你的機械具有突襲；英雄能力換成這回合的機甲能力
+        ded.boomRush = true;
+        ded.rotate = ROTATING_POWERS.BOT_238;
+        yield* this.heroCardTurnStart(me);
+        return true;
+      case 'dedHeroLoneRanger':
+        // 獨行俠里諾：若你的牌堆開局時沒有重複的卡，把所有敵方手下移出遊戲
+        ded.rotate = ROTATING_POWERS.WW_0700;
+        yield* this.heroCardTurnStart(me);
+        if (this.startedNoDupes(me)) this.removeFromGame(live(foe));
+        return true;
+      case 'dedHeroAmazingReno':
+        // 神奇的里諾：讓所有手下消失
+        this.setHeroPower(me, 'YOD_009h');
+        this.removeFromGame([...live(me), ...live(foe)]);
+        return true;
+      case 'dedHeroValeera':
+        me.heroStealthUntil = s.turn + 1;
+        this.setHeroPower(me, 'ICC_827p');
+        yield* this.heroCardTurnStart(me);
+        return true;
+      case 'dedHeroHorseman': {
+        // 無頭騎士：消滅攻擊力最高的敵方手下，把我的頭洗入你的牌堆
+        this.setHeroPower(me, 'TOY_829hp3');
+        const list = live(foe);
+        if (list.length) {
+          const top = Math.max(...list.map((m) => this.atkOf(m)));
+          pick(s, list.filter((m) => this.atkOf(m) === top))!.dead = true;
+        }
+        this.shuffleInto(me, this.newHandCard('TOY_829t'));
+        return true;
+      }
+      case 'dedHorsemanHead':
+        // 騎士的頭顱：英雄能力灌注不死族的靈魂
+        if (me.heroPower.id === 'TOY_829hp3') {
+          const used = me.heroPower.used;
+          this.setHeroPower(me, 'TOY_829hp');
+          me.heroPower.used = used;
+        }
+        return true;
+      case 'dedHeroZuljin': {
+        // 祖爾金：施放本場對戰中你打出過的所有法術（目標隨機）
+        const spells = (me.playedCards ?? []).filter((id) => hasCard(id) && getCard(id).type === 'SPELL');
+        for (const id of spells.slice(0, 80)) {
+          if (this.over) return true;
+          yield* this.castRandomly(me.id, id);
+          yield* this.processDeaths();
+        }
+        this.setHeroPower(me, 'TRL_065h');
+        return true;
+      }
       // ------------------------------------------------------------ 傳統
       case 'dedBob': {
         const id = yield* this.choose(ctx, ['BG31_BOBt', 'BG31_BOBt2', 'BG31_BOBt3', 'BG31_BOBt4'], '選擇一個英雄戰場行動');
@@ -25606,6 +25707,17 @@ export class Game {
       default:
         return false;
     }
+  }
+
+  /** 把手下移出遊戲（不會觸發亡語、不算死亡） */
+  private removeFromGame(list: Minion[]) {
+    for (const m of list) {
+      const p = this.s.players[m.owner];
+      p.board = p.board.filter((x) => x !== m);
+      this.fx({ kind: 'death', uid: m.uid, cardId: m.cardId, player: m.owner });
+    }
+    if (list.length) this.log(this.s.current, `${list.length} 個手下被移出了遊戲`);
+    this.recalcAuras();
   }
 
   /** 開局的牌堆沒有重複的卡 */
