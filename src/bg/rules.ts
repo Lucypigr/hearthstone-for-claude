@@ -11,7 +11,7 @@ export const REFRESH_COST = 1;
 export const SELL_PRICE = 1;
 export const MAX_TIER = 6;
 /** 升到某個等級的基本費用（每回合沒有升級就便宜 1） */
-export const UPGRADE_COST: Record<number, number> = { 2: 5, 3: 7, 4: 8, 5: 11, 6: 10 };
+export const UPGRADE_COST: Record<number, number> = { 2: 5, 3: 7, 4: 8, 5: 11, 6: 10, 7: 11 };
 /** 酒館每次提供幾個手下 */
 export const SHOP_SIZE: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5, 5: 5, 6: 6 };
 /** 卡池裡每張卡有幾份 */
@@ -51,6 +51,9 @@ export function auraOf(cnt: Record<string, number>, m: BMinion, heroHp: number):
     a += cnt.beetleA ?? 0;
     h += cnt.beetleH ?? 0;
   }
+  // 飾品、任務獎勵：「你的手下擁有 +X/+Y」
+  a += cnt.allA ?? 0;
+  h += cnt.allH ?? 0;
   if (isRace(m.id, 'UNDEAD')) a += cnt.undeadA ?? 0;
   if (isRace(m.id, 'BEAST')) a += cnt['~beastA'] ?? 0;
   // 音量機兵：本賽局的加成（吸附在別的機械身上也算）

@@ -39,11 +39,11 @@ export interface HeroSpec {
   status?: (p: BPlayer, G: BgGame) => string | null;
   /** 取代 30 點生命值與護甲 */
   health?: number;
-  minionCost?: (p: BPlayer) => number | undefined;
+  minionCost?: (p: BPlayer, m?: BMinion) => number | undefined;
   refreshCost?: number;
   upgradeExtra?: number;
   shopExtra?: number;
-  shopBuff?: (p: BPlayer) => [number, number];
+  shopBuff?: (p: BPlayer, m?: BMinion, G?: BgGame) => [number, number];
   /** 只要幾張就能三連 */
   tripleNeed?: number;
   startGame?(G: BgGame, p: BPlayer): void;
@@ -56,9 +56,71 @@ export interface HeroSpec {
   onRefresh?(G: BgGame, p: BPlayer): void;
   onSpend?(G: BgGame, p: BPlayer, n: number): void;
   onBuySpell?(G: BgGame, p: BPlayer, id: string): void;
-  onCast?(G: BgGame, p: BPlayer, id: string): void;
+  onCast?(G: BgGame, p: BPlayer, id: string, t?: BMinion | null): void;
+  onDiscover?(G: BgGame, p: BPlayer, id: string): void;
+  onGetCard?(G: BgGame, p: BPlayer, card: import('./types').HandCard): void;
+  onDiscard?(G: BgGame, p: BPlayer, card: import('./types').HandCard): void;
+  onMagnetize?(G: BgGame, p: BPlayer, host: BMinion): void;
+  /** 觸發戰吼後 */
+  onBattlecry?(G: BgGame, p: BPlayer, m: BMinion): void;
+  onPowerUse?(G: BgGame, p: BPlayer): void;
+  /** 你自己刷新酒館後（回合開始的刷新不算） */
+  onReroll?(G: BgGame, p: BPlayer): void;
+  /** 英雄在戰鬥外受到傷害後 */
+  onHeroHurt?(G: BgGame, p: BPlayer, n: number): void;
+  /** 酒館產生手下時 */
+  onShopMinion?(G: BgGame, p: BPlayer, m: BMinion): void;
+  /** 二選一的兩個效果都要 */
+  bothChoices?: boolean;
+  /** 戰吼多觸發幾次 */
+  bcExtra?: (G: BgGame, p: BPlayer, m: BMinion) => number;
+  /** 法術多施放幾次 */
+  spellTimes?: (G: BgGame, p: BPlayer, id: string, t: BMinion | null) => number;
+  /** 「你的酒館法術額外 +X」 */
+  spellExtra?: (p: BPlayer) => [number, number];
+  /** 英雄能力每回合可以多用幾次 */
+  powerExtra?: number;
+  /** 英雄能力觸發兩次 */
+  powerTwice?: boolean;
+  /** 回合結束效果多觸發幾次 */
+  eotExtra?: number;
+  /** 酒館最低 / 最高等級 */
+  minTier?: number;
+  maxTier?: number;
+  /** 酒館每次刷新多幾個高一本的手下 / 多幾張法術 */
+  shopHigher?: number;
+  shopSpellsExtra?: number;
+  /** 酒館永遠有 7 張卡 */
+  shopFull?: boolean;
+  /** 酒館只有這個種族 / 只有你的等級的手下 */
+  onlyTribe?: Tribe;
+  onlyTier?: boolean;
+  /** 所有手下都是金卡（不給三合一獎勵） */
+  allGolden?: boolean;
+  /** 三連給旅店幸運幣而不是三合一獎勵 */
+  coinTriples?: boolean;
+  /** 每回合的金幣（異象） */
+  goldBase?: (round: number) => number;
+  sellPrice?: (p: BPlayer, m: BMinion) => number | undefined;
+  /** 不能刷新 / 不能用金幣升級 */
+  noRefresh?: boolean;
+  noUpgrade?: boolean;
+  /** 某些手下只要 2 張就能三連 */
+  tripleNeedFor?: (id: string) => number | undefined;
+  /** 英雄受到的戰鬥傷害 */
+  combatDamage?: (p: BPlayer, dmg: number) => number;
+  // 戰鬥中
+  onShieldLost?(c: Combat, side: 0 | 1, m: BMinion): void;
+  onFriendReborn?(c: Combat, side: 0 | 1, m: BMinion): void;
+  onDeathrattle?(c: Combat, side: 0 | 1, m: BMinion): void;
+  /** 起始戰鬥效果多觸發幾次 */
+  socExtra?: number;
+  /** 亡語多觸發幾次 */
+  drExtra?: number;
+  /** 每場戰鬥第一個亡語多觸發一次 */
+  firstDrExtra?: boolean;
   /** 酒館法術的費用 */
-  spellCost?: (p: BPlayer, cost: number) => number;
+  spellCost?: (p: BPlayer, cost: number, id?: string) => number;
   // 戰鬥中
   soc?(c: Combat, side: 0 | 1): void;
   onSummonCombat?(c: Combat, side: 0 | 1, m: BMinion): void;

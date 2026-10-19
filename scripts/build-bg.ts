@@ -24,6 +24,8 @@ interface HsjCard {
   isBattlegroundsPoolMinion?: boolean;
   isBattlegroundsPoolSpell?: boolean;
   isBattlegroundsDuosExclusive?: boolean;
+  isBattlegroundsBuddy?: boolean;
+  spellSchool?: string;
   battlegroundsAssociatedRaces?: string[];
   battlegroundsHero?: boolean;
   heroPowerDbfId?: number;
@@ -82,6 +84,7 @@ const EXTRA_IDS = [
   'TB_BaconShop_HP_036t', // 虛空傳送門
   'BG23_HERO_303pt', // 沒有手下
   'TB_BaconShop_HP_038t', // 野生香蕉
+  'BG_TTN_401', // 先祖自動機（自動機頭像）
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -144,6 +147,18 @@ async function main() {
   }
   // 聚合體擁有所有種族
   (out['TB_BaconShop_HP_033t'] as { races?: string[] }).races = ['ALL'];
+  // 飾品與任務獎勵：只收錄 src/bg/relics.ts 有實作的；異象與任務全部收錄
+  const relicSrc = readFileSync('src/bg/relics.ts', 'utf8');
+  const used = new Set([...relicSrc.matchAll(/'(BG\d+_(?:MagicItem|Reward|Anomaly)_\w+)'/g)].map((m) => m[1]));
+  for (const c of zh) {
+    if (c.id.startsWith('BGDUO') || c.isBattlegroundsDuosExclusive) continue;
+    if (c.type === 'BATTLEGROUND_TRINKET' && used.has(c.id)) add(c, { cost: c.cost ?? 0, kind: c.spellSchool === 'GREATER_TRINKET' ? 'greater' : 'lesser' });
+    // 「獲得一個『0』複製品」：官方資料沒有指出是哪張卡，這裡不實作這一段
+    else if (c.type === 'BATTLEGROUND_QUEST_REWARD' && used.has(c.id)) add(c, { kind: 'reward', text: clean(c.text).replace(/^獲得一個「0」[^。]*。/, '') });
+    else if (c.type === 'BATTLEGROUND_ANOMALY') add(c, { kind: 'anomaly' });
+    else if (/^BG2[478]_Quest_\d+$/.test(c.id)) add(c, { kind: 'quest' });
+    else if (c.isBattlegroundsBuddy && c.type === 'MINION' && c.id.endsWith('_Buddy')) add(c);
+  }
   // 英雄與英雄能力
   for (const c of zh) {
     if (!c.battlegroundsHero || c.type !== 'HERO' || c.id.startsWith('BGDUO') || /_SKIN_/.test(c.id)) continue;

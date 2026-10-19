@@ -59,12 +59,21 @@ export function saveSession(s: BgSession | null) {
   }
 }
 
-export function newSession(opts: { rated: boolean; difficulty?: BgDifficulty | 'mixed'; timer: boolean; name: string }): BgSession {
+export function newSession(opts: {
+  rated: boolean;
+  difficulty?: BgDifficulty | 'mixed';
+  timer: boolean;
+  name: string;
+  trinkets?: boolean;
+  anomaly?: boolean;
+  quests?: boolean;
+  buddies?: boolean;
+}): BgSession {
   const p = getProfile();
   const rating = p.bg?.rating ?? 0;
   const seed = Math.floor(Math.random() * 2 ** 31);
   const lobby = findLobby(opts.rated ? { rating } : { difficulty: opts.difficulty ?? 'normal' }, seed);
-  const game = BgGame.create({ seed, humanName: opts.name, ais: lobby });
+  const game = BgGame.create({ seed, humanName: opts.name, ais: lobby, trinkets: opts.trinkets, anomaly: opts.anomaly, quests: opts.quests, buddies: opts.buddies });
   for (const pl of game.s.players) if (!pl.isHuman) game.pickHero(pl.idx, aiPickHero(game, pl));
   const lobbyAvg = lobby.reduce((n, x) => n + x.persona.rating, 0) / lobby.length;
   const s: BgSession = { game, rated: opts.rated, difficulty: opts.difficulty, lobbyAvg, timer: opts.timer, roundStart: performance.now(), think: {} };

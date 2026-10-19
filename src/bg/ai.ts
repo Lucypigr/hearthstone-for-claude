@@ -14,7 +14,8 @@ import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { heroOf, HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
-import { BOARD_MAX, canMagnetize, HAND_MAX, MAX_TIER, specsOf } from './rules';
+import { BOARD_MAX, canMagnetize, HAND_MAX, MINION_COST, specsOf } from './rules';
+import { relicCost, RELIC_SPEC } from './relics';
 import { TRIBE_NAMES, TRIBES, type BgPersona, type BgStyle, type BMinion, type BPlayer, type HandCard, type Tribe } from './types';
 
 export type BgDifficulty = 'novice' | 'normal' | 'expert' | 'master';
@@ -243,7 +244,7 @@ function step(M: Mind): boolean {
   // 3. 三合一獎勵（高手會先升本再用）
   const reward = p.hand.find((h) => h.kind === 'spell' && h.id === TRIPLE_REWARD);
   if (reward && p.hand.length < HAND_MAX) {
-    const holdForLevel = persona.skill > 0.6 && p.tier < MAX_TIER && wantsLevel(M, 1) && G.upgradeCost(p) <= p.gold + 2;
+    const holdForLevel = persona.skill > 0.6 && p.tier < G.maxTier(p) && wantsLevel(M, 1) && G.upgradeCost(p) <= p.gold + 2;
     if (!holdForLevel) {
       G.play(p.idx, reward.uid);
       return true;
@@ -253,7 +254,9 @@ function step(M: Mind): boolean {
   if (playFromHand(M)) return true;
   // 5. 英雄能力
   if (usePower(M)) return true;
-  // 6. 買手下
+  // 6. 夥伴按鈕
+  if (pressBuddy(M)) return true;
+  // 7. 買手下
   if (buySomething(M)) return true;
   // 7. 啟動技能
   if (activateSomething(M)) return true;
@@ -270,7 +273,7 @@ function curveTier(style: BgStyle, round: number): number {
 /** 想升級酒館嗎（look = 往後看幾回合） */
 function wantsLevel(M: Mind, look = 0): boolean {
   const { G, p, persona } = M;
-  if (p.tier >= MAX_TIER) return false;
+  if (p.tier >= G.maxTier(p) || G.hooks(p).some((hk) => hk.noUpgrade)) return false;
   const cost = G.upgradeCost(p);
   if (cost <= 1 && G.round >= 3 && persona.skill > 0.3) return true;
   let target = curveTier(persona.style, G.round + look);
@@ -291,12 +294,79 @@ function wantsLevel(M: Mind, look = 0): boolean {
   return p.tier < target;
 }
 
+/** 夥伴按鈕：買得起、又不會影響這回合的發展就按 */
+function pressBuddy(M: Mind): boolean {
+  const { G, p, persona } = M;
+  const st = G.buddyState(p);
+  if (!st?.usable) return false;
+  // 新手常常忘記有夥伴
+  if (persona.skill < 0.35 && M.r() < 0.5) return false;
+  const left = p.gold - st.cost;
+  const cheap = st.cost <= tierOf(st.id) + 2;
+  if (!cheap && left < G.minionCost(p) && G.round < 8) return false;
+  G.pressBuddy(p.idx);
+  M.bought.push(`夥伴${bgCard(st.id).name}`);
+  return true;
+}
+
+/** 飾品值多少：基本價值 + 和現在戰隊的種族搭不搭 */
+function relicValue(M: Mind, id: string): number {
+  const { p, persona } = M;
+  const r = RELIC_SPEC.get(id);
+  let v = r?.v ?? 4;
+  const tribe = r?.needTribe ?? (bgCard(id).assoc?.[0] as Tribe | undefined);
+  if (tribe) {
+    const n = p.board.filter((m) => isRace(m.id, tribe)).length;
+    v += M.focus === tribe ? 3 : n >= 3 ? 2 : n === 0 ? -2 : 0;
+  }
+  // 花的錢越多越要值得（高手比較會算）
+  v -= relicCost(id) * 0.25 * persona.skill;
+  return v + gauss(M) * (1 - persona.skill) * 3;
+}
+
+/** 任務：大概要多久才完成（越適合現在的戰隊越快） */
+function questValue(M: Mind, qid: string, reward: string): number {
+  const { p } = M;
+  const has = (t: Tribe) => p.board.filter((m) => isRace(m.id, t)).length;
+  const fit: Record<string, number> = {
+    BG24_Quest_124: has('UNDEAD') + has('BEAST'),
+    BG24_Quest_320: has('UNDEAD') + has('BEAST') + has('MECHANICAL'),
+    BG24_Quest_311: has('MURLOC') + has('DRAGON'),
+    BG28_Quest_500: has('NAGA') * 2,
+    BG24_Quest_120: p.results.slice(-3).filter((x) => x !== 'win').length,
+    BG24_Quest_351: M.persona.style === 'reroll' ? -2 : 0,
+    BG27_Quest_801: p.board.reduce((n, m) => n + m.atk, 0) / 7,
+    // 比較難完成的任務（高手知道要避開，除非剛好是重刷型）
+    BG24_Quest_112: M.persona.style === 'reroll' ? 2 : -2 * M.persona.skill,
+    BG24_Quest_313: -1.5 * M.persona.skill,
+    BG27_Quest_800: -1.5 * M.persona.skill,
+  };
+  return (RELIC_SPEC.get(reward)?.v ?? 5) + (fit[qid] ?? 1) + gauss(M) * (1 - M.persona.skill) * 3;
+}
+
 function chooseDiscover(M: Mind) {
   const { G, p } = M;
   const d = p.discover;
   if (!d) return;
   let best = 0;
   let bestV = -Infinity;
+  if (d.relics) {
+    d.options.forEach((id, i) => {
+      const v = G.relicPrice(p, d, id) > p.gold ? -Infinity : relicValue(M, id);
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    if (bestV === -Infinity) best = G.autoChoice(p);
+    M.notes.push(`買了飾品${bgCard(d.options[best]).name}`);
+    return G.choose(p.idx, best);
+  }
+  if (d.rewards) {
+    d.options.forEach((id, i) => {
+      const v = questValue(M, id, d.rewards![i]);
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    M.notes.push(`接了任務${bgCard(d.options[best]).name}`);
+    return G.choose(p.idx, best);
+  }
   // 魚爾摩斯：用記得的對手戰隊來猜
   if (d.guess !== undefined) {
     const o = G.opponentOf(p.idx);
@@ -423,10 +493,14 @@ function usePower(M: Mind): boolean {
 function buySomething(M: Mind): boolean {
   const { G, p, persona } = M;
   if (p.hand.length >= HAND_MAX) return false;
-  const cost = G.minionCost(p);
   const handMinions = p.hand.filter((h) => h.kind === 'minion').length;
-  const scored = p.shop.map((m) => ({ m, v: buyValue(M, m) })).sort((a, b) => b.v - a.v);
+  // 有些異象 / 飾品讓手下的價格不一樣：比較每枚金幣的價值
+  const scored = p.shop
+    .filter((m) => G.minionCost(p, m) <= p.gold)
+    .map((m) => ({ m, v: buyValue(M, m) + (G.minionCost(p, m) < MINION_COST ? 2 : 0) }))
+    .sort((a, b) => b.v - a.v);
   const best = scored[0];
+  const cost = best ? G.minionCost(p, best.m) : G.minionCost(p);
   const space = p.board.length + handMinions < BOARD_MAX;
   // 酒館法術：比較「每枚金幣的價值」
   const spell = p.shopSpells
@@ -586,6 +660,7 @@ function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefin
 
 function rollOrFreeze(M: Mind): boolean {
   const { G, p, persona } = M;
+  if (G.hooks(p).some((hk) => hk.noRefresh)) return false;
   const rc = G.refreshCost(p);
   const mc = G.minionCost(p);
   const bestShop = p.shop.length ? Math.max(...p.shop.map((m) => buyValue(M, m))) : 0;

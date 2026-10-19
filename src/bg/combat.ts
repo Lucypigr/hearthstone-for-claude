@@ -4,7 +4,7 @@ import { isRace, tierOf } from './data';
 
 const DEITY = 'BGFYM_000';
 import { SPEC } from './cards';
-import { HERO_SPEC } from './heroes';
+import { HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { auraOf, BOARD_MAX, makeMinion, specsOf, spellExtraOf } from './rules';
 import type { BMinion, BPlayer, CombatFrame, CombatResult, Keyword } from './types';
@@ -14,6 +14,8 @@ export interface SideInput {
   board: BMinion[];
   tier: number;
   heroId: string;
+  /** 英雄能力、飾品、任務獎勵、異象（沒給的話只用英雄能力） */
+  hooks?: HeroSpec[];
   /** 手牌中的手下（有些效果在戰鬥中會用到） */
   hand: BMinion[];
   /** 這一方的永久效果要不要保存（模擬或殘影 = false） */
@@ -50,7 +52,7 @@ export class CombatSim implements Combat {
   private counts: [Record<string, number>, Record<string, number>];
   private hands: [BMinion[], BMinion[]];
   private deathCount: [number, number] = [0, 0];
-  private heroAvenge: [number, number] = [0, 0];
+  private heroAvenge: [Map<string, number>, Map<string, number>] = [new Map(), new Map()];
   private immediate: BMinion[] = [];
   private frames: CombatFrame[] | null;
   private hits: { uid: number; amount: number }[] = [];
@@ -79,6 +81,14 @@ export class CombatSim implements Combat {
     this.hands = [sides[0].persist ? sides[0].hand : sides[0].hand.map(snap), sides[1].persist ? sides[1].hand : sides[1].hand.map(snap)];
     this.frames = o.record ? [] : null;
     this.starting = [this.boards[0].map((m) => m.id), this.boards[1].map((m) => m.id)];
+  }
+
+  /** 這一方的英雄能力、飾品、任務獎勵、異象 */
+  private hooks(side: 0 | 1): HeroSpec[] {
+    const sd = this.sides[side];
+    if (sd.hooks) return sd.hooks;
+    const h = HERO_SPEC.get(sd.heroId);
+    return h ? [h] : [];
   }
 
   startBoard(side: 0 | 1): string[] {
@@ -263,7 +273,8 @@ export class CombatSim implements Combat {
     m.uses = 0;
     const i = index === undefined ? board.length : Math.max(0, Math.min(board.length, index));
     board.splice(i, 0, m);
-    HERO_SPEC.get(this.sides[side].heroId)?.onSummonCombat?.(this, side, m);
+    for (const hk of this.hooks(side)) hk.onSummonCombat?.(this, side, m);
+    this.counter(side, 'q:summon', 1);
     for (const f of board) {
       if (f === m || f.dead) continue;
       for (const { s, g } of specsOf(f)) s.onSummon?.(this, f, m, g);
@@ -278,6 +289,7 @@ export class CombatSim implements Combat {
       t.shield = false;
       this.hits.push({ uid: t.uid, amount: 0 });
       for (const f of this.alive(side)) for (const { s, g } of specsOf(f)) s.onShieldLost?.(this, f, t, g);
+      for (const hk of this.hooks(side)) hk.onShieldLost?.(this, side, t);
       return 0;
     }
     const before = t.hp;
@@ -301,7 +313,8 @@ export class CombatSim implements Combat {
     t.killer = source.uid;
     const ks = this.side(source);
     if (ks === this.side(t)) return;
-    HERO_SPEC.get(this.sides[ks].heroId)?.onKill?.(this, ks, source, t, !this.firstKill[ks]);
+    for (const hk of this.hooks(ks)) hk.onKill?.(this, ks, source, t, !this.firstKill[ks]);
+    this.counter(ks, 'q:kill', 1);
     this.firstKill[ks] = true;
   }
 
@@ -315,14 +328,23 @@ export class CombatSim implements Combat {
     this.runDeathrattle(m, side, i);
   }
 
+  private firstDr: [boolean, boolean] = [false, false];
   private runDeathrattle(m: BMinion, side: 0 | 1, index: number) {
-    const titus = this.alive(side).reduce((n, x) => n + (x.id === 'BG25_354' ? (x.golden ? 2 : 1) : 0), 0);
     const extra = (m.extraDr ?? []).map((x) => ({ s: SPEC.get(x.id)!, g: x.g })).filter((x) => x.s);
-    for (let t = 0; t <= titus; t++) {
-      for (const { s, g } of [...specsOf(m), ...extra]) {
-        if (!s.deathrattle) continue;
-        s.deathrattle(this, m, g, index);
+    const all = [...specsOf(m), ...extra].filter(({ s }) => s.deathrattle);
+    if (!all.length) return;
+    // 瑞文戴爾男爵、動盪陵墓、阿古斯的迴響、死亡骨匣（每場第一個亡語）
+    let times = 1 + this.alive(side).reduce((n, x) => n + (x.id === 'BG25_354' ? (x.golden ? 2 : 1) : 0), 0);
+    for (const hk of this.hooks(side)) times += hk.drExtra ?? 0;
+    if (!this.firstDr[side]) {
+      this.firstDr[side] = true;
+      times += this.hooks(side).filter((hk) => hk.firstDrExtra).length;
+    }
+    for (let t = 0; t < times; t++) {
+      for (const { s, g } of all) {
+        s.deathrattle!(this, m, g, index);
         this.counter(side, 'drs', 1);
+        for (const hk of this.hooks(side)) hk.onDeathrattle?.(this, side, m);
       }
     }
   }
@@ -346,7 +368,8 @@ export class CombatSim implements Combat {
     const target = this.chooseTarget(foes);
     if (!target) return;
     this.hits = [];
-    HERO_SPEC.get(this.sides[s].heroId)?.onAttack?.(this, s, att);
+    for (const hk of this.hooks(s)) hk.onAttack?.(this, s, att);
+    this.counter(s, 'q:attack', 1);
     for (const { s: sp, g } of specsOf(att)) sp.rally?.(this, att, g, target);
     for (const f of this.alive(s)) {
       if (f === att) continue;
@@ -428,14 +451,16 @@ export class CombatSim implements Combat {
           }
           for (const { s, g } of specsOf(f)) s.onFriendDeath?.(this, f, d.m, g);
         }
-        HERO_SPEC.get(this.sides[d.side].heroId)?.onFriendDeath?.(this, d.side, d.m);
-        const hero = HERO_SPEC.get(this.sides[d.side].heroId);
-        if (hero?.avenge) {
-          this.heroAvenge[d.side]++;
-          if (this.heroAvenge[d.side] >= hero.avenge[0]) {
-            this.heroAvenge[d.side] = 0;
-            hero.avenge[1](this, d.side);
-          }
+        this.counter(d.side, 'q:die', 1);
+        for (const hk of this.hooks(d.side)) {
+          hk.onFriendDeath?.(this, d.side, d.m);
+          if (!hk.avenge) continue;
+          const key = hk.id;
+          const n = (this.heroAvenge[d.side].get(key) ?? 0) + 1;
+          if (n >= hk.avenge[0]) {
+            this.heroAvenge[d.side].set(key, 0);
+            hk.avenge[1](this, d.side);
+          } else this.heroAvenge[d.side].set(key, n);
         }
         if (d.m.reborn && !d.m.temp) {
           const r = this.make(d.m.id, d.m.golden);
@@ -451,6 +476,7 @@ export class CombatSim implements Combat {
               if (f === placed) continue;
               for (const { s, g } of specsOf(f)) s.onFriendReborn?.(this, f, placed, g);
             }
+            for (const hk of this.hooks(d.side)) hk.onFriendReborn?.(this, d.side, placed);
           }
         }
       }
@@ -540,16 +566,21 @@ export class CombatSim implements Combat {
     this.frame(undefined, undefined, '戰鬥開始');
     // 起始戰鬥：英雄能力 → 手牌 → 手下
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      HERO_SPEC.get(this.sides[side].heroId)?.soc?.(this, side);
+      for (const hk of this.hooks(side)) hk.soc?.(this, side);
       this.socSpells(side);
     }
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
       for (const h of [...this.hands[side]]) for (const { s, g } of specsOf(h)) s.socInHand?.(this, h, side, g);
     }
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      for (const m of [...this.boards[side]]) {
-        if (m.dead) continue;
-        for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
+      // 沃卓肯風鈴：起始戰鬥效果多觸發一次
+      const times = 1 + this.hooks(side).reduce((n, hk) => n + (hk.socExtra ?? 0), 0);
+      for (let t = 0; t < times; t++) {
+        if (t > 0) for (const hk of this.hooks(side)) hk.soc?.(this, side);
+        for (const m of [...this.boards[side]]) {
+          if (m.dead) continue;
+          for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
+        }
       }
     }
     this.hits = [];

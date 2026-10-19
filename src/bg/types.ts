@@ -46,6 +46,8 @@ export interface BgCardData {
   races?: string[];
   mech?: string[];
   cost?: number;
+  /** 飾品、任務、任務獎勵、異象 */
+  kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest';
   armor?: number;
   power?: string;
   /** 酒館裡會賣的法術 */
@@ -176,6 +178,14 @@ export interface Discover {
   objs?: BMinion[];
   /** 費林大使：選到的手下等升到這個等級才拿到 */
   reserve?: number;
+  /** 選項是飾品 / 任務獎勵（飾品要付金幣） */
+  relics?: 'lesser' | 'greater' | 'reward';
+  /** 選項是任務：每個任務完成後的獎勵 */
+  rewards?: string[];
+  /** 拿到時把身材設成這樣（旅店老闆的爐火） */
+  stats?: [number, number];
+  /** 拿到時鎖定幾回合 */
+  lockTurns?: number;
 }
 
 export interface Seen {
@@ -241,6 +251,12 @@ export interface BPlayer {
   lastDied?: string[];
   /** 費林大使：升到某等級才拿到的手下 */
   reserve?: { id: string; tier: number }[];
+  /** 飾品與任務獎勵 */
+  relics?: string[];
+  /** 進行中的任務 */
+  quest?: { id: string; reward: string; need: number; start: number } | null;
+  /** 夥伴按鈕：目前的費用、按了幾次 */
+  buddy?: { cost: number; presses: number };
   /** 被淘汰時的戰隊（之後當作殘影） */
   deathBoard: BMinion[] | null;
   /** 電腦玩家的個性 */

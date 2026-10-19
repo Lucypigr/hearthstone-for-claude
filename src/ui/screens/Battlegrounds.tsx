@@ -6,7 +6,8 @@ import { SPELL_SPEC } from '../../bg/spells';
 import { bgCard, racesOf, tierOf } from '../../bg/data';
 import { BgError, type BgGame, type CombatRecord } from '../../bg/game';
 import { heroOf, HERO_SPEC, powerCardOf } from '../../bg/heroes';
-import { canMagnetize, goldForTurn, MAX_TIER, specsOf } from '../../bg/rules';
+import { canMagnetize, goldForTurn, specsOf } from '../../bg/rules';
+import { QUEST_SPEC, questProgress, relicCost, RELIC_SPEC } from '../../bg/relics';
 import { KEYWORD_NAMES, TRIBE_ICONS, TRIBE_NAMES, TRIBES, type BMinion, type BPlayer, type CombatFrame, type HandCard, type Keyword, type Tribe } from '../../bg/types';
 import { BG_PLACE_GOLD } from '../../game/economy';
 import { newBgStats } from '../../game/battlegrounds';
@@ -18,6 +19,34 @@ import '../bg.css';
 
 const PLACE_NAMES = ['', '第 1 名', '第 2 名', '第 3 名', '第 4 名', '第 5 名', '第 6 名', '第 7 名', '第 8 名'];
 const NAME_KEY = 'hearthstone-for-claude/bg-name';
+const OPT_KEY = 'hearthstone-for-claude/bg-options';
+
+export interface BgOptions {
+  trinkets: boolean;
+  anomaly: boolean;
+  quests: boolean;
+  buddies: boolean;
+}
+const DEFAULT_OPTIONS: BgOptions = { trinkets: true, anomaly: true, quests: true, buddies: true };
+const OPTION_NAMES: [keyof BgOptions, string, string][] = [
+  ['trinkets', '💍 飾品', '第 6 回合開次級飾品商店、第 9 回合開強效飾品商店，花金幣買一個飾品'],
+  ['anomaly', '🌀 異象', '每局隨機一個改變規則的異象（例如以 10 枚金幣開始、只有 1～4 本……）'],
+  ['quests', '📜 任務', '第 4 回合從 3 個任務中選一個，完成後拿到它的獎勵'],
+  ['buddies', '🤝 英雄夥伴', '每位英雄都有專屬的夥伴手下：按下夥伴按鈕花金幣拿到它（越晚越便宜，2 張就能做成金卡）'],
+];
+
+function loadOptions(): BgOptions {
+  try {
+    return { ...DEFAULT_OPTIONS, ...JSON.parse(localStorage.getItem(OPT_KEY) ?? '{}') };
+  } catch {
+    return { ...DEFAULT_OPTIONS };
+  }
+}
+
+/** 任務的敘述（把官方資料裡的 0 換成需要的次數） */
+function questText(id: string, need: number): string {
+  return bgCard(id).text.replace(/(^|[^\d])0(?!\d)/, `$1${need}`);
+}
 
 // ---------------------------------------------------------------------------
 // 大廳
@@ -28,6 +57,7 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
   const bg = p.bg ?? newBgStats();
   const [mode, setMode] = useState<'rated' | BgDifficulty | 'mixed'>('rated');
   const [timer, setTimer] = useState(true);
+  const [opts, setOpts] = useState<BgOptions>(loadOptions);
   const [name, setName] = useState(() => {
     try {
       return localStorage.getItem(NAME_KEY) || '你';
@@ -43,7 +73,7 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
     if (queue === null) return;
     if (queue >= 7) {
       const t = window.setTimeout(() => {
-        newSession({ rated: mode === 'rated', difficulty: mode === 'rated' ? undefined : mode, timer, name: name.trim() || '你' });
+        newSession({ rated: mode === 'rated', difficulty: mode === 'rated' ? undefined : mode, timer, name: name.trim() || '你', ...opts });
         onStart();
       }, 500);
       return () => window.clearTimeout(t);
@@ -55,6 +85,7 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
   const start = () => {
     try {
       localStorage.setItem(NAME_KEY, name.trim() || '你');
+      localStorage.setItem(OPT_KEY, JSON.stringify(opts));
     } catch {
       /* 無法儲存 */
     }
@@ -115,6 +146,14 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
         <label className="bg-opt">
           <input type="checkbox" checked={timer} onChange={(e) => setTimer(e.target.checked)} /> 回合計時（和真正的英雄戰場一樣，時間到自動結束招募）
         </label>
+        <div className="bg-opts">
+          {OPTION_NAMES.map(([k, label, desc]) => (
+            <label key={k} className="bg-opt" title={desc}>
+              <input type="checkbox" checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} /> {label}
+              <span className="muted small">　{desc}</span>
+            </label>
+          ))}
+        </div>
         <label className="bg-opt">
           名稱 <input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
         </label>
@@ -431,6 +470,7 @@ function PeekPanel({ G, idx, onClose }: { G: BgGame; idx: number; onClose: () =>
           {hero?.status?.(p, G) && <div className="muted small">{hero.status(p, G)}</div>}
         </div>
       </div>
+      <RelicBar G={G} p={p} side="bottom" />
       {seen ? (
         <>
           <div className="muted small">第 {seen.round} 回合交手時的戰隊（旅店等級 {seen.tier}）</div>
@@ -572,6 +612,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   const power = powerCardOf(me);
   const hero = heroOf(me)!;
   const pst = G.powerState(me);
+  const bst = G.buddyState(me);
   const handCard = mode.k === 'hand' || mode.k === 'target' || mode.k === 'choose' ? me.hand.find((h) => h.uid === mode.uid) : undefined;
   const choice = mode.k === 'hand' || mode.k === 'target' ? mode.choice ?? 0 : 0;
   const spellTargets = handCard?.kind === 'spell' && mode.k === 'hand' ? G.spellTargets(me, handCard.id, choice) : [];
@@ -789,6 +830,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
         </button>
         <span className="battle-title">
           🍺 英雄戰場・第 {G.round} 回合・{G.s.tribes.map((t) => `${TRIBE_ICONS[t]}${TRIBE_NAMES[t]}`).join(' ')}
+          {G.s.anomaly && <AnomalyChip id={G.s.anomaly} />}
         </span>
         {s.timer ? <span className={`bg-timer ${timerLow ? 'low' : ''}`}>⏱ {left}</span> : <span />}
       </div>
@@ -835,8 +877,8 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                 <span>鮑伯的酒館</span>
               </div>
               <div className="bg-tavern-btns">
-                <button className="btn small" disabled={me.tier >= MAX_TIER || me.gold < upCost || busy} onClick={(e) => (e.stopPropagation(), act(() => G.upgrade(0)))}>
-                  ⬆ 升級 {me.tier < MAX_TIER ? `🪙${upCost}` : '（最高）'}
+                <button className="btn small" disabled={me.tier >= G.maxTier(me) || me.gold < upCost || busy || G.hooks(me).some((hk) => hk.noUpgrade)} onClick={(e) => (e.stopPropagation(), act(() => G.upgrade(0)))}>
+                  ⬆ 升級 {G.hooks(me).some((hk) => hk.noUpgrade) ? '（自動升級）' : me.tier < G.maxTier(me) ? `🪙${upCost}` : '（最高）'}
                 </button>
                 <button className="btn small" disabled={me.gold < G.refreshCost(me) || busy} onClick={(e) => (e.stopPropagation(), act(() => G.refresh(0)))}>
                   🔄 刷新 {G.refreshCost(me) ? `🪙${G.refreshCost(me)}` : '免費'}
@@ -974,7 +1016,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
               </button>
               <div className="bg-gold" title="金幣">
                 🪙 {me.gold}
-                <small> / {goldForTurn(G.round) + me.maxGoldBonus}</small>
+                <small> / {(G.hooks(me).find((hk) => hk.goldBase)?.goldBase?.(G.round) ?? goldForTurn(G.round)) + me.maxGoldBonus}</small>
                 {G.s.tribes.includes('ABERRATION') && (
                   <div className="bg-extra" title="你的神祇：4 個友方畸變體在戰鬥中死亡後甦醒">
                     👁️ 克蘇恩 {1 + (me.c.deityA ?? 0)}/{1 + (me.c.deityH ?? 0)}
@@ -989,6 +1031,32 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   ) : null;
                 })()}
               </div>
+              {bst && (
+                <button
+                  className={`bg-buddy ${bst.usable ? 'usable' : ''}`}
+                  disabled={!bst.usable || busy}
+                  onClick={(e) => (e.stopPropagation(), act(() => G.pressBuddy(0)))}
+                >
+                  <Art cardId={bst.id} label="夥伴" />
+                  <span className="bg-power-cost">{bst.cost}</span>
+                  <div className="bg-tip-pop top">
+                    <div className="bg-tip">
+                      <div className="bg-tip-head">
+                        <b>🤝 {bgCard(bst.id).name}</b>
+                        <span className="muted small">
+                          {bgCard(bst.id).atk}/{bgCard(bst.id).hp}・{tierOf(bst.id)} 本
+                        </span>
+                      </div>
+                      <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(bst.id).text) }} />
+                      <div className="bg-tip-note">
+                        夥伴按鈕：🪙{bst.cost}（每回合便宜 1，最多拿 2 次，2 張就能做成金卡）・已拿 {me.buddy?.presses ?? 0} 次
+                      </div>
+                      {bst.reason && <div className="bg-tip-note">{bst.reason}</div>}
+                    </div>
+                  </div>
+                </button>
+              )}
+              <RelicBar G={G} p={me} />
             </div>
             <div className="bg-hand">
               {me.hand.map((h) =>
@@ -1094,7 +1162,7 @@ function Slot({ onClick }: { onClick: () => void }) {
 function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }) {
   const me = G.human;
   const d = me.discover!;
-  const ms = useMemo(() => (d.spells || d.powers ? [] : d.objs ? d.objs : d.options.map((id) => G.make(id, !!d.golden))), [d]);
+  const ms = useMemo(() => (d.spells || d.powers || d.relics || d.rewards ? [] : d.objs ? d.objs : d.options.map((id) => G.make(id, !!d.golden))), [d]);
   return (
     <div className="bg-modal" onClick={(e) => e.stopPropagation()}>
       <h3>{d.title}</h3>
@@ -1110,6 +1178,39 @@ function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }
                 <b>{pw.name}</b>
                 <div className="muted small">{bgCard(id).name}</div>
                 <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(pw.text) }} />
+              </div>
+            );
+          })}
+        {d.relics &&
+          d.options.map((id, i) => {
+            const price = G.relicPrice(me, d, id);
+            const ok = price <= me.gold;
+            return (
+              <div key={id} className={`bg-discover-opt bg-relic-opt ${ok ? '' : 'disabled'}`} onClick={() => ok && onPick(i)}>
+                <div className="bg-relic-art">
+                  <Art cardId={id} label="飾品" />
+                  <span className="bg-power-cost">{d.relics === 'reward' ? '★' : relicCost(id)}</span>
+                </div>
+                <b>{bgCard(id).name}</b>
+                <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+                {!ok && <div className="muted small">金幣不夠</div>}
+                {price < relicCost(id) && d.relics !== 'reward' && <div className="muted small">（用剩下的 🪙{price} 買）</div>}
+              </div>
+            );
+          })}
+        {d.rewards &&
+          d.options.map((id, i) => {
+            const need = QUEST_SPEC.get(id)?.need ?? 0;
+            const rw = d.rewards![i];
+            return (
+              <div key={id} className="bg-discover-opt bg-quest-opt" onClick={() => onPick(i)}>
+                <b>📜 {bgCard(id).name}</b>
+                <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(questText(id, need)) }} />
+                <div className="bg-relic-art">
+                  <Art cardId={rw} label="獎勵" />
+                </div>
+                <b className="small">獎勵：{bgCard(rw).name}</b>
+                <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(rw).text) }} />
               </div>
             );
           })}
@@ -1133,6 +1234,76 @@ function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }
   );
 }
 
+/** 這局的異象 */
+function AnomalyChip({ id }: { id: string }) {
+  return (
+    <span className="bg-anomaly">
+      🌀 {bgCard(id).name}
+      <div className="bg-tip-pop bottom">
+        <div className="bg-tip">
+          <div className="bg-tip-head">
+            <b>異象：{bgCard(id).name}</b>
+          </div>
+          <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+        </div>
+      </div>
+    </span>
+  );
+}
+
+/** 擁有的飾品、任務獎勵，以及進行中的任務 */
+function RelicBar({ G, p, side = 'top' }: { G: BgGame; p: BPlayer; side?: 'top' | 'bottom' }) {
+  const relics = p.relics ?? [];
+  const pr = questProgress(p);
+  if (!relics.length && !pr && !(G.s.trinkets && G.round < 9)) return null;
+  const nextShop = G.s.trinkets ? (G.round < (p.c.lesserAt || 6) ? `次級飾品商店：第 ${p.c.lesserAt || 6} 回合` : G.round < (p.c.greaterAt || 9) ? `強效飾品商店：第 ${p.c.greaterAt || 9} 回合` : null) : null;
+  return (
+    <div className="bg-relics">
+      {relics.map((id) => {
+        const st = RELIC_SPEC.get(id)?.status?.(p, G);
+        return (
+          <span key={id} className={`bg-relic ${RELIC_SPEC.get(id)?.kind ?? ''}`}>
+            <Art cardId={id} label={bgCard(id).name.slice(0, 2)} />
+            <div className={`bg-tip-pop ${side}`}>
+              <div className="bg-tip">
+                <div className="bg-tip-head">
+                  <b>{bgCard(id).name}</b>
+                  <span className="muted small">{{ lesser: '次級飾品', greater: '強效飾品', reward: '任務獎勵', anomaly: '異象' }[RELIC_SPEC.get(id)?.kind ?? 'lesser']}</span>
+                </div>
+                <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+                {st && <div className="bg-tip-note">{st}</div>}
+              </div>
+            </div>
+          </span>
+        );
+      })}
+      {pr && p.quest && (
+        <span className="bg-relic quest">
+          <span className="bg-quest-num">
+            {pr[0]}/{pr[1]}
+          </span>
+          <div className={`bg-tip-pop ${side}`}>
+            <div className="bg-tip">
+              <div className="bg-tip-head">
+                <b>📜 {bgCard(p.quest.id).name}</b>
+                <span className="muted small">
+                  {pr[0]}/{pr[1]}
+                </span>
+              </div>
+              <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(questText(p.quest.id, p.quest.need)) }} />
+              <div className="bg-tip-note">
+                獎勵：<b>{bgCard(p.quest.reward).name}</b>
+              </div>
+              <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(p.quest.reward).text) }} />
+            </div>
+          </div>
+        </span>
+      )}
+      {nextShop && !relics.length && <span className="muted small">💍 {nextShop}</span>}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 選英雄
 // ---------------------------------------------------------------------------
@@ -1146,7 +1317,10 @@ function HeroSelect({ s, onPick, onExit }: { s: BgSession; onPick: (id: string) 
         <button className="btn small" onClick={onExit}>
           ← 返回
         </button>
-        <span className="battle-title">選擇你的英雄・本局種族：{G.s.tribes.map((t) => `${TRIBE_ICONS[t]}${TRIBE_NAMES[t]}`).join(' ')}</span>
+        <span className="battle-title">
+          選擇你的英雄・本局種族：{G.s.tribes.map((t) => `${TRIBE_ICONS[t]}${TRIBE_NAMES[t]}`).join(' ')}
+          {G.s.anomaly && <AnomalyChip id={G.s.anomaly} />}
+        </span>
         <span />
       </div>
       <div className="bg-heroes">

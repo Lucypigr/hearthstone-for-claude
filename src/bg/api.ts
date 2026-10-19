@@ -68,6 +68,12 @@ export interface Recruit {
   tavernBuff(atk: number, hp: number, tribe?: Tribe): void;
   /** 增加計數並同步到戰場上符合的手下（例如「你的甲蟲本賽局 +2/+1」） */
   counter(key: string, n: number): void;
+  /** 用指定條件的手下重新填滿酒館（每個條件一個） */
+  restock(filters: ((id: string) => boolean)[]): void;
+  /** 隨機一張這局有的酒館法術 */
+  drawSpell(filter: (id: string) => boolean): string | undefined;
+  /** 把手下變成金卡（保留加成） */
+  goldenize(m: BMinion): void;
 }
 
 /** 戰鬥中 */
