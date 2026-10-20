@@ -46,6 +46,8 @@ export interface BgCardData {
   races?: string[];
   mech?: string[];
   cost?: number;
+  /** 暗月馬戲團獎品的等級 */
+  prize?: number;
   /** 飾品、任務、任務獎勵、異象 */
   kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest' | 'gift';
   armor?: number;
@@ -127,8 +129,10 @@ export interface BMinion {
   extraDr?: { id: string; g: number }[];
   /** 跳舞的戴瑞：帽子 */
   hat?: number;
-  /** 黑暗贈禮 */
+  /** 黑暗贈禮（也用來放暗月獎品給的效果） */
   gifts?: string[];
+  /** 酒館中：身上有暗月彩票（希拉斯） */
+  ticket?: boolean;
   /** 黑暗贈禮的計時（孵育：在這個回合身材加倍） */
   gt?: number;
   /** 戰鬥中：聖盾已經被打了幾次（托瑞斯的祝福） */

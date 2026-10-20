@@ -755,6 +755,13 @@ export const RELICS: RelicSpec[] = [
   },
 
   {
+    id: 'BG30_MagicItem_707', // 提卡特斯貼紙
+    kind: L,
+    v: 6,
+    onGain: (G, p) => void ((p.c['r:707'] = G.round), G.discoverPrize(p, 3)),
+    startTurn: (G, p) => void ((G.round - cnt(p, 'r:707')) % 3 === 0 && G.round > cnt(p, 'r:707') && G.discoverPrize(p, 3)),
+  },
+  {
     id: 'BG36_MagicItem_206', // 不祥之石
     kind: L,
     v: 6,
@@ -1580,6 +1587,9 @@ export const RELICS: RelicSpec[] = [
   },
   { id: 'BG33_Anomaly_001', kind: A, needBuddies: true, onUpgrade: (_G, p) => void (p.buddy && (p.buddy.cost = Math.max(0, p.buddy.cost - 2))) }, // 召喚契約
   { id: 'BG36_Anomaly_002', kind: A }, // 黑暗贈禮！（按鈕在 game.ts 的 darkState）
+  { id: 'BG27_Anomaly_Prizes2', kind: A, startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverPrize(p, Math.min(4, G.round / 4))) }, // 暗月馬戲團獎品
+  { id: 'BG27_Anomaly_716', kind: A, onUpgrade: (G, p) => G.discoverPrize(p, Math.min(4, 1 + Math.floor((G.round - 1) / 3))) }, // 升級獎品
+  { id: 'BG27_Anomaly_755', kind: A, prizeTriples: true }, // 馬戲團獎賞
 ];
 
 /** 瑪卓薩斯匕首：發現一個友方手下的普通複製，帶著黑暗贈禮 */

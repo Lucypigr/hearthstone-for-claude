@@ -120,6 +120,8 @@ export interface HeroSpec {
   drExtra?: number;
   /** 每場戰鬥第一個亡語多觸發一次 */
   firstDrExtra?: boolean;
+  /** 三合一獎勵改成發現暗月獎品 */
+  prizeTriples?: boolean;
   /** 酒館法術的費用 */
   spellCost?: (p: BPlayer, cost: number, id?: string) => number;
   // 戰鬥中
@@ -1395,6 +1397,26 @@ export const HEROES: HeroSpec[] = [
     passive: true,
     startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverGift(p, (id) => tierOf(id) <= p.tier, '感受毀滅：發現一個有黑暗贈禮的手下')),
     status: (_p, G) => `還有 ${4 - (G.round % 4) || 4} 回合`,
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_94', // 提卡特斯：每 4 回合發現一個暗月獎品（等級越來越高）
+    passive: true,
+    startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverPrize(p, Math.min(4, G.round / 4))),
+    status: (_p, G) => `還有 ${4 - (G.round % 4) || 4} 回合`,
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_90', // 希拉斯‧暗月：酒館裡有暗月彩票，集滿 3 張發現一個你的等級的手下
+    passive: true,
+    onShopMinion: (G, _p, m) => void (G.rand() < 0.3 && (m.ticket = true)),
+    onBuy: (G, p, m) => {
+      if (!m.ticket) return;
+      m.ticket = false;
+      p.c.tickets = (p.c.tickets ?? 0) + 1;
+      if (p.c.tickets % 3 === 0) G.discoverFor(p, (id) => tierOf(id) === p.tier, '暗月彩票：發現一個你的等級的手下');
+    },
+    status: (p) => `彩票 ${(p.c.tickets ?? 0) % 3}/3`,
     rank: 3,
   },
   {

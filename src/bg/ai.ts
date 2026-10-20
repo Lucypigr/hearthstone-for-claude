@@ -170,7 +170,9 @@ function copiesOwned(p: BPlayer, id: string): number {
 function buyValue(M: Mind, m: BMinion): number {
   const { G, p, persona } = M;
   let v = minionValue(G, p, m, M.focus, persona.skill);
-  const need = heroOf(p)?.tripleNeed ?? 3;
+  // 暗月彩票（希拉斯）：集滿 3 張可以發現
+  if (m.ticket) v += 3 + persona.skill * 3;
+  const need = Math.min(3, ...G.hooks(p).map((hk) => hk.tripleNeed ?? hk.tripleNeedFor?.(m.id) ?? 3), m.id.endsWith('_Buddy') ? 2 : 3);
   const owned = copiesOwned(p, m.id);
   // 三連：新手常常沒發現
   const noticesTriple = M.r() < 0.35 + persona.skill * 0.65;

@@ -11,6 +11,7 @@ import { CombatSim, runCombat, type SideInput } from './combat';
 import { bgCard, isRace, racesOf, setParadox, tierOf } from './data';
 import { attachGift, GIFT_IDS, hasGift, PARADOX } from './gifts';
 import { heroOf, HERO_SPEC, heroAvailable, HEROES, SWAPPABLE_POWERS, type HeroSpec } from './heroes';
+import { PRIZE_IDS, prizeTier } from './prizes';
 import { ANOMALIES, anomalyFits, QUEST_SPEC, QUESTS, questProgress, relicCost, RELIC_SPEC, RELICS, REWARDS, type RelicSpec } from './relics';
 import { nextRandom } from '../engine/rng';
 import {
@@ -276,6 +277,8 @@ export class BgGame {
       const c = hk.minionCost?.(p, m);
       if (c !== undefined) cost = Math.min(cost, c);
     }
+    // 親友折扣（暗月獎品）：手下只要 2 金幣
+    if (p.c.prizeCost2) cost = Math.min(cost, 2);
     return cost === Infinity ? MINION_COST : cost;
   }
   refreshCost(p: BPlayer): number {
@@ -474,7 +477,7 @@ export class BgGame {
     p.gold = base + p.maxGoldBonus + p.nextGold + (p.c.nextGoldC ?? 0) + (p.c.carry ?? 0);
     p.c.nextGoldC = 0;
     p.c.carry = 0;
-    p.freeRefreshes += p.c.freeRefC ?? 0;
+    p.freeRefreshes += (p.c.freeRefC ?? 0) + (p.c.prizeRef1 ?? 0) + 5 * (p.c.prizeRef5 ?? 0);
     p.c.freeRefC = 0;
     // 費林大使、詹莉‧伊夏：跳過前幾回合
     if (this.s.round <= (p.c.skip ?? 0)) p.gold = 0;
@@ -551,6 +554,8 @@ export class BgGame {
       for (const hk of this.hooks(p)) hk.endTurn?.(this, p);
     }
     p.hand = p.hand.filter((h) => !(h.kind === 'spell' && h.temp));
+    // 無限金幣（暗月獎品）：回合結束時回到手牌
+    for (let k = 0; k < (p.c['t:infGold'] ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BGS_Treasures_014', g: 1 });
     // 轉墓術：這回合打出的不死族會死亡
     for (const m of p.board.filter((x) => x.doom === this.s.round)) p.board = p.board.filter((x) => x !== m);
     // 還沒選的發現：自動選（飾品選買得起的）
@@ -636,6 +641,15 @@ export class BgGame {
       const id = this.draw((x) => tierOf(x) === p.tier + 1);
       if (id) p.shop.push(this.shopMinion(p, id));
     }
+    // 招募新夥伴（暗月獎品）：多一個 +2/+2 的手下
+    for (let i = 0; i < (p.c.prizeShop ?? 0); i++) {
+      const id = this.draw((x) => this.shopTierOk(p, x));
+      if (!id) continue;
+      const m = this.shopMinion(p, id);
+      m.atk += 2;
+      m.hp += 2;
+      p.shop.push(m);
+    }
     for (const hk of this.hooks(p)) hk.onRefresh?.(this, p);
     // 精靈吹焰者、東來之風：刷新後隨機一個 +10/+10、+9/+9
     for (const [key, n] of [
@@ -706,7 +720,7 @@ export class BgGame {
   }
 
   spellCost(p: BPlayer, id: string): number {
-    let cost = spellCostOf(id) - (p.c.spellDisc ?? 0);
+    let cost = spellCostOf(id) - (p.c.spellDisc ?? 0) - (p.c['t:spell1'] ?? 0);
     for (const hk of this.hooks(p)) if (hk.spellCost) cost = hk.spellCost(p, cost, id);
     return Math.max(0, cost);
   }
@@ -836,6 +850,17 @@ export class BgGame {
     else p.discover = d;
   }
 
+  /** 發現一個暗月馬戲團獎品 */
+  discoverPrize(p: BPlayer, tier: number) {
+    const bag = PRIZE_IDS.filter((id) => prizeTier(id) === tier && (bgCard(id).type === 'MINION' || this.spellInLobby(id)));
+    const options: string[] = [];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const d: Discover = { options, title: `發現一個等級 ${tier} 的暗月馬戲團獎品`, spells: true };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+
   /** 發現一個有黑暗贈禮的手下（每個選項的贈禮都不同） */
   discoverGift(p: BPlayer, filter: (id: string) => boolean, title: string, extra: Partial<Discover> = {}) {
     const ids = this.poolIds((id) => filter(id) && id !== PARADOX && (this.s.pool[id] ?? 0) > 0);
@@ -907,7 +932,9 @@ export class BgGame {
     for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onDiscover?.(rr, x, g);
     if (!d.powers && !d.objs && d.guess === undefined && d.replace === undefined) for (const hk of this.hooks(p)) hk.onDiscover?.(this, p, id);
     if (d.spells) {
-      this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      // 暗月獎品裡有一張是手下（全知長者）
+      if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
+      else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
       return;
     }
     // 魚爾摩斯：猜對拿到旅店幸運幣
@@ -1268,7 +1295,8 @@ export class BgGame {
     const spec = SPEC.get(m.id);
     if (!spec?.battlecry) return;
     const brann = p.board.reduce((n, x) => n + (x.id === 'BG_LOE_077' ? (x.golden ? 2 : 1) : 0), 0);
-    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0);
+    // 布萊恩的傑出一手（暗月獎品）：這回合戰吼多觸發一次
+    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0) + (p.c['t:bcx'] ?? 0);
     for (let t = 0; t <= Math.min(2, brann) + extra; t++) {
       if (target && !p.board.includes(target)) target = null;
       spec.battlecry(r, m, m.golden ? 2 : 1, target, choice);
@@ -1310,6 +1338,11 @@ export class BgGame {
   private cast(p: BPlayer, card: HandCard & { kind: 'spell' }, target?: number, choice = 0) {
     if (card.id === TRIPLE_REWARD) {
       p.hand = p.hand.filter((h) => h !== card);
+      // 馬戲團獎賞（異象）：三合一獎勵改成發現暗月獎品
+      if (this.hooks(p).some((hk) => hk.prizeTriples)) {
+        this.discoverPrize(p, Math.min(4, 1 + Math.floor((this.s.round - 1) / 4)));
+        return;
+      }
       const t = card.tier ?? Math.min(this.maxTier(p), p.tier + 1);
       this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的手下`);
       return;

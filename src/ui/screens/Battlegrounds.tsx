@@ -231,7 +231,7 @@ function MinionTip({ m, p, G }: { m: BMinion; p: BPlayer | null; G: BgGame }) {
       {m.mags.length > 0 && <div className="bg-tip-note">磁力：{m.mags.map((x) => bgCard(x.id).name).join('、')}</div>}
       {m.gifts?.map((id, i) => (
         <div key={i} className="bg-tip-note bg-gift-note">
-          🌑 黑暗贈禮・<b>{bgCard(id).name}</b>：<span dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+          {bgCard(id).kind === 'gift' ? '🌑 黑暗贈禮' : '🎪 暗月獎品'}・<b>{bgCard(id).name}</b>：<span dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
         </div>
       ))}
       {kws.length > 0 && <div className="bg-tip-note">{kws.map((k) => KEYWORD_NAMES[k]).join('・')}</div>}
@@ -307,6 +307,7 @@ function MinionToken({
         {e.kw.windfury && <span title="風怒">🌀</span>}
         {e.kw.reborn && <span title="復生">👼</span>}
         {m.mags.length > 0 && <span title="磁力">🧲{m.mags.length}</span>}
+        {m.ticket && !combat && <span title="暗月彩票：買下來集滿 3 張可以發現一個手下">🎟️</span>}
         {m.gifts?.length ? <span title={`黑暗贈禮：${m.gifts.map((x) => bgCard(x).name).join('、')}`}>🌑</span> : null}
         {!combat && specs.some(({ s }) => s.activate) && <span title={m.act === G.round ? '本回合已啟動' : '啟動技能：點這個手下來使用'}>{m.act === G.round ? '✔' : '🔆'}</span>}
         {avenge && combat && <span title="報復">{avenge[0] - (m.avenge ?? 0)}</span>}

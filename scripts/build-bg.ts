@@ -159,6 +159,8 @@ async function main() {
     else if (c.type === 'BATTLEGROUND_ANOMALY') add(c, { kind: 'anomaly' });
     else if (/^BG2[478]_Quest_\d+$/.test(c.id)) add(c, { kind: 'quest' });
     else if (c.isBattlegroundsBuddy && c.type === 'MINION' && c.id.endsWith('_Buddy')) add(c);
+    // 暗月馬戲團獎品
+    else if ((c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn) add(c, { prize: (c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn });
     // 黑暗贈禮（「(0)」是官方用來顯示計數的位置，拿掉）
     else if ((c as { isBattlegroundsDarkGift?: boolean }).isBattlegroundsDarkGift) add(c, { kind: 'gift', text: clean(c.text).replace(/\s*<i>\(0\)<\/i>|\s*\(0\)/g, '') });
   }

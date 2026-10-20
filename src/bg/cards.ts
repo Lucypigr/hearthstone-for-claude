@@ -62,6 +62,17 @@ const n3 = (r: { p: { c: Record<string, number> } }) => Math.floor((r.p.c.spells
 export const MINIONS: MinionSpec[] = [
   // 黑暗悖論：每局的等級、身材與黑暗贈禮都不同（在 game.ts 決定）
   { id: 'BG36_360', val: 4 },
+  // 暗月獎品：全知長者（起始戰鬥：獲得最左邊手下的攻擊力與最右邊手下的生命值）
+  {
+    id: 'BG33_300',
+    soc: (c, s) => {
+      const b = c.friends(s);
+      if (b.length) c.buff(s, b[0].atk, b[b.length - 1].hp);
+    },
+    val: 8,
+  },
+  // 暗月獎品「戈魯爾規則」給的效果：回合結束時 +4/+4
+  { id: 'BGS_Treasures_009', endTurn: (r, s) => r.buff(s, 4, 4) },
   // —— 旅店等級 1 ——
   { id: 'BG31_803', deathrattle: (c, s, g, i) => summonAt(c, s, BEETLE, 1, g > 1, i), syn: 'BEAST', val: 3 },
   { id: 'BG36_200', rally: (c, s, g) => void c.summon(c.side(s), c.make('BG36_200t', g > 1)), syn: 'BEAST', val: 2 },
@@ -2114,6 +2125,8 @@ export const TOKENS = new Set([
   'BG22_HERO_001p_t1',
   'BG20_HERO_282p',
   'BG30_MagicItem_442t',
+  'BG33_300',
+  'BGS_Treasures_009',
 ]);
 
 /** 不死族（致命打擊者用） */
