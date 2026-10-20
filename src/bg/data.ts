@@ -19,19 +19,26 @@ export function tierOf(id: string): number {
 }
 
 const raceCache = new Map<string, Tribe[]>();
+/** 這局的異象：沒有種族的手下擁有所有種族、夥伴擁有所有種族 */
+export const raceRules = { untypedAll: false, buddiesAll: false };
+/** 可以直接傳卡牌 id，或是傳手下（手下身上的 xr 是額外的種族，例如銅鬚頭像讓布萊恩同時是魚人和龍） */
+type RaceArg = string | { id: string; xr?: Tribe[] };
 /** 卡牌的種族（「全部」= 所有種族） */
-export function racesOf(id: string): Tribe[] {
+export function racesOf(a: RaceArg): Tribe[] {
+  const id = typeof a === 'string' ? a : a.id;
   let r = raceCache.get(id);
   if (!r) {
     const races = DATA[id]?.races ?? [];
     r = races.includes('ALL') ? [...TRIBES] : (races.filter((x) => (TRIBES as string[]).includes(x)) as Tribe[]);
     raceCache.set(id, r);
   }
+  if ((raceRules.untypedAll && !r.length && DATA[id]?.type === 'MINION') || (raceRules.buddiesAll && id.includes('_Buddy'))) return [...TRIBES];
+  if (typeof a !== 'string' && a.xr?.length) return [...new Set([...r, ...a.xr])];
   return r;
 }
 
-export function isRace(id: string, t: Tribe): boolean {
-  return racesOf(id).includes(t);
+export function isRace(a: RaceArg, t: Tribe): boolean {
+  return racesOf(a).includes(t);
 }
 
 export function hasMech(id: string, mech: string): boolean {

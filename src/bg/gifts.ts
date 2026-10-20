@@ -14,7 +14,7 @@ export interface GiftSpec extends MinionSpec {
   attach?(m: BMinion, round: number): void;
 }
 
-const ownType = (m: BMinion) => racesOf(m.id)[0];
+const ownType = (m: BMinion) => racesOf(m)[0];
 
 export const GIFTS: GiftSpec[] = [
   // 進攻獻祭：+10 攻擊力。亡語：把攻擊力給另一個友方手下

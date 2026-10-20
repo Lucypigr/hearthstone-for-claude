@@ -32,7 +32,7 @@ export const spellCostOf = (id: string) => (hasBgCard(id) ? bgCard(id).cost ?? 1
 export function mostCommonType(ms: BMinion[]): Tribe | null {
   const n = new Map<Tribe, number>();
   for (const m of ms) {
-    const r = racesOf(m.id);
+    const r = racesOf(m);
     if (r.length === TRIBES.length) continue;
     for (const t of r) n.set(t, (n.get(t) ?? 0) + 1);
   }

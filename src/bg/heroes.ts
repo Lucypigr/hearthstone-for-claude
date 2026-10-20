@@ -134,6 +134,12 @@ export interface HeroSpec {
   /** 在戰鬥外摧毀手下後、手下吃掉酒館的手下後 */
   onDestroy?(G: BgGame, p: BPlayer, m: BMinion): void;
   onConsume?(G: BgGame, p: BPlayer, eater: BMinion, food: BMinion): void;
+  /** 造法法術永久有效（奇術師頭像、疲憊頭像） */
+  permCraft?: (p: BPlayer, id: string) => boolean;
+  /** 元素給的身材額外 +X/+Y */
+  elemExtra?: (p: BPlayer) => [number, number];
+  /** 招募階段：手下透過效果獲得身材後 */
+  onStatGain?(G: BgGame, p: BPlayer, m: BMinion, atk: number, hp: number): void;
   /** 友方手下被攻擊時（傷害前） */
   onAttacked?(c: Combat, side: 0 | 1, target: BMinion, attacker: BMinion): void;
   /** 敵方手下對你的手下造成傷害後 */
@@ -415,7 +421,7 @@ export const HEROES: HeroSpec[] = [
     passive: true,
     needTribe: 'PIRATE',
     onBuy: (_G, p, m) => {
-      if (isRace(m.id, 'PIRATE')) p.gold++;
+      if (isRace(m, 'PIRATE')) p.gold++;
     },
     rank: 3,
   },
@@ -617,7 +623,7 @@ export const HEROES: HeroSpec[] = [
     locked: (p) => (p.tier < 4 ? '旅店等級 4 解鎖' : null),
     use: (G, p) => G.discoverFor(p, (id) => isMagnetic(id), '發現一個磁力機械'),
     rank: 3,
-    ai: (_G, p) => (p.hand.length < 8 && p.board.some((m) => isRace(m.id, 'MECHANICAL')) ? 'none' : undefined),
+    ai: (_G, p) => (p.hand.length < 8 && p.board.some((m) => isRace(m, 'MECHANICAL')) ? 'none' : undefined),
   },
   {
     id: 'TB_BaconShop_HERO_67', // 鉤牙船長
@@ -701,9 +707,9 @@ export const HEROES: HeroSpec[] = [
       const n = 1 + Math.floor(c.cnt(side, 'spentTotal') / 10);
       const done = new Set<BMinion>();
       const tribes = new Set<Tribe>();
-      for (const m of c.board(side)) for (const t of racesOf(m.id)) tribes.add(t);
+      for (const m of c.board(side)) for (const t of racesOf(m)) tribes.add(t);
       for (const t of tribes) {
-        const m = c.pick(c.board(side).filter((x) => !x.dead && !done.has(x) && isRace(x.id, t)));
+        const m = c.pick(c.board(side).filter((x) => !x.dead && !done.has(x) && isRace(x, t)));
         if (!m) continue;
         done.add(m);
         c.buff(m, n, n);
@@ -797,7 +803,7 @@ export const HEROES: HeroSpec[] = [
     needTribe: 'ELEMENTAL',
     status: (p) => `還差 ${3 - (cnt(p, 'chen') % 3)} 個元素`,
     onPlay: (_G, p, m) => {
-      if (!isRace(m.id, 'ELEMENTAL')) return;
+      if (!isRace(m, 'ELEMENTAL')) return;
       add(p, 'chen');
       if (cnt(p, 'chen') % 3 === 0) p.upgradeCost = Math.max(0, p.upgradeCost - 3);
     },
@@ -947,7 +953,7 @@ export const HEROES: HeroSpec[] = [
       if (!t) return;
       p.board = p.board.filter((m) => m !== t);
       G.returnToPool(t);
-      for (const r of racesOf(t.id)) add(p, `pot:${r}`);
+      for (const r of racesOf(t)) add(p, `pot:${r}`);
       add(p, 'pot');
       if (cnt(p, 'pot') < 3) return;
       const types = Object.keys(p.c).filter((k) => k.startsWith('pot:') && p.c[k] > 0).map((k) => k.slice(4));
@@ -1283,7 +1289,7 @@ export const HEROES: HeroSpec[] = [
       if (id) G.addMinion(p, G.make(id));
     },
     onBuy: (_G, p, m) => {
-      if (isRace(m.id, 'PIRATE')) add(p, 'patches');
+      if (isRace(m, 'PIRATE')) add(p, 'patches');
     },
     rank: 3,
     ai: (G, p) => (G.powerState(p).cost <= 1 && p.hand.length < 8 ? 'none' : undefined),
@@ -1409,7 +1415,7 @@ export const HEROES: HeroSpec[] = [
     needTribe: 'UNDEAD',
     cost: fixed(1),
     locked: (p) => (p.tier < 2 ? '旅店等級 2 解鎖' : null),
-    canTarget: (_p, t) => isRace(t.id, 'UNDEAD'),
+    canTarget: (_p, t) => isRace(t, 'UNDEAD'),
     use: (G, p, t) => {
       if (!t) return;
       p.board = p.board.filter((m) => m !== t);
@@ -1418,7 +1424,7 @@ export const HEROES: HeroSpec[] = [
       if (id) G.addMinion(p, G.make(id));
     },
     rank: 3,
-    ai: (_G, p) => p.board.filter((m) => isRace(m.id, 'UNDEAD') && tierOf(m.id) < p.tier).sort((a, b) => a.atk + a.hp - b.atk - b.hp)[0],
+    ai: (_G, p) => p.board.filter((m) => isRace(m, 'UNDEAD') && tierOf(m.id) < p.tier).sort((a, b) => a.atk + a.hp - b.atk - b.hp)[0],
   },
   { id: 'TB_BaconShop_HERO_93', passive: true, startGame: (G, p) => void G.addMinion(p, G.make('TB_BaconShop_HP_105t')), rank: 3 }, // 恩若司
   {

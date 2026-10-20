@@ -6,12 +6,12 @@ import { hasBattlecry, isTavernSpell, LATE, spellCostOf } from './late';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type Tribe } from './types';
 
 const B = (hero: string) => `${hero}_Buddy`;
-const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
+const race = (m: BMinion, t: Tribe) => isRace(m, t);
 function distinctTypes(b: BMinion[]): number {
   const set = new Set<Tribe>();
   let wild = 0;
   for (const m of b) {
-    const r = racesOf(m.id);
+    const r = racesOf(m);
     if (r.length === TRIBES.length) wild++;
     else r.forEach((t) => set.add(t));
   }

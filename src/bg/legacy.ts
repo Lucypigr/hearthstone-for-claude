@@ -7,7 +7,7 @@ import { TRIBES, type BMinion, type BPlayer, type Tribe } from './types';
 
 const GEM = 'BG20_GEM';
 const FLEDGLING = 'BG29_801t';
-const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
+const race = (m: BMinion, t: Tribe) => isRace(m, t);
 const times = (g: number, f: () => void) => {
   for (let k = 0; k < g; k++) f();
 };

@@ -59,9 +59,9 @@ export function auraOf(cnt: Record<string, number>, m: BMinion, heroHp: number):
   // 飾品、任務獎勵：「你的手下擁有 +X/+Y」
   a += cnt.allA ?? 0;
   h += cnt.allH ?? 0;
-  if (isRace(m.id, 'UNDEAD')) a += cnt.undeadA ?? 0;
-  if (isRace(m.id, 'BEAST')) (a += cnt.beastA ?? 0), (h += cnt.beastH ?? 0);
-  if (isRace(m.id, 'BEAST')) a += cnt['~beastA'] ?? 0;
+  if (isRace(m, 'UNDEAD')) a += cnt.undeadA ?? 0;
+  if (isRace(m, 'BEAST')) (a += cnt.beastA ?? 0), (h += cnt.beastH ?? 0);
+  if (isRace(m, 'BEAST')) a += cnt['~beastA'] ?? 0;
   // 音量機兵：本賽局的加成（吸附在別的機械身上也算）
   for (const id of [m.id, ...m.mags.map((x) => x.id)]) {
     if (!id.startsWith('BG34_170t')) continue;
@@ -115,7 +115,7 @@ export function canMagnetize(card: BMinion, host: BMinion): boolean {
   const spec = SPEC.get(card.id);
   if (!spec?.magnetic) return false;
   const to = spec.magnetTo ?? ['MECHANICAL'];
-  return racesOf(host.id).some((r) => to.includes(r));
+  return racesOf(host).some((r) => to.includes(r));
 }
 
 /** 戰吼手下（恐龍馴服者布萊恩用） */
@@ -133,6 +133,7 @@ export function spellExtraOf(cnt: Record<string, number>, board: BMinion[]): [nu
     for (const x of all) {
       if (x.id === 'BG32_341') (a += x.g), (h += 2 * x.g);
       if (x.id === 'BG35_341') (a += x.g), (h += x.g);
+      if (x.id === 'BG34_Giant_066') (a += x.g), (h += x.g);
     }
   }
   return [a, h];

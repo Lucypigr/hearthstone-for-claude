@@ -116,7 +116,7 @@ function decideFocus(G: BgGame, p: BPlayer, persona: BgPersona): Tribe | null {
   const score = new Map<Tribe, number>();
   const minions = [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))];
   for (const m of minions) {
-    const races = racesOf(m.id);
+    const races = racesOf(m);
     if (races.length === TRIBES.length) continue;
     for (const t of races) score.set(t, (score.get(t) ?? 0) + 1 + (m.golden ? 1 : 0) + (SPEC.get(m.id)?.syn === t ? 0.5 : 0));
   }
@@ -149,12 +149,12 @@ export function minionValue(G: BgGame, p: BPlayer, m: BMinion, focus: Tribe | nu
     if (s.scale) v += s.scale * g * Math.max(0.5, Math.min(4, (14 - round) / 3)) * (0.4 + skill * 0.8);
     // 搭配：場上有幾個同種族
     if (s.syn) {
-      const n = p.board.filter((x) => x !== m && isRace(x.id, s.syn!)).length;
+      const n = p.board.filter((x) => x !== m && isRace(x, s.syn!)).length;
       v += n * 1.4 * g * skill;
       if (focus === s.syn) v += 3 * skill;
     }
   }
-  const races = racesOf(m.id);
+  const races = racesOf(m);
   if (focus && races.includes(focus) && races.length < TRIBES.length) v += 2 + 3 * skill;
   // 隨著回合推進，低等級的白板手下越來越不值錢
   v -= Math.max(0, round - 4 - tierOf(m.id) * 1.5) * 0.6 * skill;
@@ -334,7 +334,7 @@ function relicValue(M: Mind, id: string): number {
   let v = r?.v ?? 4;
   const tribe = r?.needTribe ?? (bgCard(id).assoc?.[0] as Tribe | undefined);
   if (tribe) {
-    const n = p.board.filter((m) => isRace(m.id, tribe)).length;
+    const n = p.board.filter((m) => isRace(m, tribe)).length;
     v += M.focus === tribe ? 3 : n >= 3 ? 2 : n === 0 ? -2 : 0;
   }
   // 花的錢越多越要值得（高手比較會算）
@@ -345,7 +345,7 @@ function relicValue(M: Mind, id: string): number {
 /** 任務：大概要多久才完成（越適合現在的戰隊越快） */
 function questValue(M: Mind, qid: string, reward: string): number {
   const { p } = M;
-  const has = (t: Tribe) => p.board.filter((m) => isRace(m.id, t)).length;
+  const has = (t: Tribe) => p.board.filter((m) => isRace(m, t)).length;
   const fit: Record<string, number> = {
     BG24_Quest_124: has('UNDEAD') + has('BEAST'),
     BG24_Quest_320: has('UNDEAD') + has('BEAST') + has('MECHANICAL'),
@@ -671,11 +671,11 @@ function minionChoice(M: Mind, id: string): number {
   const { G, p } = M;
   switch (id) {
     case 'BG27_084': // 活潑聖甲蟲：攻擊力高的給風怒
-      return p.board.some((m) => isRace(m.id, 'BEAST') && m.atk >= 6) ? 1 : 0;
+      return p.board.some((m) => isRace(m, 'BEAST') && m.atk >= 6) ? 1 : 0;
     case 'BG30_123': // 無畏饕客：前期拿加成，後期拿寶石
       return G.round <= 8 ? 0 : 1;
     case 'BG36_330': // 狡猾的滲透者
-      return p.board.some((m) => isRace(m.id, 'QUILBOAR')) ? 1 : 0;
+      return p.board.some((m) => isRace(m, 'QUILBOAR')) ? 1 : 0;
     case 'BG36_332': // 陷阱獵手：前期拿金幣上限
       return G.round <= 7 ? 1 : 0;
     default:
@@ -694,7 +694,7 @@ function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefin
     case 'BG28_503':
       return pickFriendlyTarget(M, (m) => friends.includes(m) && !m.taunt) ?? friends[0];
     case GEM:
-      return pickFriendlyTarget(M, (m) => friends.includes(m) && isRace(m.id, 'QUILBOAR')) ?? pickFriendlyTarget(M, (m) => friends.includes(m));
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && isRace(m, 'QUILBOAR')) ?? pickFriendlyTarget(M, (m) => friends.includes(m));
     case 'BG28_604': // 屠殺：犧牲最弱的不死族
     case 'EBG_Spell_032': // 引導吞噬者
     case 'BG28_838': // 完美幻象：最弱的那個加最多
@@ -708,7 +708,7 @@ function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefin
     case 'EBG_Spell_038': {
       // 「選一個手下」：選自己最多的種族
       const t = mostCommonType(p.board);
-      return targets.find((m) => p.board.includes(m) && t && isRace(m.id, t)) ?? friends[0] ?? targets[0];
+      return targets.find((m) => p.board.includes(m) && t && isRace(m, t)) ?? friends[0] ?? targets[0];
     }
     default:
       return pickFriendlyTarget(M, (m) => friends.includes(m)) ?? targets[0];

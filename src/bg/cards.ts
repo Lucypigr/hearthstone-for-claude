@@ -1,6 +1,6 @@
 // 英雄戰場的手下效果（每張卡手動實作；g = 1 一般、2 金卡）
 // 只收錄效果能完整執行的卡；沒有實作的卡不會出現在酒館裡
-import type { Combat, MinionSpec } from './api';
+import type { Combat, MinionSpec, Recruit } from './api';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import { BUDDIES } from './buddies';
 import { GIFTS } from './gifts';
@@ -9,7 +9,7 @@ import { TW_MINIONS } from './timewarp';
 import { HERO_MINIONS } from './herocards';
 import { LEGACY } from './legacy';
 import { BOUNTIES, isTavernSpell, TAVERN_SPELLS, spellCostOf } from './spells';
-import { BONUS_KEYWORDS, type BMinion, type Keyword, type Tribe } from './types';
+import { BONUS_KEYWORDS, type BMinion, type BPlayer, type Keyword, type Tribe } from './types';
 
 const BEETLE = 'BG28_603t';
 const SKELETON = 'BG_ICC_026t';
@@ -37,7 +37,8 @@ const CHROMADRAKES = ['BG34_634t', 'BG34_635t', 'BG34_636t', 'BG34_637t', 'BG34_
 /** 二選一的法術（渦輪野豬騎士用） */
 const CHOOSE_SPELLS = new Set(['BG31_880', 'BG31_881', 'BG31_886', 'BG31_890', 'BG31_893']);
 
-const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
+const race = (m: BMinion, t: Tribe) => isRace(m, t);
+const hasRelic = (p: BPlayer, id: string) => !!p.relics?.includes(id);
 
 function summonAt(c: Combat, self: BMinion, id: string, count: number, golden: boolean, index: number) {
   const s = c.side(self);
@@ -432,6 +433,8 @@ export const MINIONS: MinionSpec[] = [
         if (!r.p.shop.length) return;
         const food = r.p.shop.reduce((a, b) => (b.hp > a.hp ? b : a));
         r.consume(s, food);
+        // 燃焰頭像：兩旁的手下也獲得
+        if (hasRelic(r.p, 'BG35_MagicItem_156')) for (const m of [r.p.board[r.p.board.indexOf(s) - 1], r.p.board[r.p.board.indexOf(s) + 1]]) if (m) r.buff(m, food.atk, food.hp);
       }
     },
     val: 2,
@@ -474,6 +477,8 @@ export const MINIONS: MinionSpec[] = [
       if (t !== s || s.n > 0 || !spell.endsWith('t') || !SPELLCRAFT_SPELLS.has(spell)) return;
       s.n = 1;
       r.getSpell(spell, 1, true);
+      // 沙鈴手頭像：多一張
+      if (hasRelic(r.p, 'BG30_MagicItem_828')) r.getSpell(spell, 1, true);
     },
     startTurn: (_r, s) => void (s.n = 0),
     syn: 'NAGA',
@@ -516,7 +521,9 @@ export const MINIONS: MinionSpec[] = [
     id: 'BG26_814',
     target: (_s, t) => race(t, 'PIRATE'),
     battlecry: (r, _s, g, t) => {
-      if (t) r.buff(t, 0, (2 + (r.p.c.spent ?? 0)) * g);
+      const n = (2 + (r.p.c.spent ?? 0)) * g;
+      // 情歌手頭像：也給攻擊力
+      if (t) r.buff(t, hasRelic(r.p, 'BG30_MagicItem_987') ? n : 0, n);
     },
     syn: 'PIRATE',
     val: 6,
@@ -711,7 +718,9 @@ export const MINIONS: MinionSpec[] = [
     deathrattle: (c, s, g) => {
       const side = c.side(s);
       const b = Math.floor(c.cnt(side, 'spells') / 3);
-      for (const m of c.friends(s)) if (race(m, 'NAGA')) c.buff(m, (2 + b) * g, (1 + b) * g);
+      // 騎手頭像：永久
+      const perm = hasRelic(c.player(side), 'BG36_MagicItem_362');
+      for (const m of c.friends(s)) if (race(m, 'NAGA')) (perm ? c.perm : c.buff).call(c, m, (2 + b) * g, (1 + b) * g);
     },
     syn: 'NAGA',
     val: 6,
@@ -881,7 +890,12 @@ export const MINIONS: MinionSpec[] = [
   {
     id: 'BG31_035',
     onPlay: (r, s, m, g) => {
-      if (race(m, 'NAGA')) r.buff(s, (1 + n3(r)) * g, (1 + n3(r)) * g);
+      if (!race(m, 'NAGA')) return;
+      const n = (1 + n3(r)) * g;
+      r.buff(s, n, n);
+      // 破土者頭像：左邊的手下也獲得
+      const l = r.p.board[r.p.board.indexOf(s) - 1];
+      if (l && hasRelic(r.p, 'BG35_MagicItem_924')) r.buff(l, n, n);
     },
     syn: 'NAGA',
     val: 2,
@@ -1056,7 +1070,10 @@ export const MINIONS: MinionSpec[] = [
   {
     id: 'BG28_707', // 活化艾澤萊晶岩
     onSpell: (r, _s, _t, g, id) => {
-      if (isTavernSpell(id)) r.tavernBuff(4 * g, 3 * g, 'ELEMENTAL');
+      if (!isTavernSpell(id)) return;
+      r.tavernBuff(4 * g, 3 * g, 'ELEMENTAL');
+      // 艾澤萊晶岩頭像：也給友方元素
+      if (hasRelic(r.p, 'BG30_MagicItem_431')) for (const m of r.p.board) if (race(m, 'ELEMENTAL')) r.buff(m, 4 * g, 3 * g);
     },
     syn: 'ELEMENTAL',
     val: 3,
@@ -1066,7 +1083,9 @@ export const MINIONS: MinionSpec[] = [
     id: 'BG28_741', // 衝鋒的女沙皇
     onSpell: (r, _s, _t, g, id) => {
       if (!isTavernSpell(id)) return;
-      for (const m of r.p.board) if (m.shield) r.buff(m, 4 * g, 0);
+      // 女皇頭像：也給生命值
+      const h = hasRelic(r.p, 'BG32_MagicItem_283') ? 4 * g : 0;
+      for (const m of r.p.board) if (m.shield) r.buff(m, 4 * g, h);
     },
     syn: 'MECHANICAL',
     val: 3,
@@ -1241,8 +1260,8 @@ export const MINIONS: MinionSpec[] = [
       for (let k = 0; k < g; k++) {
         for (const n of [b[i - 1], b[i + 1]]) {
           if (!n) continue;
-          const types = racesOf(n.id);
-          for (const m of b) if (racesOf(m.id).some((x) => types.includes(x))) r.spellBuff(m, 2, 1);
+          const types = racesOf(n);
+          for (const m of b) if (racesOf(m).some((x) => types.includes(x))) r.spellBuff(m, 2, 1);
         }
       }
     },
@@ -1256,7 +1275,7 @@ export const MINIONS: MinionSpec[] = [
       const b = c.board(c.side(s));
       const right = b.slice(b.indexOf(s) + 1).find((x) => !x.dead);
       if (!right) return;
-      const types = racesOf(right.id);
+      const types = racesOf(right);
       for (let k = 0; k < g; k++) c.giveRandom(c.side(s), (id) => id !== right.id && racesOf(id).some((x) => types.includes(x)));
     },
     syn: 'NAGA',
@@ -2131,6 +2150,10 @@ export const TOKENS = new Set([
   'BG30_MagicItem_442t',
   'BG33_300',
   'BGS_Treasures_009',
+  'BG26_537',
+  'BGS_061t',
+  'BG23_353t',
+  'BGS_029',
 ]);
 
 /** 不死族（致命打擊者用） */
@@ -2138,7 +2161,27 @@ const UNDEAD_IDS: string[] = [];
 /** 所有種族（最後的倖存者用） */
 const TRIBES_ALL = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'] as Tribe[];
 
+// 培植小霜冰：本賽局每打出一個元素 +2/+1
+MINIONS.push({ id: 'BG26_537', aura: (cnt, _s, g) => [2 * g * (cnt.elemGame ?? 0), g * (cnt.elemGame ?? 0)], syn: 'ELEMENTAL', val: 5 });
 export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS, ...TW_MINIONS, ...HERO_MINIONS, ...LEGACY].map((s) => [s.id, s]));
+// 元素在招募階段的效果：執行時做記號，讓「你的元素額外給予 +X/+Y」可以加上去
+const ELEM_HOOKS = ['battlecry', 'onPlay', 'inHandOnPlay', 'startTurn', 'endTurn', 'onSell', 'onSellOther', 'onSpell', 'onBuy', 'onRefresh', 'onGem', 'afterBattlecry', 'onBuySpell'] as const;
+for (const s of SPEC.values()) {
+  if (!isRace(s.id, 'ELEMENTAL')) continue;
+  const o = s as unknown as Record<string, unknown>;
+  for (const k of ELEM_HOOKS) {
+    const f = o[k] as ((r: Recruit, ...a: unknown[]) => unknown) | undefined;
+    if (!f) continue;
+    o[k] = (r: Recruit, ...a: unknown[]) => {
+      r.p.c['~elem'] = (r.p.c['~elem'] ?? 0) + 1;
+      try {
+        return f(r, ...a);
+      } finally {
+        r.p.c['~elem']--;
+      }
+    };
+  }
+}
 // 英雄夥伴、時光扭曲的手下、英雄專屬的手下不在酒館卡池裡
 for (const b of [...BUDDIES, ...TW_MINIONS, ...HERO_MINIONS, ...LEGACY, { id: 'BG_EX1_170' }, { id: 'BG_EX1_554t' }]) TOKENS.add(b.id);
 
@@ -2151,7 +2194,7 @@ UNDEAD_IDS.push(...POOL_IDS.filter((id) => isRace(id, 'UNDEAD')));
 LATE.spec = SPEC;
 LATE.pool = POOL_IDS;
 
-export const SPELLCRAFT_SPELLS = new Set(MINIONS.map((s) => s.spellcraft).filter((x): x is string => !!x));
+export const SPELLCRAFT_SPELLS = new Set([...SPEC.values()].map((s) => s.spellcraft).filter((x): x is string => !!x));
 export const TRIPLE_REWARD = 'TB_BaconShop_Triples_01';
 LATE.spellcraft = [...SPELLCRAFT_SPELLS];
 export { BEETLE, GEM, COIN, KNIGHT };

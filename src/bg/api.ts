@@ -1,5 +1,5 @@
 // 卡牌效果用到的介面（招募階段 / 戰鬥中），由 game.ts 與 combat.ts 實作
-import type { BMinion, BPlayer, Keyword, Tribe } from './types';
+import type { BMinion, BPlayer, Discover, Keyword, Tribe } from './types';
 
 /** 招募階段 */
 export interface Recruit {
@@ -76,6 +76,10 @@ export interface Recruit {
   goldenize(m: BMinion): void;
   /** 發現一個手下，拿到時多給身材 */
   discoverBonus(filter: (id: string) => boolean, title: string, atk: number, hp: number): void;
+  /** 從卡池發現，帶額外的設定（例如變形成選到的手下） */
+  discoverOpts(filter: (id: string) => boolean, title: string, extra: Partial<Discover>): void;
+  /** 直接給選項（不從卡池拿） */
+  offer(options: string[], title: string, extra?: Partial<Discover>): void;
 }
 
 /** 戰鬥中 */
@@ -96,6 +100,8 @@ export interface Combat {
   buff(m: BMinion, atk: number, hp: number): void;
   /** 戰鬥中的加成同時永久保存 */
   perm(m: BMinion, atk: number, hp: number): void;
+  /** 永久獲得關鍵字（招募階段的手下也會有） */
+  permKw(m: BMinion, kw: Keyword): void;
   giveKw(m: BMinion, kw: Keyword): void;
   destroy(m: BMinion): void;
   /** 讓手下立刻攻擊 */
@@ -112,7 +118,7 @@ export interface Combat {
   /** 讀取本賽局的計數（模擬中也會跟著變） */
   cnt(side: 0 | 1, key: string): number;
   /** 把卡（手下或法術）放進招募階段的手牌（模擬中不會發生） */
-  give(side: 0 | 1, id: string): void;
+  give(side: 0 | 1, id: string, o?: GiveOpts): void;
   giveRandom(side: 0 | 1, filter: (id: string) => boolean): void;
   /** 酒館法術的額外加成（戰鬥中施放法術用） */
   spellExtra(side: 0 | 1): [number, number];
@@ -128,6 +134,15 @@ export interface Combat {
   summonLater(side: 0 | 1, m: BMinion): void;
   /** 戰鬥開始時這一方的手下（卡牌 ID） */
   startBoard(side: 0 | 1): string[];
+}
+
+/** 戰鬥中把卡放進手牌時的選項 */
+export interface GiveOpts {
+  golden?: boolean;
+  /** 複製這個手下的身材與關鍵字 */
+  copy?: BMinion;
+  /** 生命值補滿 */
+  full?: boolean;
 }
 
 export interface MinionSpec {
@@ -178,6 +193,12 @@ export interface MinionSpec {
   onHeroHurt?(r: Recruit, self: BMinion, g: number, amount: number): void;
   /** 你觸發戰吼後 */
   afterBattlecry?(r: Recruit, self: BMinion, m: BMinion, g: number): void;
+  /** 招募階段：友方手下（場上或手牌）透過效果獲得身材後（自己在場上） */
+  onStatGain?(r: Recruit, self: BMinion, m: BMinion, atk: number, hp: number, g: number): void;
+  /** 同上，但自己在手牌裡 */
+  inHandStatGain?(r: Recruit, self: BMinion, m: BMinion, atk: number, hp: number, g: number): void;
+  /** 招募階段：有手下被吞噬後 */
+  onConsumeAny?(r: Recruit, self: BMinion, eater: BMinion, food: BMinion, g: number): void;
   /** 使用鮮血寶石到這個手下身上後 */
   onGem?(r: Recruit, self: BMinion, g: number): void;
   /** 造法：每回合給你的法術 */
@@ -208,6 +229,12 @@ export interface MinionSpec {
   /** 友方手下死亡後 */
   onFriendDeath?(c: Combat, self: BMinion, dead: BMinion, g: number): void;
   onFriendReborn?(c: Combat, self: BMinion, m: BMinion, g: number): void;
+  /** 戰鬥中：你觸發一個亡語後 */
+  afterDr?(c: Combat, self: BMinion, m: BMinion, g: number): void;
+  /** 戰鬥中：友方手下被攻擊時 */
+  onFriendAttacked?(c: Combat, self: BMinion, target: BMinion, attacker: BMinion, g: number): void;
+  /** 戰鬥中：你這一方擊殺敵方手下後 */
+  onSideKill?(c: Combat, self: BMinion, killer: BMinion, victim: BMinion, g: number): void;
   /** 友方手下失去聖盾後 */
   onShieldLost?(c: Combat, self: BMinion, m: BMinion, g: number): void;
   /** 攻擊時也會傷害目標兩旁的手下 */

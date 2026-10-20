@@ -109,6 +109,8 @@ export interface BMinion {
   temp?: boolean;
   /** 戰鬥中：殺死它的手下 */
   killer?: number;
+  /** 戰鬥中：殺死這個手下的敵方手下（電台明星用） */
+  killedBy?: BMinion;
   /** 三連做出來的金卡：打出時拿到三合一獎勵 */
   reward?: boolean;
   /** 身上有幾顆鮮血寶石（寶石沒收用） */
@@ -127,10 +129,18 @@ export interface BMinion {
   iced?: boolean;
   /** 額外的亡語（布魯坎的大地祈願、塔姆辛、恩若司之魚） */
   extraDr?: { id: string; g: number }[];
+  /** 額外的奮戰（時光扭曲石殼守護者） */
+  extraRally?: { id: string; g: number }[];
   /** 跳舞的戴瑞：帽子 */
   hat?: number;
   /** 黑暗贈禮（也用來放暗月獎品給的效果） */
   gifts?: string[];
+  /** 變換者澤魯斯：在手牌裡每回合變形 */
+  shifter?: boolean;
+  /** 黃金錘：暫時的金卡（下一回合變回來時要扣掉的身材） */
+  tmpGold?: [number, number];
+  /** 額外的種族（銅鬚頭像、德拉克瑞頭像） */
+  xr?: Tribe[];
   /** 酒館中：身上有暗月彩票（希拉斯） */
   ticket?: boolean;
   /** 黑暗贈禮的計時（孵育：在這個回合身材加倍） */
@@ -143,7 +153,7 @@ export type HandCard =
   /** locked = 這個回合還不能打出（時光尋跡） */
   | { kind: 'minion'; uid: number; m: BMinion; locked?: number; pair?: number }
   /** 法術：酒館法術、鮮血寶石、旅店幸運幣、三合一獎勵、造法法術 */
-  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number; pair?: number; turns?: number };
+  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number; pair?: number; turns?: number; evo?: number };
 
 /** 酒館裡賣的法術 */
 export interface ShopSpell {
@@ -210,6 +220,8 @@ export interface Discover {
   teach?: boolean;
   /** 拿到時鎖定幾回合 */
   lockTurns?: number;
+  /** 基里的雙蝕：選到的飾品拿兩個 */
+  twice?: boolean;
   /** 每個選項帶的黑暗贈禮 */
   gifts?: string[];
   /** 選到的英雄能力變成第二個英雄能力 */
@@ -300,6 +312,8 @@ export interface BPlayer {
   lastBoardIds?: string[];
   /** 上一場戰鬥死掉的手下（希瓦娜斯） */
   lastDied?: string[];
+  /** 上一場戰鬥中死掉的手下（招募階段的 uid） */
+  lastDiedUids?: number[];
   /** 費林大使：升到某等級才拿到的手下 */
   reserve?: { id: string; tier: number }[];
   /** 飾品與任務獎勵 */
@@ -356,4 +370,6 @@ export interface CombatResult {
   first: 0 | 1;
   /** 雙方死掉的手下 */
   died: [string[], string[]];
+  /** 死掉的手下在招募階段的 uid */
+  diedSrc: [number[], number[]];
 }

@@ -1,5 +1,5 @@
 // 英雄戰場的自動戰鬥（和畫面無關；電腦也用它來模擬戰鬥、決定站位）
-import type { Combat } from './api';
+import type { Combat, GiveOpts } from './api';
 import { isRace, tierOf } from './data';
 
 const DEITY = 'BGFYM_000';
@@ -32,7 +32,7 @@ export interface CombatOptions {
   nextUid: () => number;
   inLobby: (id: string) => boolean;
   inLobbySpell?: (id: string) => boolean;
-  give?: (p: BPlayer, id: string) => void;
+  give?: (p: BPlayer, id: string, o?: GiveOpts) => void;
   giveRandom?: (p: BPlayer, filter: (id: string) => boolean) => void;
 }
 
@@ -68,6 +68,7 @@ export class CombatSim implements Combat {
   private aberDeaths: [number, number] = [0, 0];
   private awakened: [boolean, boolean] = [false, false];
   private died: [string[], string[]] = [[], []];
+  private diedSrc: [number[], number[]] = [[], []];
   /** 有空位時才召喚的手下（泰朗‧血魔） */
   private later: [BMinion[], BMinion[]] = [[], []];
 
@@ -187,8 +188,8 @@ export class CombatSim implements Combat {
     return makeMinion(id, golden, this.o.nextUid());
   }
 
-  give(side: 0 | 1, id: string) {
-    if (this.sides[side].persist) this.o.give?.(this.sides[side].player, id);
+  give(side: 0 | 1, id: string, o?: GiveOpts) {
+    if (this.sides[side].persist) this.o.give?.(this.sides[side].player, id, o);
   }
   giveRandom(side: 0 | 1, filter: (id: string) => boolean) {
     if (this.sides[side].persist) this.o.giveRandom?.(this.sides[side].player, filter);
@@ -216,13 +217,14 @@ export class CombatSim implements Combat {
     if (m.id === 'BG21_015' || hasGift(m, 50)) return true;
     const b = this.boards[this.side(m)];
     const i = b.indexOf(m);
-    if (!isRace(m.id, 'DRAGON')) return false;
+    if (!isRace(m, 'DRAGON')) return false;
     // 塔瑞克苟莎貼紙：最左與最右的龍
     if (this.hooks(this.side(m)).some((hk) => hk.keepEnds)) {
-      const dragons = b.filter((x) => !x.dead && isRace(x.id, 'DRAGON'));
+      const dragons = b.filter((x) => !x.dead && isRace(x, 'DRAGON'));
       if (dragons[0] === m || dragons[dragons.length - 1] === m) return true;
     }
-    return [b[i - 1], b[i + 1]].some((x) => x && !x.dead && x.id === 'BG29_813');
+    // 堅毅詩人（旁邊的龍）、時光扭曲的詩人（所有的龍）
+    return [b[i - 1], b[i + 1]].some((x) => x && !x.dead && x.id === 'BG29_813') || b.some((x) => !x.dead && x.id === 'BG34_Giant_314');
   }
   buff(m: BMinion, atk: number, hp: number) {
     if (m.dead) return;
@@ -239,6 +241,10 @@ export class CombatSim implements Combat {
       src.atk += atk;
       src.hp += hp;
     }
+  }
+  permKw(m: BMinion, kw: Keyword) {
+    const src = this.source(m);
+    if (src) src[kw] = true;
   }
   bump(m: BMinion, n = 1) {
     m.n += n;
@@ -333,9 +339,11 @@ export class CombatSim implements Combat {
     t.dead = true;
     if (!source) return;
     t.killer = source.uid;
+    t.killedBy = source;
     const ks = this.side(source);
     if (ks === this.side(t)) return;
     for (const hk of this.hooks(ks)) hk.onKill?.(this, ks, source, t, !this.firstKill[ks]);
+    for (const f of this.alive(ks)) for (const { s, g } of specsOf(f)) s.onSideKill?.(this, f, source, t, g);
     this.counter(ks, 'q:kill', 1);
     this.firstKill[ks] = true;
   }
@@ -348,6 +356,12 @@ export class CombatSim implements Combat {
     const side = this.side(m);
     const i = Math.max(0, this.boards[side].indexOf(m) + 1);
     this.runDeathrattle(m, side, i);
+  }
+
+  /** 手下的奮戰（含額外的奮戰） */
+  private ralliesOf(m: BMinion) {
+    const extra = (m.extraRally ?? []).map((x) => ({ s: SPEC.get(x.id)!, g: x.g })).filter((x) => x.s?.rally);
+    return [...specsOf(m), ...extra];
   }
 
   private firstDr: [boolean, boolean] = [false, false];
@@ -367,6 +381,7 @@ export class CombatSim implements Combat {
         s.deathrattle!(this, m, g, index);
         this.counter(side, 'drs', 1);
         for (const hk of this.hooks(side)) hk.onDeathrattle?.(this, side, m);
+        for (const f of this.alive(side)) for (const { s: sp, g: fg } of specsOf(f)) sp.afterDr?.(this, f, m, fg);
       }
     }
   }
@@ -393,7 +408,7 @@ export class CombatSim implements Combat {
     for (const hk of this.hooks(s)) hk.onAttack?.(this, s, att);
     this.counter(s, 'q:attack', 1);
     const rallies = 1 + this.alive(s).reduce((n, x) => n + (x.id === DEIOS ? (x.golden ? 2 : 1) : 0), 0) + this.hooks(s).reduce((n, hk) => n + (hk.rallyExtra ?? 0), 0);
-    for (let k = 0; k < rallies; k++) for (const { s: sp, g } of specsOf(att)) sp.rally?.(this, att, g, target);
+    for (let k = 0; k < rallies; k++) for (const { s: sp, g } of this.ralliesOf(att)) sp.rally?.(this, att, g, target);
     for (const f of this.alive(s)) {
       if (f === att) continue;
       for (const { s: sp, g } of specsOf(f)) sp.onFriendAttack?.(this, f, att, g, target);
@@ -404,6 +419,7 @@ export class CombatSim implements Combat {
       return;
     }
     for (const hk of this.hooks((1 - s) as 0 | 1)) hk.onAttacked?.(this, (1 - s) as 0 | 1, target, att);
+    for (const f of this.alive((1 - s) as 0 | 1)) for (const { s: sp, g } of specsOf(f)) sp.onFriendAttacked?.(this, f, target, att, g);
     if (target.taunt) this.counter((1 - s) as 0 | 1, 'q:taunt', 1);
     if (att.dead || target.dead) {
       this.frame(att.uid, target.uid);
@@ -471,7 +487,8 @@ export class CombatSim implements Combat {
         const at = d.left && b.includes(d.left) ? b.indexOf(d.left) + 1 : 0;
         this.deathCount[d.side]++;
         if (!d.m.temp) this.died[d.side].push(d.m.id);
-        if (isRace(d.m.id, 'ABERRATION') && d.m.id !== DEITY) this.aberDeaths[d.side]++;
+        if (d.m.src !== undefined) this.diedSrc[d.side].push(d.m.src);
+        if (isRace(d.m, 'ABERRATION') && d.m.id !== DEITY) this.aberDeaths[d.side]++;
         this.withGhost(d.m, d.side, at, () => {
           for (const { s, g } of specsOf(d.m)) s.onDeath?.(this, d.m, g);
           this.runDeathrattle(d.m, d.side, at);
@@ -594,13 +611,14 @@ export class CombatSim implements Combat {
   }
 
   /** 在招募階段觸發奮戰（空育逃亡者）：戰鬥複製上增加的身材加回原本的手下 */
-  rallyOutside(uid: number) {
+  rallyOutside(uid: number, kind: 'rally' | 'dr' = 'rally'): BMinion[] {
     const side = 0;
     const m = this.boards[side].find((x) => x.src === uid);
     const target = this.boards[1][0];
-    if (!m || !target) return;
+    if (!m || !target) return [];
     const before = new Map(this.boards[side].map((x) => [x, { a: x.atk, h: x.hp, src: this.source(x) && { a: this.source(x)!.atk, h: this.source(x)!.hp } }]));
-    for (const { s, g } of specsOf(m)) s.rally?.(this, m, g, target);
+    if (kind === 'rally') for (const { s, g } of this.ralliesOf(m)) s.rally?.(this, m, g, target);
+    else this.deathrattle(m);
     for (const [x, b] of before) {
       const src = this.source(x);
       if (!src) continue;
@@ -610,6 +628,8 @@ export class CombatSim implements Combat {
       src.hp = Math.max(1, src.hp + dh);
       for (const k of ['taunt', 'shield', 'windfury', 'venom', 'reborn'] as Keyword[]) if (x[k] && !src[k]) src[k] = true;
     }
+    // 召喚出來的手下（招募階段觸發亡語時放到戰場上）
+    return this.boards[side].filter((x) => !before.has(x) && !x.dead && !x.temp);
   }
 
   run(): CombatResult {
@@ -679,7 +699,7 @@ export class CombatSim implements Combat {
     const survivors = winner === null ? [] : this.alive(winner).filter((m) => !m.temp);
     const damage = winner === null ? 0 : this.sides[winner].tier + survivors.reduce((n, m) => n + tierOf(m.id), 0);
     this.frame(undefined, undefined, winner === null ? '平手' : undefined);
-    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first, died: this.died };
+    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first, died: this.died, diedSrc: this.diedSrc };
   }
 
   private nextAttacker(side: 0 | 1, ptr: [number, number]): BMinion | null {
