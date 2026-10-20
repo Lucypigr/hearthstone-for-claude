@@ -2,6 +2,7 @@
 // 每個奧秘都是一組被動效果（HeroSpec），由 BgGame.hooks() 一起觸發
 import type { Combat } from './api';
 import { tierOf } from './data';
+import { LATE } from './late';
 import type { HeroSpec } from './heroes';
 import type { BMinion } from './types';
 
@@ -108,8 +109,4 @@ export const SECRETS: SecretSpec[] = [
 ];
 export const SECRET_SPEC = new Map(SECRETS.map((s) => [s.id, s]));
 
-let POOL_REF: string[] = [];
-const POOL = () => POOL_REF;
-export function linkSecrets(pool: string[]) {
-  POOL_REF = pool;
-}
+const POOL = () => LATE.pool;

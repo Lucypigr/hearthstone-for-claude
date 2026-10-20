@@ -2,8 +2,7 @@
 // 只收錄效果能完整執行的夥伴；沒有實作的英雄不會有夥伴按鈕
 import type { MinionSpec } from './api';
 import { isRace, racesOf, tierOf } from './data';
-import { hasBattlecry } from './rules';
-import { BOUNTIES, isTavernSpell, spellCostOf, STAT_SPELLS } from './spells';
+import { hasBattlecry, isTavernSpell, LATE, spellCostOf } from './late';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type Tribe } from './types';
 
 const B = (hero: string) => `${hero}_Buddy`;
@@ -206,7 +205,7 @@ export const BUDDIES: MinionSpec[] = [
     id: B('TB_BaconShop_HERO_75'),
     endTurn: (r, _s, g) => {
       for (let k = 0; k < 2 * g; k++) {
-        const id = r.pick(STAT_SPELLS.filter((x) => r.spellInLobby(x) && tierOf(x) <= r.p.tier));
+        const id = r.pick(LATE.stats.filter((x) => r.spellInLobby(x) && tierOf(x) <= r.p.tier));
         if (id) r.getSpell(id);
       }
     },
@@ -308,9 +307,9 @@ export const BUDDIES: MinionSpec[] = [
   // 巨牙海民劫掠者：戰吼、亡語、奮戰：拿到一張隨機的懸賞
   {
     id: B('TB_BaconShop_HERO_18'),
-    battlecry: (r, _s, g) => [...Array(g)].forEach(() => r.getSpell(r.pick(BOUNTIES.filter((x) => r.spellInLobby(x)))!)),
-    deathrattle: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(BOUNTIES.filter((x) => c.inLobbySpell(x)))!)),
-    rally: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(BOUNTIES.filter((x) => c.inLobbySpell(x)))!)),
+    battlecry: (r, _s, g) => [...Array(g)].forEach(() => r.getSpell(r.pick(LATE.bounties.filter((x) => r.spellInLobby(x)))!)),
+    deathrattle: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(LATE.bounties.filter((x) => c.inLobbySpell(x)))!)),
+    rally: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(LATE.bounties.filter((x) => c.inLobbySpell(x)))!)),
     syn: 'PIRATE',
     val: 5,
   },
@@ -405,21 +404,11 @@ let battlecryPool: string[] | null = null;
 let undeadPool: string[] | null = null;
 let drPool: string[] | null = null;
 function BATTLECRY_POOL(): string[] {
-  return (battlecryPool ??= POOL().filter((id) => hasBattlecry(id)));
+  return (battlecryPool ??= LATE.pool.filter((id) => hasBattlecry(id)));
 }
 function UNDEAD_POOL(): string[] {
-  return (undeadPool ??= POOL().filter((id) => isRace(id, 'UNDEAD')));
+  return (undeadPool ??= LATE.pool.filter((id) => isRace(id, 'UNDEAD')));
 }
 function DR_POOL(): string[] {
-  return (drPool ??= POOL().filter((id) => !!SPEC_REF?.get(id)?.deathrattle));
-}
-let POOL_REF: string[] | null = null;
-let SPEC_REF: Map<string, MinionSpec> | null = null;
-function POOL(): string[] {
-  return POOL_REF ?? [];
-}
-/** cards.ts 初始化完之後呼叫 */
-export function linkBuddyPools(pool: string[], spec: Map<string, MinionSpec>) {
-  POOL_REF = pool;
-  SPEC_REF = spec;
+  return (drPool ??= LATE.pool.filter((id) => !!LATE.spec.get(id)?.deathrattle));
 }

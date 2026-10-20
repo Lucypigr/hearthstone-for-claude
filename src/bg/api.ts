@@ -74,6 +74,8 @@ export interface Recruit {
   drawSpell(filter: (id: string) => boolean): string | undefined;
   /** 把手下變成金卡（保留加成） */
   goldenize(m: BMinion): void;
+  /** 發現一個手下，拿到時多給身材 */
+  discoverBonus(filter: (id: string) => boolean, title: string, atk: number, hp: number): void;
 }
 
 /** 戰鬥中 */
@@ -145,6 +147,8 @@ export interface MinionSpec {
   startTurn?(r: Recruit, self: BMinion, g: number): void;
   endTurn?(r: Recruit, self: BMinion, g: number): void;
   onSell?(r: Recruit, self: BMinion, g: number): void;
+  /** 你賣掉另一個手下後 */
+  onSellOther?(r: Recruit, self: BMinion, sold: BMinion, g: number): void;
   /** 你對某個手下施放法術後（鮮血寶石、造法……） */
   onSpell?(r: Recruit, self: BMinion, target: BMinion | null, g: number, spellId: string): void;
   onBuy?(r: Recruit, self: BMinion, bought: BMinion, g: number): void;

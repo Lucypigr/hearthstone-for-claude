@@ -2,6 +2,7 @@
 // cards.ts 會把手下加進 SPEC（不在酒館卡池裡）、spells.ts 會把戰巡艦升級加進 SPELL_SPEC
 import type { Combat, MinionSpec } from './api';
 import { bgCard, hasBgCard, isRace, tierOf } from './data';
+import { isMagnetic } from './late';
 import type { SpellSpec } from './spells';
 import type { BMinion, BPlayer } from './types';
 
@@ -38,7 +39,7 @@ export const HERO_MINIONS: MinionSpec[] = [
     },
     endTurn: (r) => {
       if (!r.p.c.bcBunker) return;
-      r.getRandom((id) => !!SPEC_REF?.get(id)?.magnetic && isRace(id, 'MECHANICAL') && tierOf(id) <= r.p.tier);
+      r.getRandom((id) => isMagnetic(id) && isRace(id, 'MECHANICAL') && tierOf(id) <= r.p.tier);
     },
     val: 4,
   },
@@ -188,7 +189,3 @@ export const RAYNOR_SPELLS: SpellSpec[] = UPGRADE_KINDS.flatMap((k) =>
 );
 export const RAYNOR_IDS = new Set(RAYNOR_SPELLS.map((s) => s.id));
 
-let SPEC_REF: Map<string, MinionSpec> | null = null;
-export function linkHeroCards(spec: Map<string, MinionSpec>) {
-  SPEC_REF = spec;
-}

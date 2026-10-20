@@ -149,6 +149,8 @@ export type HandCard =
 export interface ShopSpell {
   uid: number;
   id: string;
+  /** 法術彩票（魔法商店異象） */
+  ticket?: boolean;
 }
 
 /** 之後才會發生的效果（贏家的麵包） */
@@ -194,6 +196,18 @@ export interface Discover {
   rewards?: string[];
   /** 拿到時把身材設成這樣（旅店老闆的爐火） */
   stats?: [number, number];
+  /** 拿到時多給的身材 */
+  bonus?: [number, number];
+  /** 選到的手下取代戰場上的這個手下（古神的印記、加速器） */
+  transform?: number;
+  /** 飾品：免費拿到並取代這個飾品（神秘立方體、旅遊兌換券） */
+  freeRelic?: string;
+  /** 記住選到的卡（可攜式工廠） */
+  remember?: string;
+  /** 取代飾品時要付錢 */
+  payRelic?: boolean;
+  /** 選到的法術教給 1/1 魚人（魔術魚文物） */
+  teach?: boolean;
   /** 拿到時鎖定幾回合 */
   lockTurns?: number;
   /** 每個選項帶的黑暗贈禮 */
@@ -257,6 +271,8 @@ export interface BPlayer {
   secrets?: string[];
   /** 亞坦尼斯：買滿 14 張卡後拿到的神族 */
   protoss?: string;
+  /** 飾品記住的卡（可攜式工廠） */
+  rmemo?: Record<string, string>;
   freeRefreshes: number;
   /** 各種「本賽局」的計數（鮮血寶石加成、甲蟲加成、死亡的永恆騎士……） */
   c: Record<string, number>;

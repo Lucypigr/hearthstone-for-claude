@@ -2,11 +2,12 @@
 // 只收錄效果能完整執行的卡；沒有實作的卡不會出現在酒館裡
 import type { Combat, MinionSpec } from './api';
 import { bgCard, isRace, racesOf, tierOf } from './data';
-import { BUDDIES, linkBuddyPools } from './buddies';
-import { GIFTS, linkGiftPool } from './gifts';
-import { linkTimewarpCards, TW_MINIONS } from './timewarp';
-import { HERO_MINIONS, linkHeroCards } from './herocards';
-import { linkSecrets } from './secrets';
+import { BUDDIES } from './buddies';
+import { GIFTS } from './gifts';
+import { LATE } from './late';
+import { TW_MINIONS } from './timewarp';
+import { HERO_MINIONS } from './herocards';
+import { LEGACY } from './legacy';
 import { BOUNTIES, isTavernSpell, TAVERN_SPELLS, spellCostOf } from './spells';
 import { BONUS_KEYWORDS, type BMinion, type Keyword, type Tribe } from './types';
 
@@ -2137,9 +2138,9 @@ const UNDEAD_IDS: string[] = [];
 /** 所有種族（最後的倖存者用） */
 const TRIBES_ALL = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'] as Tribe[];
 
-export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS, ...TW_MINIONS, ...HERO_MINIONS].map((s) => [s.id, s]));
+export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS, ...TW_MINIONS, ...HERO_MINIONS, ...LEGACY].map((s) => [s.id, s]));
 // 英雄夥伴、時光扭曲的手下、英雄專屬的手下不在酒館卡池裡
-for (const b of [...BUDDIES, ...TW_MINIONS, ...HERO_MINIONS, { id: 'BG_EX1_170' }, { id: 'BG_EX1_554t' }]) TOKENS.add(b.id);
+for (const b of [...BUDDIES, ...TW_MINIONS, ...HERO_MINIONS, ...LEGACY, { id: 'BG_EX1_170' }, { id: 'BG_EX1_554t' }]) TOKENS.add(b.id);
 
 /** 酒館卡池（有實作的手下，不含衍生物） */
 export const POOL_IDS = MINIONS.map((s) => s.id).filter((id) => !TOKENS.has(id));
@@ -2147,12 +2148,10 @@ export const POOL_IDS = MINIONS.map((s) => s.id).filter((id) => !TOKENS.has(id))
 /** 亡語手下（食屍鬼蛇用） */
 export const DEATHRATTLE_POOL = POOL_IDS.filter((id) => SPEC.get(id)?.deathrattle);
 UNDEAD_IDS.push(...POOL_IDS.filter((id) => isRace(id, 'UNDEAD')));
-linkBuddyPools(POOL_IDS, SPEC);
-linkGiftPool(POOL_IDS);
+LATE.spec = SPEC;
+LATE.pool = POOL_IDS;
 
 export const SPELLCRAFT_SPELLS = new Set(MINIONS.map((s) => s.spellcraft).filter((x): x is string => !!x));
 export const TRIPLE_REWARD = 'TB_BaconShop_Triples_01';
-linkTimewarpCards(POOL_IDS, SPEC, SPELLCRAFT_SPELLS);
-linkHeroCards(SPEC);
-linkSecrets(POOL_IDS);
+LATE.spellcraft = [...SPELLCRAFT_SPELLS];
 export { BEETLE, GEM, COIN, KNIGHT };

@@ -87,6 +87,12 @@ const EXTRA_IDS = [
   'BG_TTN_401', // 先祖自動機（自動機頭像）
   'BG30_MagicItem_442t', // 鮮血魔像（魔像術）
   'BG34_Giant_610t', // 衛星（時光扭曲的電子）
+  // 飾品、異象會給的手下（不在目前的酒館卡池裡）
+  'BG28_585', 'BG26_888', 'BG29_801', 'BG29_801t', 'BG30_104', 'BG_BOT_606', 'BG29_873', 'BG29_877', 'BG_EX1_564', 'BG21_014',
+  'BG28_551', 'BG21_005', 'BG26_157', 'BG26_350', 'BG_OG_221', 'BG21_006', 'BG29_140', 'BG25_041', 'BG27_513', 'BG31_822',
+  'BGS_066', 'BG31_826', 'BG31_360', 'BG35_151', 'BG24_707', 'BG33_840', 'BG34_639', 'BG35_140', 'BG35_141', 'BG31_817', 'BG32_172',
+  // 飾品、獎勵、異象給的法術
+  'BG35_MagicItem_817t', 'BG35_MagicItem_812t', 'BG27_Reward_504t', 'BG31_Anomaly_124t4', 'BG26_502t', 'BG27_Anomaly_302t', 'BG28_883', 'BG31_891',
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {

@@ -2,8 +2,7 @@
 // 每個贈禮都是一個 MinionSpec，掛在手下的 gifts 上，和磁力一樣由 specsOf() 一起觸發
 import type { MinionSpec } from './api';
 import { isRace, racesOf, tierOf } from './data';
-import { isMagnetic } from './rules';
-import { mostCommonType, TAVERN_SPELLS } from './spells';
+import { isMagnetic, LATE, mostCommonType } from './late';
 import type { BMinion } from './types';
 
 const GEM = 'BG20_GEM';
@@ -63,7 +62,7 @@ export const GIFTS: GiftSpec[] = [
     id: G(5),
     deathrattle: (c, s) => {
       const side = c.side(s);
-      const id = c.pick(TAVERN_SPELLS.filter((x) => c.inLobbySpell(x) && tierOf(x) <= c.heroTier(side)));
+      const id = c.pick(LATE.tavern.filter((x) => c.inLobbySpell(x) && tierOf(x) <= c.heroTier(side)));
       if (id) c.give(side, id);
     },
   },
@@ -132,7 +131,7 @@ export const GIFTS: GiftSpec[] = [
   {
     id: G(65),
     endTurn: (r, s) => {
-      const id = r.pick(POOL().filter((x) => isMagnetic(x) && isRace(x, 'MECHANICAL') && tierOf(x) <= r.p.tier));
+      const id = r.pick(LATE.pool.filter((x) => isMagnetic(x) && isRace(x, 'MECHANICAL') && tierOf(x) <= r.p.tier));
       if (id) r.magnetize(s, id);
     },
   },
@@ -189,15 +188,6 @@ export const hasGift = (m: BMinion, n: number) => !!m.gifts?.includes(G(n));
 export function attachGift(m: BMinion, id: string, round: number) {
   (m.gifts ??= []).push(id);
   GIFT_SPEC.get(id)?.attach?.(m, round);
-}
-
-let POOL_REF: string[] = [];
-function POOL(): string[] {
-  return POOL_REF;
-}
-/** cards.ts 初始化完之後呼叫 */
-export function linkGiftPool(pool: string[]) {
-  POOL_REF = pool;
 }
 
 /** 黑暗悖論：這局的等級、身材與黑暗贈禮 */

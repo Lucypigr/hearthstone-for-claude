@@ -6,8 +6,10 @@ import { bgCard, hasBgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import type { HeroSpec } from './heroes';
 import { hasBattlecry, isMagnetic, UPGRADE_COST } from './rules';
-import { BOUNTIES, isTavernSpell, STAT_SPELLS, TAVERN_SPELLS } from './spells';
+import { BOUNTIES, isTavernSpell, SPELL_SPEC, STAT_SPELLS, TAVERN_SPELLS, type SpellSpec } from './spells';
 import { GIFT_IDS } from './gifts';
+import { BUDDY_IDS } from './buddies';
+import { upgradeFor } from './herocards';
 import { twCost, twKind } from './timewarp';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type BPlayer, type Tribe } from './types';
 
@@ -24,6 +26,8 @@ export interface RelicSpec extends Omit<HeroSpec, 'rank'> {
   needTribe?: Tribe;
   /** 異象：開局時決定這局的種族 */
   tribes?: (tribes: Tribe[], all: Tribe[]) => Tribe[];
+  /** 只有英雄有夥伴時才會出現 */
+  needBuddyHero?: boolean;
   /** 異象：要開啟英雄夥伴 / 時光扭曲才會出現 */
   needBuddies?: boolean;
   needTimewarp?: boolean;
@@ -1607,7 +1611,1185 @@ export const RELICS: RelicSpec[] = [
   { id: 'BG27_Anomaly_Prizes2', kind: A, startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverPrize(p, Math.min(4, G.round / 4))) }, // 暗月馬戲團獎品
   { id: 'BG27_Anomaly_716', kind: A, onUpgrade: (G, p) => G.discoverPrize(p, Math.min(4, 1 + Math.floor((G.round - 1) / 3))) }, // 升級獎品
   { id: 'BG27_Anomaly_755', kind: A, prizeTriples: true }, // 馬戲團獎賞
+
+  // ———————— 次級飾品（第二批）————————
+  { id: 'BG30_MagicItem_416', kind: L, v: 5, onGain: (G, p) => craft(G, p, 'BG30_MagicItem_416'), startTurn: (G, p) => craft(G, p, 'BG30_MagicItem_416') }, // 古神的印記
+  { id: 'BG30_MagicItem_422', kind: L, v: 5, onCast: (_G, p, _id, t) => void (t && (p.board.includes(t) || p.shop.includes(t)) && buff(t, 4, 4)) }, // 博學行者卷軸
+  {
+    id: 'BG30_MagicItem_425', // 艾澤拉斯模型球
+    kind: L,
+    v: 6,
+    onGain: (G, p) => void (p.c['r:425'] = G.round),
+    startTurn: (G, p) => {
+      if ((G.round - cnt(p, 'r:425')) % 2 || G.round === cnt(p, 'r:425')) return;
+      p.gold += 2;
+      G.discoverFor(p, (id) => tierOf(id) === 6, '艾澤拉斯模型球：發現一個旅店等級 6 的手下');
+    },
+  },
+  {
+    id: 'BG30_MagicItem_427', // 猛虎雕刻
+    kind: L,
+    v: 5,
+    onFriendDamaged: (c, side, m) => {
+      const t = c.pick(alive(c, side).filter((x) => x !== m));
+      if (t) c.perm(t, 3, 1);
+    },
+  },
+  { id: 'BG30_MagicItem_429', kind: L, v: 5, onGain: (G, p) => craft(G, p, 'BG30_MagicItem_429'), startTurn: (G, p) => craft(G, p, 'BG30_MagicItem_429') }, // 魔血葫蘆
+  { id: 'BG30_MagicItem_432', kind: L, v: 5, onGain: (G, p) => plain(G, p, 'BG26_888'), onVenomLost: (c, _side, m) => c.perm(m, 4, 4) }, // 噴吐者頭像
+  {
+    id: 'BG30_MagicItem_435', // 金卡轉化術補給
+    kind: L,
+    v: 6,
+    onGain: (G, p) => void (p.c['r:435'] = G.round),
+    endTurn: (G, p) => void ((G.round - cnt(p, 'r:435')) % 3 === 2 && spell(G, p, 'BG34_Treasure_955')),
+  },
+  { id: 'BG30_MagicItem_703', kind: L, v: 5, onGain: (G, p) => swapTrinket(G, p, 'BG30_MagicItem_703', 'lesser', 2), startTurn: (G, p) => swapTrinket(G, p, 'BG30_MagicItem_703', 'lesser', 2) }, // 神秘立方體
+  {
+    id: 'BG30_MagicItem_777', // 鵝頭像
+    kind: L,
+    v: 4,
+    needTribe: 'BEAST',
+    onGain: (G, p) => plain(G, p, 'BG29_801'),
+    onSummonCombat: (c, side, m) => {
+      if (m.id !== 'BG29_801t') return;
+      c.counter(side, 'r:777', 1);
+      if (c.cnt(side, 'r:777') % 3 === 0) c.give(side, 'BG30_104');
+    },
+  },
+  { id: 'BG30_MagicItem_803', kind: L, v: 4, needTribe: 'MECHANICAL', onGain: (G, p) => plain(G, p, 'BG_BOT_606') }, // 炸炸機器人頭像（額外傷害在手下效果裡）
+  { id: 'BG30_MagicItem_868', kind: L, v: 4, needTribe: 'DEMON', onGain: (G, p) => void (fromPool(G, p, 'BG26_174'), fromPool(G, p, 'BGS_004')) }, // 倒帶手頭像（攻擊力在 game.ts 處理）
+  { id: 'BG30_MagicItem_869', kind: L, v: 4, onGain: (G, p) => plain(G, p, 'BG29_873') }, // 魔血頭像（加攻擊力在手下效果裡）
+  { id: 'BG30_MagicItem_888', kind: L, v: 3 }, // 紀念品支架（在 gainRelic 處理）
+  {
+    id: 'BG30_MagicItem_891', // 旅遊兌換券
+    kind: L,
+    v: 6,
+    onGain: (G, p) => void (p.c['r:891'] = G.round + 2),
+    startTurn: (G, p) => void (G.round === cnt(p, 'r:891') && swapTrinket(G, p, 'BG30_MagicItem_891', 'greater', 4)),
+  },
+  { id: 'BG30_MagicItem_979', kind: L, v: 4, needTribe: 'ELEMENTAL', onPlay: (_G, p, m) => void (race(m, 'ELEMENTAL') && inc(p, 'spellDisc')) }, // 原始飼養箱
+  { id: 'BG30_MagicItem_982', kind: L, v: 5, onBuy: (G, p, m) => void (hasBattlecry(m.id) && every(p, 'r:982', 2) && randomMinion(G, p, (id) => hasBattlecry(id) && upTo(p)(id))) }, // 薩滿念珠
+  { id: 'BG30_MagicItem_994', kind: L, v: 6, onGain: (G, p) => yogg(G, p), startTurn: (G, p) => yogg(G, p) }, // 超尤味點心
+  {
+    id: 'BG32_MagicItem_170', // 法術扳手
+    kind: L,
+    v: 4,
+    needTribe: 'MECHANICAL',
+    onMagnetize: (G, p) => {
+      const m = G.pick(p.board.filter((x) => race(x, 'MECHANICAL')));
+      if (m) G.castRandom(p, 'BG36_624', m);
+    },
+  },
+  { id: 'BG32_MagicItem_279', kind: L, v: 4, needTribe: 'QUILBOAR', onCast: (_G, _p, id, t) => void (id === GEM && t && !t.tmpKw.includes('shield') && t.tmpKw.push('shield')) }, // 硬牙豬貼紙
+  {
+    id: 'BG32_MagicItem_300', // 普崔希德貼紙
+    kind: L,
+    v: 5,
+    needTribe: 'UNDEAD',
+    onGain: (G, p) => void ((p.c['r:300'] = G.round), creation(G, p)),
+    startTurn: (G, p) => void ((G.round - cnt(p, 'r:300')) % 2 === 0 && G.round > cnt(p, 'r:300') && creation(G, p)),
+  },
+  {
+    id: 'BG32_MagicItem_361', // 可攜式工廠
+    kind: L,
+    v: 6,
+    onGain: (G, p) => G.discoverFor(p, (id) => tierOf(id) === 4 && racesOf(id).length > 0, '可攜式工廠：發現一個有類型的旅店等級 4 手下', { remember: '361' }),
+    startTurn: (G, p) => void (p.rmemo?.['361'] && plain(G, p, p.rmemo['361'])),
+  },
+  { id: 'BG32_MagicItem_417', kind: L, v: 5, needTribe: 'DRAGON', keepEnds: true }, // 塔瑞克苟莎貼紙
+  {
+    id: 'BG32_MagicItem_419', // 玉龍貼紙
+    kind: L,
+    v: 5,
+    needTribe: 'DRAGON',
+    soc: (c, side) => {
+      const ds = alive(c, side).filter((m) => race(m, 'DRAGON') && !m.golden);
+      if (!ds.length) return;
+      const m = ds.reduce((a, b) => (tierOf(b.id) > tierOf(a.id) ? b : a));
+      c.buff(m, bgCard(m.id).atk ?? 0, bgCard(m.id).hp ?? 0);
+      m.golden = true;
+    },
+  },
+  {
+    id: 'BG32_MagicItem_804', // 無私頭像
+    kind: L,
+    v: 4,
+    onGain: (G, p) => plain(G, p, 'BG_OG_221'),
+    onPlay: (G, p, m) => {
+      if (m.id !== 'BG_OG_221') return;
+      const t = G.pick(p.board.filter((x) => x !== m && !x.shield));
+      if (t) t.shield = true;
+    },
+  },
+  {
+    id: 'BG32_MagicItem_806', // 戰巡艦頭像
+    kind: L,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    onGain: (G, p) => {
+      const m = G.make('BG31_HERO_801pt');
+      m.atk = 12;
+      m.hp = 12;
+      G.addMinion(p, m);
+    },
+    onRefresh: (G, p) => {
+      const id = upgradeFor(p.tier, () => G.rand());
+      if (id) p.shopSpells.push({ uid: G.nextUid(), id });
+    },
+  },
+  { id: 'BG32_MagicItem_808', kind: L, v: 5, needTribe: 'QUILBOAR', onCast: (G, p) => void (every(p, 'r:808', 4) && p.board.forEach((m) => gemOn(G, p, m, 1))) }, // 血縛耳環
+  {
+    id: 'BG32_MagicItem_809', // 寶石樂捐
+    kind: L,
+    v: 4,
+    needTribe: 'QUILBOAR',
+    onSell: (G, p, m) => {
+      if (turnInc(p, '809') !== 1 || !m.gems) return;
+      for (const x of [...p.shop].sort((a, b) => tierOf(b.id) - tierOf(a.id)).slice(0, 3)) gemOn(G, p, x, m.gems);
+    },
+  },
+  {
+    id: 'BG32_MagicItem_820', // 浮躁頭像
+    kind: L,
+    v: 4,
+    needTribe: 'DEMON',
+    onGain: (G, p) => {
+      const m = G.make('BG21_006');
+      m.atk = 6;
+      m.hp = 6;
+      G.addMinion(p, m);
+    },
+  },
+  { id: 'BG32_MagicItem_821', kind: L, v: 5, needTribe: 'DEMON', healthCost: (p, kind, id) => kind === 'minion' && isRace(id, 'DEMON') && !turnCnt(p, '821'), onBuy: (_G, p, m) => void (race(m, 'DEMON') && turnInc(p, '821')) }, // 朝聖小鬼貼紙
+  { id: 'BG32_MagicItem_822', kind: L, v: 4, needTribe: 'DEMON', healthCost: (p, kind) => kind === 'spell' && !turnCnt(p, '822'), onBuySpell: (_G, p) => void turnInc(p, '822') }, // 市集貼紙
+  { id: 'BG32_MagicItem_824', kind: L, v: 5, needTribe: 'DEMON', onGain: (G, p) => void (plain(G, p, 'BG29_140'), plain(G, p, 'BG29_140')) }, // 涉嫌小鬼頭像
+  { id: 'BG32_MagicItem_830', kind: L, v: 4, onGain: (G, p) => plain(G, p, 'BG25_041') }, // 魔化元素頭像
+  { id: 'BG32_MagicItem_832', kind: L, v: 5, needTribe: 'ELEMENTAL', endTurn: (G, p) => tornado(G, p, 1) }, // 風落頭像
+  { id: 'BG32_MagicItem_892', kind: L, v: 4, needTribe: 'MURLOC', onGain: (G, p) => craft(G, p, 'BG32_MagicItem_892'), startTurn: (G, p) => craft(G, p, 'BG32_MagicItem_892') }, // 鮮豔泡泡
+  {
+    id: 'BG32_MagicItem_894', // 祝福頭像
+    kind: L,
+    v: 5,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => spell(G, p, 'BG28_845'),
+    startTurn: (G, p) => spell(G, p, 'BG28_845'),
+    onCast: (G, p, id, t) => {
+      if (id !== 'BG28_845' || !t) return;
+      const [a, h] = G.spellExtra(p);
+      for (const m of minionsInHand(p)) if (racesOf(m.id).some((r) => racesOf(t.id).includes(r))) buff(m, 2 + a, 1 + h);
+    },
+  },
+  { id: 'BG32_MagicItem_932', kind: L, v: 4, needTribe: 'NAGA', soc: (c, side) => alive(c, side).forEach((m) => race(m, 'NAGA') && c.buff(m, 0, 1 + Math.floor(c.cnt(side, 'spells') / 4))) }, // 瓦許伊爾海葵
+  { id: 'BG32_MagicItem_950', kind: L, v: 5, needTribe: 'PIRATE', onGain: (G, p) => plain(G, p, 'BG31_822'), startTurn: (G, p) => plain(G, p, 'BG31_822') }, // 堅毅頭像
+  { id: 'BG32_MagicItem_953', kind: L, v: 4, needTribe: 'PIRATE', onGain: (G, p) => void (plain(G, p, 'BGS_066'), fromPool(G, p, 'BG32_236')) }, // 掘金工頭像
+  {
+    id: 'BG32_MagicItem_957', // 騙徒頭像
+    kind: L,
+    v: 5,
+    needTribe: 'PIRATE',
+    onGain: (G, p) => plain(G, p, 'BG31_826'),
+    minionCost: (p, m) => (m && race(m, 'PIRATE') && !turnCnt(p, '957') ? 0 : undefined),
+    onBuy: (_G, p, m) => void (race(m, 'PIRATE') && turnInc(p, '957')),
+  },
+  {
+    id: 'BG32_MagicItem_960', // 編織陽鰓魚人
+    kind: L,
+    v: 5,
+    needTribe: 'MURLOC',
+    soc: (c, side) => {
+      const h = c.hand(side);
+      if (!h.length) return;
+      const m = h.reduce((a, b) => (b.hp > a.hp ? b : a));
+      m.atk += 4;
+      m.hp += 4;
+      c.summonLater(side, Object.assign(copyOf(c, m), { temp: true }));
+    },
+  },
+  { id: 'BG35_MagicItem_151', kind: L, v: 4, needTribe: 'DEMON', onGain: (G, p) => plain(G, p, 'BG35_151'), onShopMinion: (_G, _p, m) => void (m.id === 'BG35_150t' && buff(m, 4, 4)) }, // 褻瀆者頭像
+  {
+    id: 'BG35_MagicItem_300', // 銅線圈
+    kind: L,
+    v: 5,
+    needTribe: 'MECHANICAL',
+    onMagnetize: (_G, p, host) => {
+      buff(host, 1 + cnt(p, 'r:300'), 1 + cnt(p, 'r:300'));
+      inc(p, 'r:300');
+    },
+  },
+  {
+    id: 'BG35_MagicItem_305', // 海螺頭像
+    kind: L,
+    v: 5,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => void ((p.c['r:305'] = G.round), spell(G, p, 'BG28_601')),
+    startTurn: (G, p) => void ((G.round - cnt(p, 'r:305')) % 2 === 0 && G.round > cnt(p, 'r:305') && spell(G, p, 'BG28_601')),
+  },
+  { id: 'BG35_MagicItem_306', kind: L, v: 4, needTribe: 'UNDEAD', onGain: (G, p) => craft(G, p, 'BG35_MagicItem_306'), startTurn: (G, p) => craft(G, p, 'BG35_MagicItem_306') }, // 閻獄之主貼紙
+  {
+    id: 'BG35_MagicItem_430', // 廢料鐵匠頭像
+    kind: L,
+    v: 4,
+    needTribe: 'QUILBOAR',
+    onGain: (G, p) => plain(G, p, 'BG24_707'),
+    onFriendDeath: (c, side, d) => {
+      if (!d.taunt) return;
+      const [a, h] = [1 + c.cnt(side, 'gemA'), 1 + c.cnt(side, 'gemH')];
+      for (const m of alive(c, side)) if (m.id === 'BG24_707') c.perm(m, a, h);
+    },
+  },
+  {
+    id: 'BG35_MagicItem_702', // 劍龍頭像
+    kind: L,
+    v: 5,
+    needTribe: 'BEAST',
+    onGain: (G, p) => plain(G, p, 'BG33_840'),
+    soc: (c, side) => alive(c, side).filter((m) => race(m, 'BEAST')).slice(0, 2).forEach((m) => c.giveKw(m, 'shield')),
+  },
+  { id: 'BG35_MagicItem_803', kind: L, v: 5, needBuddyHero: true, onGain: (G, p) => buddyOf(G, p, false) }, // 麥斯威爾貼紙
+  {
+    id: 'BG35_MagicItem_817', // 鏡片盒
+    kind: L,
+    v: 5,
+    onGain: (G, p) => void ((p.c['r:817'] = G.round), spell(G, p, LENS)),
+    startTurn: (G, p) => void ((G.round - cnt(p, 'r:817')) % 2 === 0 && G.round > cnt(p, 'r:817') && spell(G, p, LENS)),
+  },
+  {
+    id: 'BG35_MagicItem_842', // 終焉時刻之蛋頭像
+    kind: L,
+    v: 5,
+    needTribe: 'DRAGON',
+    onGain: (G, p) => void ((p.c['r:842'] = G.round), plain(G, p, 'BG34_639')),
+    startTurn: (G, p) => void ((G.round - cnt(p, 'r:842')) % 2 === 0 && G.round > cnt(p, 'r:842') && plain(G, p, 'BG34_639')),
+  },
+  { id: 'BG35_MagicItem_850', kind: L, v: 5, needTribe: 'ELEMENTAL', onGain: (G, p) => G.castRandom(p, 'BG34_444'), startTurn: (G, p) => G.castRandom(p, 'BG34_444') }, // 口袋颶風
+  { id: 'BG35_MagicItem_870', kind: L, v: 4, needTribe: 'BEAST', onGain: (G, p) => plain(G, p, 'BG34_Giant_031') }, // 跳躍蛙頭像
+  { id: 'BG35_MagicItem_872', kind: L, v: 4, needTribe: 'BEAST', onGain: (G, p) => craft(G, p, 'BG35_MagicItem_872'), startTurn: (G, p) => craft(G, p, 'BG35_MagicItem_872') }, // 爬蛇法杖
+  {
+    id: 'BG35_MagicItem_920', // 泡泡皇冠
+    kind: L,
+    v: 4,
+    needTribe: 'NAGA',
+    onGain: (_G, p) => void (p.c['r:920'] = cnt(p, 'spells')),
+    onCast: (_G, p) => void (cnt(p, 'spells') - cnt(p, 'r:920') === 14 && (inc(p, 'tsA', 4), inc(p, 'tsH', 4))),
+    status: (p) => `還要施放 ${Math.max(0, 14 - (cnt(p, 'spells') - cnt(p, 'r:920')))} 張法術`,
+  },
+  { id: 'BG36_MagicItem_200', kind: L, v: 4, needTribe: 'BEAST', onAttack: (c, side, m) => void (SPEC.get(m.id)?.rally && c.counter(side, 'freeRefC', 1)) }, // 放牧號角
+  {
+    id: 'BG36_MagicItem_211', // 愛心墜盒
+    kind: L,
+    v: 5,
+    onCast: (G, p, id, t) => {
+      if (!t || !p.board.includes(t) || cnt(p, '~locket')) return;
+      const other = G.pick(p.board.filter((m) => m !== t));
+      if (!other || !SPELL_SPEC.get(id)?.target) return;
+      p.c['~locket'] = 1;
+      G.castRandom(p, id, other);
+      p.c['~locket'] = 0;
+    },
+  },
+  {
+    id: 'BG36_MagicItem_301', // 帶鎖箱頭像
+    kind: L,
+    v: 5,
+    needTribe: 'PIRATE',
+    onGain: (G, p) => G.recruit(p).lockbox(),
+    startTurn: (G, p) => {
+      G.recruit(p).lockbox();
+      G.recruit(p).lockbox();
+    },
+  },
+  { id: 'BG36_MagicItem_305', kind: L, v: 4, needTribe: 'NAGA', onGain: (_G, p) => mark(p, 'BG36_MagicItem_305', 'spells'), onCast: (G, p) => evolveTrinket(G, p, 'BG36_MagicItem_305', 'spells', 18, 'NAGA') }, // 轉化符文
+  {
+    id: 'BG36_MagicItem_402', // 心智割裂者頭像
+    kind: L,
+    v: 4,
+    onGain: (G, p) => plain(G, p, 'BG36_108'),
+    onCast: (_G, p, id) => {
+      if (!isTavernSpell(id)) return;
+      for (const m of p.board) {
+        if (m.id !== 'BG36_108') continue;
+        const i = p.board.indexOf(m);
+        for (const x of [p.board[i - 1], p.board[i + 1]]) buff(x, 1, 2);
+      }
+    },
+  },
+  { id: 'BG36_MagicItem_407', kind: L, v: 4, needTribe: 'DRAGON', onGain: (_G, p) => mark(p, 'BG36_MagicItem_407', 'q:attack'), startTurn: (G, p) => evolveTrinket(G, p, 'BG36_MagicItem_407', 'q:attack', 13, 'DRAGON') }, // 龍頭法杖
+  { id: 'BG36_MagicItem_408', kind: L, v: 4, needTribe: 'PIRATE', onGain: (_G, p) => mark(p, 'BG36_MagicItem_408', 'spentTotal'), onSpend: (G, p) => evolveTrinket(G, p, 'BG36_MagicItem_408', 'spentTotal', 50, 'PIRATE') }, // 軍需官的鉤子
+  { id: 'BG36_MagicItem_409', kind: L, v: 4, needTribe: 'QUILBOAR', onGain: (_G, p) => mark(p, 'BG36_MagicItem_409', 'q:gems'), onCast: (G, p, id) => void (id === GEM && (inc(p, 'q:gems'), evolveTrinket(G, p, 'BG36_MagicItem_409', 'q:gems', 10, 'QUILBOAR'))) }, // 紅寶石獠牙
+  { id: 'BG36_MagicItem_410', kind: L, v: 4, needTribe: 'UNDEAD', onGain: (_G, p) => mark(p, 'BG36_MagicItem_410', 'q:summon'), startTurn: (G, p) => evolveTrinket(G, p, 'BG36_MagicItem_410', 'q:summon', 25, 'UNDEAD') }, // 靈魂電池
+  { id: 'BG36_MagicItem_423', kind: L, v: 5, needTribe: 'MECHANICAL', onGain: (G, p) => volumizer(G, p, 1), startTurn: (G, p) => volumizer(G, p, 1) }, // 音量機兵頭像
+  {
+    id: 'BG36_MagicItem_801', // 吞噬之爪
+    kind: L,
+    v: 4,
+    needTribe: 'DEMON',
+    onConsume: (_G, _p, eater, food) => {
+      if (!race(eater, 'DEMON')) return;
+      buff(eater, 5, 5);
+      for (const k of BONUS_KEYWORDS) if (food[k]) eater[k] = true;
+    },
+  },
+  { id: 'BG36_MagicItem_810', kind: L, v: 5, needTribe: 'MECHANICAL', endTurn: (G, p) => satellite(G, p, 4) }, // 感應圓鋸機
+  {
+    id: 'BG36_MagicItem_812', // 緊急齒輪鋸刃
+    kind: L,
+    v: 5,
+    needTribe: 'MECHANICAL',
+    endTurn: (G, p) => {
+      const m = p.board.find((x) => race(x, 'MECHANICAL'));
+      if (m) G.castRandom(p, 'BG36_624', m);
+    },
+  },
+  {
+    id: 'BG36_MagicItem_820', // 飄忽頭像
+    kind: L,
+    v: 4,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => fromPool(G, p, 'BG32_330'),
+    onCast: (_G, p, id) => {
+      if (!isTavernSpell(id)) return;
+      for (const m of [...p.board, ...minionsInHand(p)]) if (m.id === 'BG32_330') buff(m, 3, 3);
+    },
+  },
+
+  // ———————— 強效飾品（第二批）————————
+  {
+    id: 'BG30_MagicItem_402', // 列車長頭像
+    kind: GR,
+    v: 5,
+    needTribe: 'QUILBOAR',
+    onGain: (G, p) => plain(G, p, 'BG28_585'),
+    onDiscard: (G, p) => p.board.forEach((m) => gemOn(G, p, m, 1)),
+  },
+  { id: 'BG30_MagicItem_410t2', kind: GR, v: 5, needTribe: 'QUILBOAR', avenge: [4, (c, side) => void (c.counter(side, 'gemA', 1), c.counter(side, 'gemH', 1))] }, // 書寫套組
+  { id: 'BG30_MagicItem_414t', kind: GR, v: 6, onBuy: (G, p) => some(G, p.board, 2).forEach((m) => buff(m, 4, 4)), onBuySpell: (G, p) => some(G, p.board, 2).forEach((m) => buff(m, 4, 4)) }, // 科多獸皮包
+  {
+    id: 'BG30_MagicItem_420t', // 麥迪文之書
+    kind: GR,
+    v: 7,
+    onGain: (G, p) => [0, 1].forEach(() => G.discoverSpell(p, upTo(p), '麥迪文之書：發現一張酒館法術')),
+    startTurn: (G, p) => [0, 1].forEach(() => G.discoverSpell(p, upTo(p), '麥迪文之書：發現一張酒館法術')),
+  },
+  { id: 'BG30_MagicItem_422t', kind: GR, v: 7, onCast: (_G, p, _id, t) => void (t && (p.board.includes(t) || p.shop.includes(t)) && buff(t, 10, 10)) }, // 博學行者卷軸
+  {
+    id: 'BG30_MagicItem_427t', // 猛虎雕刻
+    kind: GR,
+    v: 7,
+    onFriendDamaged: (c, side, m) => {
+      const t = c.pick(alive(c, side).filter((x) => x !== m));
+      if (t) c.perm(t, 6, 2);
+    },
+  },
+  { id: 'BG30_MagicItem_432t', kind: GR, v: 6, onGain: (G, p) => plain(G, p, 'BG26_888'), onVenomLost: (c, _side, m) => c.perm(m, 14, 14) }, // 噴吐者頭像
+  {
+    id: 'BG30_MagicItem_433t', // 聯盟鑰匙圈
+    kind: GR,
+    v: 6,
+    onFriendDeath: (c, side, dead) => {
+      if (!once(c, side, 'r433t', 1)) return;
+      const b = [...alive(c, side)];
+      for (let k = 0; k < 2 && b.length; k++) c.buff(b.splice(Math.floor(c.rand() * b.length), 1)[0], dead.atk, dead.maxHp ?? 1);
+    },
+  },
+  { id: 'BG30_MagicItem_438t', kind: GR, v: 6, onOverflow: (c, side) => alive(c, side).forEach((m) => c.buff(m, 5, 0)) }, // 王之杯
+  {
+    id: 'BG30_MagicItem_440', // 爆爆控制器
+    kind: GR,
+    v: 7,
+    needTribe: 'MECHANICAL',
+    onFriendDeath: (c, side, d) => void (race(d, 'MECHANICAL') && once(c, side, 'r440', 1) && c.summonLater(side, copyOf(c, d))),
+  },
+  {
+    id: 'BG30_MagicItem_442', // 鮮血魔像貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'QUILBOAR',
+    onFriendDeath: (c, side, d) => {
+      if (!race(d, 'QUILBOAR') || !d.gems) return;
+      const g = c.make('BG30_MagicItem_442t');
+      g.atk = d.gems * (1 + c.cnt(side, 'gemA'));
+      g.hp = d.gems * (1 + c.cnt(side, 'gemH'));
+      c.summonLater(side, g);
+    },
+  },
+  { id: 'BG30_MagicItem_543', kind: GR, v: 6, onGain: (G, p) => spell(G, p, 'EBG_Spell_032'), startTurn: (G, p) => spell(G, p, 'EBG_Spell_032') }, // 吞噬者貼紙
+  { id: 'BG30_MagicItem_544t', kind: GR, v: 6, needTribe: 'ELEMENTAL', onPlay: (G, p, m) => void (race(m, 'ELEMENTAL') && G.recruit(p).tavernBuff(5, 5, 'ELEMENTAL')) }, // 糯米貼紙
+  {
+    id: 'BG30_MagicItem_546', // 一罐寶石
+    kind: GR,
+    v: 6,
+    needTribe: 'QUILBOAR',
+    onAttack: (c, side) => {
+      c.counter(side, '~r546', 1);
+      if (c.cnt(side, '~r546') !== 2) return;
+      for (const m of alive(c, side)) if (race(m, 'QUILBOAR')) c.buff(m, 1 + c.cnt(side, 'gemA'), 1 + c.cnt(side, 'gemH'));
+    },
+  },
+  { id: 'BG30_MagicItem_547t', kind: GR, v: 6, needTribe: 'UNDEAD', onCast: (_G, p, id) => void (isTavernSpell(id) && inc(p, 'undeadA', 2)) }, // 舒適棺材
+  {
+    id: 'BG30_MagicItem_701', // 薩格拉斯之眼
+    kind: GR,
+    v: 6,
+    needTribe: 'DEMON',
+    onGain: (_G, p) => void (p.c['r:701'] = cnt(p, 'cards')),
+    healthCost: (p) => (cnt(p, 'cards') - cnt(p, 'r:701')) % 4 === 3,
+  },
+  {
+    id: 'BG30_MagicItem_702', // 原始魚人頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => fromPool(G, p, 'BGS_020'),
+    onDiscover: (G, p, id) => void (bgCard(id).type === 'MINION' && randomSpell(G, p)),
+  },
+  {
+    id: 'BG30_MagicItem_709t', // 電磁裝置
+    kind: GR,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    onGain: (G, p) => [0, 1].forEach(() => G.discoverFor(p, (id) => isMagnetic(id) && upTo(p)(id), '電磁裝置：發現一個磁力機械')),
+    onMagnetize: (_G, _p, host) => buff(host, 4, 4),
+  },
+  { id: 'BG30_MagicItem_714', kind: GR, v: 6, needTribe: 'NAGA', onGain: (G, p) => craft(G, p, 'BG30_MagicItem_714'), startTurn: (G, p) => craft(G, p, 'BG30_MagicItem_714') }, // 寶貴珍珠
+  { id: 'BG30_MagicItem_821t2', kind: GR, v: 6, soc: (c, side) => void c.summon(side, c.make('TB_BaconShop_HP_105t', true)) }, // 小魚貼紙
+  {
+    id: 'BG30_MagicItem_822t2', // 雙子天燈
+    kind: GR,
+    v: 7,
+    onSummonCombat: (c, side, m) => {
+      if (!once(c, side, 'r822t', 1)) return;
+      c.summonLater(side, copyOf(c, m));
+      c.summonLater(side, copyOf(c, m));
+    },
+  },
+  { id: 'BG30_MagicItem_843t', kind: GR, v: 7, onGain: (_G, p) => void (inc(p, 'lowA', 7), inc(p, 'lowH', 5)) }, // 部落鑰匙圈
+  { id: 'BG30_MagicItem_876', kind: GR, v: 5, onGain: (G, p) => plain(G, p, 'BG_EX1_564') }, // 操縱者頭像
+  {
+    id: 'BG30_MagicItem_879t', // 達拉然乳酪輪
+    kind: GR,
+    v: 6,
+    shopBuff: (p) => {
+      const n = 2 * (1 + Math.floor(cnt(p, 'r:879t') / 4));
+      return [n, n];
+    },
+    onReroll: (_G, p) => void inc(p, 'r:879t'),
+  },
+  { id: 'BG30_MagicItem_880t', kind: GR, v: 8, onGain: (_G, p) => void (inc(p, 'allA', 8), inc(p, 'allH', 5)) }, // 野性咒符
+  {
+    id: 'BG30_MagicItem_900t', // 滑翔龍翼
+    kind: GR,
+    v: 6,
+    needTribe: 'DRAGON',
+    onPlay: (G, p) => buff(G.pick(p.board.filter((m) => race(m, 'DRAGON'))), 6, 4),
+    onCast: (G, p) => buff(G.pick(p.board.filter((m) => race(m, 'DRAGON'))), 6, 4),
+  },
+  { id: 'BG30_MagicItem_914t', kind: GR, v: 6, needTribe: 'MURLOC', onPlay: (_G, p) => buff(minionsInHand(p)[0], 6, 6) }, // 魚人語片語手冊
+  {
+    id: 'BG30_MagicItem_916', // 夢之精華
+    kind: GR,
+    v: 6,
+    onGain: (G, p) => void (spell(G, p, 'BG28_883'), spell(G, p, 'BG28_883')),
+    startTurn: (G, p) => spell(G, p, 'BG28_883'),
+  },
+  { id: 'BG30_MagicItem_918', kind: GR, v: 6, needTribe: 'DRAGON', onGain: (G, p) => plain(G, p, 'BG21_014'), firstSocExtra: true }, // 晉升頭像
+  { id: 'BG30_MagicItem_919', kind: GR, v: 5, needTribe: 'NAGA', onPlay: (G, p, m) => void (race(m, 'NAGA') && every(p, 'r:919', 2) && spell(G, p, G.pick([...SPELLCRAFT_SPELLS])!)) }, // 納沙塔爾明信片
+  {
+    id: 'BG30_MagicItem_920', // 惡鱗壽司卷
+    kind: GR,
+    v: 6,
+    needTribe: 'NAGA',
+    onGain: (G, p) => spell(G, p, 'BG28_606'),
+    spellTimes: (_G, p, id) => (SPELLCRAFT_SPELLS.has(id) && turnInc(p, '920') <= 2 ? 1 : 0),
+  },
+  { id: 'BG30_MagicItem_924t', kind: GR, v: 6, needTribe: 'PIRATE', onSpend: (G, p) => some(G, pirates(p), 2).forEach((m) => buff(m, 6, 6)) }, // 藏寶海灣精釀
+  { id: 'BG30_MagicItem_943', kind: GR, v: 6, needTribe: 'QUILBOAR', onGain: (G, p) => fromPool(G, p, 'BG30_121'), onCast: (_G, p, id, t) => void (id === GEM && t && p.board.includes(t) && buff(t, 6, 6)) }, // 勘測員頭像
+  { id: 'BG30_MagicItem_944', kind: GR, v: 6, onGain: (G, p) => plain(G, p, 'BG28_551') }, // 救贖者頭像（加成在手下效果裡）
+  { id: 'BG30_MagicItem_970t', kind: GR, v: 8, soc: (c, side) => alive(c, side).forEach((m) => c.buff(m, 6, 6)) }, // 英勇勳章
+  { id: 'BG30_MagicItem_984t', kind: GR, v: 7, needTribe: 'MECHANICAL', endTurn: (_G, p) => p.board.forEach((m) => m.shield && buff(m, 7, 0)) }, // 充能法杖
+  {
+    id: 'BG30_MagicItem_988t', // 巨豬貼紙
+    kind: GR,
+    v: 8,
+    needTribe: 'QUILBOAR',
+    onGain: (G, p) => {
+      for (let k = 0; k < 5; k++) spell(G, p, GEM);
+      inc(p, 'gemA', 3);
+      inc(p, 'gemH', 3);
+    },
+  },
+  { id: 'BG30_MagicItem_989t', kind: GR, v: 7, needTribe: 'UNDEAD', onGain: (_G, p) => void inc(p, 'undeadA', 20) }, // 匠心之甕
+  { id: 'BG30_MagicItem_991', kind: GR, v: 6, needTribe: 'DEMON', shopFull: true, onGain: (G, p) => plain(G, p, 'BG21_005') }, // 魔化蝙蝠頭像
+  {
+    id: 'BG30_MagicItem_992t', // 達納蘇斯派
+    kind: GR,
+    v: 6,
+    shopBuff: (p) => [2 * turnCnt(p, '992t'), 2 * turnCnt(p, '992t')],
+    onSell: (_G, p) => {
+      turnInc(p, '992t');
+      p.shop.forEach((m) => buff(m, 2, 2));
+    },
+  },
+  { id: 'BG32_MagicItem_231t', kind: GR, v: 6, needTribe: 'PIRATE', endTurn: (_G, p) => p.board.forEach((m) => m.golden && buff(m, 10, 10)) }, // 鑲金錨
+  { id: 'BG32_MagicItem_270t', kind: GR, v: 7, avenge: [4, (c, side) => void (c.counter(side, 'tsA', 1), c.counter(side, 'tsH', 1))] }, // 惡毒秘典
+  { id: 'BG32_MagicItem_274', kind: GR, v: 6, needTribe: 'QUILBOAR', onGain: (G, p) => plain(G, p, 'BG26_157') }, // 剛鬃作曲家頭像（效果在手下裡）
+  {
+    id: 'BG32_MagicItem_284', // 阿葛金貼紙
+    kind: GR,
+    v: 7,
+    needTribe: 'QUILBOAR',
+    endTurn: (G, p) => {
+      for (const t of TRIBES) {
+        const m = G.pick(p.board.filter((x) => race(x, t)));
+        if (m) gemOn(G, p, m, 7);
+      }
+    },
+  },
+  {
+    id: 'BG32_MagicItem_301', // 貝斯魚人頭像
+    kind: GR,
+    v: 5,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => plain(G, p, 'BG26_350'),
+    onSummonCombat: (c, _side, m) => void (race(m, 'MURLOC') && c.giveKw(m, 'shield')),
+  },
+  {
+    id: 'BG32_MagicItem_361t', // 可攜式工廠
+    kind: GR,
+    v: 7,
+    onGain: (G, p) => G.discoverFor(p, (id) => tierOf(id) === 5 && racesOf(id).length > 0, '可攜式工廠：發現一個有類型的旅店等級 5 手下', { remember: '361t' }),
+    startTurn: (G, p) => void (p.rmemo?.['361t'] && plain(G, p, p.rmemo['361t'])),
+  },
+  { id: 'BG32_MagicItem_362t', kind: GR, v: 8, onGain: (G, p) => [0, 1].forEach(() => G.discoverFor(p, (id) => tierOf(id) === 6, '旅店老闆的爐火：發現一個旅店等級 6 的手下（變成 30/30）', { stats: [30, 30] })) }, // 旅店老闆的爐火
+  {
+    id: 'BG32_MagicItem_366', // 引路蠟燭
+    kind: GR,
+    v: 6,
+    refreshTier: (p) => (p.c['~rr'] && turnCnt(p, '366') < 2 ? Math.min(6, p.tier + 1) : undefined),
+    onReroll: (_G, p) => void turnInc(p, '366'),
+  },
+  {
+    id: 'BG32_MagicItem_801t', // 森林之心
+    kind: GR,
+    v: 7,
+    onGain: (_G, p) => void (inc(p, 'tsA'), inc(p, 'tsH')),
+    onCast: (_G, p, id) => void (isTavernSpell(id) && every(p, 'r:801t', 6) && (inc(p, 'tsA'), inc(p, 'tsH'))),
+  },
+  { id: 'BG32_MagicItem_808t', kind: GR, v: 6, needTribe: 'QUILBOAR', onCast: (G, p) => void (every(p, 'r:808t', 5) && p.board.forEach((m) => gemOn(G, p, m, 2))) }, // 血縛耳環
+  { id: 'BG32_MagicItem_832t', kind: GR, v: 6, needTribe: 'ELEMENTAL', endTurn: (G, p) => tornado(G, p, 2) }, // 風落頭像
+  {
+    id: 'BG32_MagicItem_860t', // 甲蟲樂團
+    kind: GR,
+    v: 6,
+    needTribe: 'BEAST',
+    avenge: [
+      7,
+      (c, side) => {
+        for (let k = 0; k < 2; k++) {
+          const b = c.summon(side, c.make(BEETLE));
+          if (b) c.giveKw(b, 'taunt');
+        }
+      },
+    ],
+  },
+  {
+    id: 'BG32_MagicItem_862t', // 穢邪聖所
+    kind: GR,
+    v: 7,
+    onDeathrattle: (c, side) => {
+      const b = alive(c, side);
+      if (b.length) c.perm(b[b.length - 1], 6, 4);
+    },
+  },
+  { id: 'BG32_MagicItem_864t', kind: GR, v: 7, avenge: [2, (c, side) => alive(c, side).forEach((m) => c.buff(m, 4, 4))] }, // 雀鳥餵食者
+  {
+    id: 'BG32_MagicItem_902', // 希爾雷克雕像
+    kind: GR,
+    v: 5,
+    needTribe: 'DEMON',
+    onConsume: (G, p) => void (every(p, 'r:902', 2) && randomSpell(G, p)),
+  },
+  {
+    id: 'BG32_MagicItem_907', // 絲瑟拉貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'DEMON',
+    onFriendDeath: (c, side, d) => {
+      if (race(d, 'DEMON') && !c.cnt(side, '~r907')) {
+        c.counter(side, '~r907', 1);
+        c.counter(side, '~r907u', d.uid);
+        firstDemon.set(c, copyOf(c, d));
+      }
+      if (alive(c, side).length || !once(c, side, 'r907', 1)) return;
+      const m = firstDemon.get(c);
+      if (m) c.summonLater(side, m);
+    },
+  },
+  {
+    id: 'BG32_MagicItem_925', // 駭客魚人頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => fromPool(G, p, 'BG31_148'),
+    endTurn: (G, p) => p.board.filter((m) => m.id === 'BG31_148').forEach((m) => G.recruit(p).battlecry(m)),
+  },
+  { id: 'BG32_MagicItem_926', kind: GR, v: 6, needTribe: 'MURLOC', onGain: (G, p) => plain(G, p, 'BG27_513') }, // 莫哥頭像
+  { id: 'BG32_MagicItem_998', kind: GR, v: 6, needTribe: 'ELEMENTAL', onGain: (G, p) => plain(G, p, 'BG31_360') }, // 巨獸頭像
+  { id: 'BG35_MagicItem_151t', kind: GR, v: 6, needTribe: 'DEMON', onGain: (G, p) => plain(G, p, 'BG35_151'), onShopMinion: (_G, _p, m) => void (m.id === 'BG35_150t' && buff(m, 15, 15)) }, // 褻瀆者頭像
+  {
+    id: 'BG35_MagicItem_154', // 厄祖獸貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'DEMON',
+    onPlay: (G, p, m) => {
+      if (!race(m, 'DEMON')) return;
+      const d = G.pick(p.board.filter((x) => x !== m && race(x, 'DEMON')));
+      const f = G.pick(p.shop);
+      if (d && f) G.recruit(p).consume(d, f);
+    },
+  },
+  { id: 'BG35_MagicItem_155', kind: GR, v: 5, needTribe: 'DEMON', onHeroHurt: (_G, p) => void turnInc(p, '155'), spellExtra: (p) => [turnCnt(p, '155'), turnCnt(p, '155')] }, // 魔灼帳本
+  {
+    id: 'BG35_MagicItem_300t', // 銅線圈
+    kind: GR,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    onMagnetize: (_G, p, host) => {
+      buff(host, 2 + 2 * cnt(p, 'r:300t'), 2 + 2 * cnt(p, 'r:300t'));
+      inc(p, 'r:300t');
+    },
+  },
+  {
+    id: 'BG35_MagicItem_309', // 厄格貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    onGain: (G, p) => plain(G, p, G.pick(['BG35_140', 'BG35_141'])!),
+    startTurn: (G, p) => plain(G, p, G.pick(['BG35_140', 'BG35_141'])!),
+  },
+  {
+    id: 'BG35_MagicItem_432', // 鮮血護符
+    kind: GR,
+    v: 6,
+    needTribe: 'QUILBOAR',
+    onDeathrattle: (c, side) => {
+      const b = [...alive(c, side)];
+      for (let k = 0; k < 3 && b.length; k++) c.perm(b.splice(Math.floor(c.rand() * b.length), 1)[0], 1 + c.cnt(side, 'gemA'), 1 + c.cnt(side, 'gemH'));
+    },
+  },
+  { id: 'BG35_MagicItem_435', kind: GR, v: 6, needTribe: 'QUILBOAR', onCast: (G, p, id) => void (id === GEM && p.board.forEach((m) => m.shield && gemOn(G, p, m, 1))) }, // 血縛戒指
+  {
+    id: 'BG35_MagicItem_700', // 野羽撣子
+    kind: GR,
+    v: 5,
+    needTribe: 'BEAST',
+    onSummonCombat: (c, side, m) => {
+      if (!race(m, 'BEAST')) return;
+      c.counter(side, 'r:700', 1);
+      if (c.cnt(side, 'r:700') % 6 === 0) c.giveRandom(side, (id) => isRace(id, 'BEAST') && tierOf(id) <= c.heroTier(side));
+    },
+    onPlay: (G, p, m) => void (race(m, 'BEAST') && every(p, 'r:700', 6) && randomMinion(G, p, (id) => isRace(id, 'BEAST') && upTo(p)(id))),
+  },
+  {
+    id: 'BG35_MagicItem_701', // 尖牙足環
+    kind: GR,
+    v: 6,
+    needTribe: 'BEAST',
+    soc: (c, side) => alive(c, side).forEach((m) => race(m, 'BEAST') && c.buff(m, 1 + c.cnt(side, 'r:701'), 1 + c.cnt(side, 'r:701'))),
+    onSummonCombat: (c, side, m) => void (race(m, 'BEAST') && c.counter(side, 'r:701', 1)),
+    onPlay: (_G, p, m) => void (race(m, 'BEAST') && inc(p, 'r:701')),
+  },
+  {
+    id: 'BG35_MagicItem_712', // 私掠者頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'PIRATE',
+    onGain: (G, p) => {
+      fromPool(G, p, 'BG33_825');
+      some(G, BOUNTIES.filter((id) => G.spellInLobby(id)), 2).forEach((id) => spell(G, p, id));
+    },
+    startTurn: (G, p) => some(G, BOUNTIES.filter((id) => G.spellInLobby(id)), 2).forEach((id) => spell(G, p, id)),
+  },
+  { id: 'BG35_MagicItem_731', kind: GR, v: 6, needTribe: 'UNDEAD', onFriendReborn: (c, side, m) => void (race(m, 'UNDEAD') && once(c, side, 'r731', 3) && c.giveKw(m, 'reborn')) }, // 死觸蘋果
+  { id: 'BG35_MagicItem_733', kind: GR, v: 6, needTribe: 'UNDEAD', onGain: (G, p) => craft(G, p, 'BG35_MagicItem_733'), startTurn: (G, p) => craft(G, p, 'BG35_MagicItem_733') }, // 閻獄之主貼紙
+  { id: 'BG35_MagicItem_741', kind: GR, v: 7, needTribe: 'MECHANICAL', onGain: (G, p) => fromPool(G, p, 'BG26_149') }, // 節奏口技手頭像
+  {
+    id: 'BG35_MagicItem_742', // 手風琴機器人頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    endTurn: (G, p) => {
+      const ms = p.board.filter((m) => race(m, 'MECHANICAL'));
+      for (const m of ms.length > 1 ? [ms[0], ms[ms.length - 1]] : ms) G.recruit(p).magnetize(m, 'BG26_147');
+    },
+  },
+  {
+    id: 'BG35_MagicItem_743', // 電極吸引器
+    kind: GR,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    minionCost: (_p, m) => (m && isMagnetic(m.id) && race(m, 'MECHANICAL') ? 2 : undefined),
+    onRefresh: (G, p) => {
+      const id = G.draw((x) => isMagnetic(x) && isRace(x, 'MECHANICAL') && tierOf(x) <= p.tier);
+      if (id) p.shop.push(G.shopMinion(p, id));
+    },
+  },
+  {
+    id: 'BG35_MagicItem_750', // 魔術魚貼紙
+    kind: GR,
+    v: 5,
+    needTribe: 'MURLOC',
+    onBuySpell: (G, p, id) => {
+      if (turnInc(p, '750') > 2) return;
+      const m = G.make('BG33_890t');
+      m.memo = id;
+      G.addMinion(p, m);
+    },
+  },
+  {
+    id: 'BG35_MagicItem_752', // 小瞎眼貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    endTurn: (G, p) => [...new Set([left(p), right(p)])].forEach((m) => m && hasBattlecry(m.id) && G.recruit(p).battlecry(m)),
+  },
+  {
+    id: 'BG35_MagicItem_753', // 莫奇貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    endTurn: (_G, p) => {
+      const n = Math.floor(cnt(p, 'bcTotal') / 2);
+      p.board.slice(0, 2).forEach((m) => buff(m, 1 + n, 2 + n));
+    },
+  },
+  {
+    id: 'BG35_MagicItem_754', // 戲魚人貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'MURLOC',
+    soc: (c, side) => {
+      const h = c.hand(side);
+      if (!h.length) return;
+      const a = Math.max(...h.map((m) => m.atk));
+      for (const m of alive(c, side)) if (race(m, 'MURLOC')) c.buff(m, a, 0);
+    },
+  },
+  { id: 'BG35_MagicItem_803t', kind: GR, v: 7, needBuddyHero: true, onGain: (G, p) => buddyOf(G, p, true) }, // 麥斯威爾貼紙
+  { id: 'BG35_MagicItem_812', kind: GR, v: 6, prizeTriple3: true, onGain: (G, p) => spell(G, p, 'BG35_MagicItem_812t') }, // 腐化秘典
+  {
+    id: 'BG35_MagicItem_816t', // 未知寶珠
+    kind: GR,
+    v: 6,
+    onGain: (G, p) => {
+      p.gold += 4;
+      const id = G.pick(RELICS.filter((r) => r.kind === 'greater' && r.id !== 'BG35_MagicItem_816t' && G.relicAvailable(p, r)).map((r) => r.id));
+      if (id) G.gainRelic(p, id);
+    },
+  },
+  {
+    id: 'BG35_MagicItem_820', // 安全補丁
+    kind: GR,
+    v: 6,
+    onGain: (_G, p) => {
+      p.gold += 5;
+      if (!(p.secrets ?? []).includes('TB_Bacon_Secrets_12')) (p.secrets ??= []).push('TB_Bacon_Secrets_12');
+    },
+  },
+  { id: 'BG35_MagicItem_821t', kind: GR, v: 8, onGain: (G, p) => G.discoverFor(p, (id) => tierOf(id) === 7, '萬花筒：發現一個金色的旅店等級 7 手下（鎖定 2 回合）', { golden: true, lockTurns: 2 }) }, // 萬花筒
+  { id: 'BG35_MagicItem_823t', kind: GR, v: 7, onGain: (G, p) => G.offerTimewarpCards(p, (id) => twKind(id) === 'major' && twCost(id) === 2 && bgCard(id).type === 'MINION', '古舊燭臺：發現一個高級時光扭曲的 2 費手下') }, // 古舊燭臺
+  { id: 'BG35_MagicItem_838', kind: GR, v: 6, onGain: (G, p) => craft(G, p, 'BG35_MagicItem_838'), startTurn: (G, p) => craft(G, p, 'BG35_MagicItem_838') }, // 雙重縫針
+  {
+    id: 'BG35_MagicItem_840t', // 炫彩之淚
+    kind: GR,
+    v: 6,
+    needTribe: 'DRAGON',
+    onGain: (G, p) => void ((p.c['r:840t'] = cnt(p, 'q:bc')), drakes(G, p, 2)),
+    onPlay: (G, p) => void (cnt(p, 'q:bc') - cnt(p, 'r:840t') >= 7 && ((p.c['r:840t'] = cnt(p, 'q:bc')), drakes(G, p, 2))),
+  },
+  {
+    id: 'BG35_MagicItem_848t', // 終焉時刻之蛋頭像
+    kind: GR,
+    v: 7,
+    needTribe: 'DRAGON',
+    onGain: (G, p) => {
+      const m = G.make('BG34_639', true);
+      m.n = 1;
+      G.addMinion(p, m);
+    },
+  },
+  {
+    id: 'BG35_MagicItem_849', // 雲蛟犄角
+    kind: GR,
+    v: 6,
+    needTribe: 'DRAGON',
+    avenge: [
+      3,
+      (c, side) => {
+        const b = alive(c, side);
+        const r = b[b.length - 1];
+        const t = c.pick(b.filter((m) => m !== r && race(m, 'DRAGON')));
+        if (r && t) c.buff(t, r.atk, 0);
+      },
+    ],
+  },
+  {
+    id: 'BG35_MagicItem_850t', // 口袋颶風
+    kind: GR,
+    v: 7,
+    needTribe: 'ELEMENTAL',
+    onGain: (G, p) => [0, 1, 2, 3].forEach(() => G.castRandom(p, 'BG34_444')),
+    startTurn: (G, p) => [0, 1].forEach(() => G.castRandom(p, 'BG34_444')),
+  },
+  {
+    id: 'BG35_MagicItem_861', // 球手頭像
+    kind: GR,
+    v: 5,
+    needTribe: 'ELEMENTAL',
+    onGain: (G, p) => spell(G, p, 'BG31_819'),
+    onPlay: (G, p, m) => void (race(m, 'ELEMENTAL') && every(p, 'r:861', 11) && spell(G, p, 'BG31_819')),
+  },
+  { id: 'BG35_MagicItem_925', kind: GR, v: 6, needTribe: 'NAGA', onCast: (G, p, id) => void (SPELLCRAFT_SPELLS.has(id) && G.castRandom(p, 'BG35_951')) }, // 珊瑚長矛
+  {
+    id: 'BG35_MagicItem_930', // 陣容哨子
+    kind: GR,
+    v: 5,
+    onGain: (G, p) => {
+      for (const m of p.shop) G.returnToPool(m);
+      p.shop = p.board.slice(0, 7).map((m) => G.make(m.id));
+    },
+  },
+  {
+    id: 'BG35_MagicItem_931t', // 抄錄打字機
+    kind: GR,
+    v: 6,
+    onBuy: (G, p, m) => void (cnt(p, 'r:931t') < 4 && inc(p, 'r:931t') && fromPool(G, p, m.id)),
+    status: (p) => `還剩 ${4 - cnt(p, 'r:931t')} 次`,
+  },
+  { id: 'BG36_MagicItem_213', kind: GR, v: 5, soc: (c, side) => alive(c, side).forEach((m) => SPEC.get(m.id)?.rally && c.giveKw(m, 'shield')) }, // 輕羽貼紙
+  {
+    id: 'BG36_MagicItem_302t', // 黃金大槌
+    kind: GR,
+    v: 6,
+    needTribe: 'PIRATE',
+    endTurn: (_G, p) => {
+      const n = cnt(p, 'goldens');
+      p.board.forEach((m) => buff(m, 4 + n, 2 + n));
+    },
+  },
+  {
+    id: 'BG36_MagicItem_303t', // 透視酒杯
+    kind: GR,
+    v: 6,
+    onGain: (G, p) => [0, 1].forEach(() => randomMinion(G, p, (id) => !!SPEC.get(id)?.choices && upTo(p)(id))),
+    startTurn: (G, p) => [0, 1].forEach(() => randomMinion(G, p, (id) => !!SPEC.get(id)?.choices && upTo(p)(id))),
+  },
+  {
+    id: 'BG36_MagicItem_361', // 納迦部屬貼紙
+    kind: GR,
+    v: 6,
+    needTribe: 'NAGA',
+    soc: (c, side) => {
+      const n = alive(c, side).filter((m) => race(m, 'NAGA'));
+      for (const m of n.length > 1 ? [n[0], n[n.length - 1]] : n) c.buff(m, m.atk, m.hp);
+    },
+  },
+  {
+    id: 'BG36_MagicItem_363', // 逃脫者頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'PIRATE',
+    onGain: (G, p) => fromPool(G, p, 'BG36_523', true),
+    startTurn: (_G, p) => {
+      for (const h of p.hand) if (h.kind === 'spell' && h.id === 'BG36_520t') h.turns = Math.max(1, (h.turns ?? 5) - 1);
+    },
+  },
+  { id: 'BG36_MagicItem_403t', kind: GR, v: 6, onGain: (_G, p) => void (inc(p, 'allA', 2 + cnt(p, 'discards')), inc(p, 'allH', 1)), onDiscard: (_G, p) => void inc(p, 'allA') }, // 暮光神錘
+  { id: 'BG36_MagicItem_404t', kind: GR, v: 6, needTribe: 'ABERRATION', onCast: (G, p, id) => void (isTavernSpell(id) && G.recruit(p).deity(10, 10)) }, // 腐化短棒
+  { id: 'BG36_MagicItem_406', kind: GR, v: 5, needTribe: 'ABERRATION', onDiscard: (G, p, card) => void (card.kind === 'spell' && randomMinion(G, p, (id) => isRace(id, 'ABERRATION') && upTo(p)(id))) }, // 古神語聖壇
+  { id: 'BG36_MagicItem_416', kind: GR, v: 5, needTribe: 'ABERRATION', deityReborn: true }, // 邪惡實驗
+  { id: 'BG36_MagicItem_423t', kind: GR, v: 6, needTribe: 'MECHANICAL', onGain: (G, p) => volumizer(G, p, 2), startTurn: (G, p) => volumizer(G, p, 2) }, // 音量機兵頭像
+  {
+    id: 'BG36_MagicItem_430', // 淤泥頭像
+    kind: GR,
+    v: 5,
+    needTribe: 'ABERRATION',
+    onGain: (G, p) => spell(G, p, 'BG36_301t'),
+    onDiscard: (G, p, card) => void (card.kind === 'spell' && spell(G, p, 'BG36_301t')),
+  },
+  {
+    id: 'BG36_MagicItem_600', // 轉化者頭像
+    kind: GR,
+    v: 5,
+    needTribe: 'ABERRATION',
+    onGain: (G, p) => fromPool(G, p, 'BG36_318'),
+    soc: (c, side) => alive(c, side).forEach((m) => m.id === 'BG36_318' && c.giveKw(m, 'reborn')),
+  },
+  { id: 'BG36_MagicItem_602', kind: GR, v: 6, needTribe: 'ABERRATION', deityGolden: true }, // 古神面具
+  {
+    id: 'BG36_MagicItem_606', // 扭動觸手
+    kind: GR,
+    v: 5,
+    needTribe: 'ABERRATION',
+    onDiscard: (G, p, card) => {
+      if (card.kind !== 'minion' || turnInc(p, '606') !== 1) return;
+      const m = G.make(card.m.id, card.m.golden);
+      m.atk = card.m.atk * 2;
+      m.hp = card.m.hp * 2;
+      G.addMinion(p, m);
+    },
+  },
+  { id: 'BG36_MagicItem_810t', kind: GR, v: 7, needTribe: 'MECHANICAL', endTurn: (G, p) => satellite(G, p, 12) }, // 感應圓鋸機
+  {
+    id: 'BG36_MagicItem_831', // 魔鋼斬斧
+    kind: GR,
+    v: 5,
+    onCast: (G, p, _id, t) => {
+      if (!t || !p.shop.includes(t)) return;
+      const e = G.pick(p.board);
+      if (e) G.recruit(p).consume(e, t);
+    },
+  },
+  {
+    id: 'BG36_MagicItem_841', // 組裝機頭像
+    kind: GR,
+    v: 6,
+    needTribe: 'MECHANICAL',
+    soc: (c, side) => {
+      for (const m of alive(c, side)) {
+        if (!race(m, 'MECHANICAL')) continue;
+        c.buff(m, 2, 2);
+        m.mags.push({ id: 'BG32_172', g: 1 });
+      }
+    },
+  },
+
+  // ———————— 任務獎勵（第二批）————————
+  {
+    id: 'BG24_Reward_109', // 偷來的黃金
+    kind: R,
+    v: 6,
+    soc: (c, side) => {
+      for (const m of ends(c, side)) {
+        if (m.golden) continue;
+        c.buff(m, bgCard(m.id).atk ?? 0, bgCard(m.id).hp ?? 0);
+        m.golden = true;
+      }
+    },
+  },
+  { id: 'BG24_Reward_130', kind: R, v: 6, eotExtra: 1 }, // 恐怖面具
+  { id: 'BG24_Reward_135', kind: R, v: 7, startTurn: (G, p) => yogg(G, p) }, // 美味尤格
+  { id: 'BG24_Reward_310', kind: R, v: 6, needBuddyHero: true, onGain: (G, p) => buddyOf(G, p, true) }, // 共犯
+  {
+    id: 'BG24_Reward_321t', // 變換自我（奇數）
+    kind: R,
+    v: 6,
+    shopBuff: (_p, m, G) => (m && G && (tierOf(m.id) % 2 === 1) === (G.round % 2 === 0) ? [7, 7] : [0, 0]),
+  },
+  { id: 'BG24_Reward_363', kind: R, v: 7, startTurn: (G, p) => offerRewards(G, p, 2, '以太證據：選擇一個任務獎勵') }, // 以太證據
+  { id: 'BG24_Reward_364', kind: R, v: 6, onGain: (_G, p) => void (inc(p, 'allA', 7), inc(p, 'allH', 7)), afterAttack: (c, _side, m) => c.destroy(m) }, // 不穩定的劇毒
+  { id: 'BG27_Reward_504', kind: R, v: 6, startTurn: (G, p) => void (spell(G, p, 'BG27_Reward_504t'), spell(G, p, 'BG27_Reward_504t')) }, // 時間線加速
+  {
+    id: 'BG28_Reward_513', // 公開徵選
+    kind: R,
+    v: 6,
+    startTurn: (G, p) => {
+      const bag = [...BUDDY_IDS].filter((id) => tierOf(id) <= p.tier);
+      const options = some(G, bag, 3);
+      if (!options.length) return;
+      const d = { options, title: '公開徵選：發現一個夥伴', noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+  },
+  { id: 'BG33_Reward_006', kind: R, v: 6, onGain: (G, p) => craft(G, p, 'BG33_Reward_006'), startTurn: (G, p) => craft(G, p, 'BG33_Reward_006') }, // 迴旋疾風
+  {
+    id: 'BG33_Reward_010', // 諾甘農的獎勵
+    kind: R,
+    v: 7,
+    maxTier: 7,
+    onGain: (G, p) => void (p.c['r:010'] = G.round + 1),
+    startTurn: (G, p) => {
+      if (cnt(p, 'r:010') !== G.round || p.tier >= 7) return;
+      setTier(p, p.tier + 1);
+    },
+  },
+  {
+    id: 'BG33_Reward_011', // 魔術魚文物
+    kind: R,
+    v: 6,
+    startTurn: (G, p) => {
+      const bag = TAVERN_SPELLS.filter((id) => G.spellInLobby(id) && upTo(p)(id));
+      const options = some(G, bag, 3);
+      if (!options.length) return;
+      const d = { options, title: '魔術魚文物：發現一張酒館法術教給 1/1 魚人', spells: true, teach: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+  },
+  { id: 'BG33_Reward_021', kind: R, v: 7, rallyExtra: 1 }, // 振奮咆哮
+
+  // ———————— 異象（第二批）————————
+  { id: 'BG27_Anomaly_101', kind: A, tierSet: [1, 3, 5], startGame: (_G, p) => setTier(p, 1, [1, 3, 5]) }, // 真是稀「奇」！
+  { id: 'BG27_Anomaly_102', kind: A, tierSet: [2, 4, 6], startGame: (_G, p) => setTier(p, 2, [2, 4, 6]) }, // 「偶」然如此！
+  { id: 'BG27_Anomaly_302', kind: A, startGame: (G, p) => void (spell(G, p, 'BG27_Anomaly_302t'), spell(G, p, 'BG27_Anomaly_302t')) }, // 培根大餐
+  {
+    id: 'BG27_Anomaly_555', // 還是魚爾摩斯最好
+    kind: A,
+    startTurn: (G, p) => {
+      const o = G.opponentOf(p.idx);
+      const ids = o !== null && o >= 0 ? G.player(o).lastBoardIds ?? [] : [];
+      if (!ids.length) return;
+      const real = G.pick(ids)!;
+      const fake = G.pick(G.poolIds((id) => !ids.includes(id) && tierOf(id) <= G.player(o!).tier));
+      if (!fake) return;
+      const options = G.rand() < 0.5 ? [real, fake] : [fake, real];
+      const d = { options, guess: real, title: '還是魚爾摩斯最好：猜猜下一個對手上一場有哪個手下' };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+  },
+  {
+    id: 'BG27_Anomaly_558', // 貓的好運
+    kind: A,
+    onHeroDeath: (G, p, dead) => {
+      const objs = some(G, (dead.deathBoard ?? dead.board).filter((m) => hasBgCard(m.id) && bgCard(m.id).type === 'MINION'), 3);
+      if (objs.length) G.offerObjs(p, objs, `貓的好運：發現一個 ${dead.name} 的手下`);
+    },
+  },
+  { id: 'BG27_Anomaly_573', kind: A, maxTier: 7, startTurn: (G, p) => void (G.round === 9 && G.discoverFor(p, (x) => tierOf(x) === 7, '寶藏庫：發現一個金色的旅店等級 7 手下', { golden: true })) }, // 寶藏庫
+  { id: 'BG27_Anomaly_577', kind: A, startTurn: (G, p) => void (G.round % 4 === 0 && plain(G, p, 'BG_EX1_564')) }, // 無面無間
+  { id: 'BG27_Anomaly_720', kind: A, allHeroes: 'BG20_HERO_202' }, // 阮大師的變身盤
+  {
+    id: 'BG27_Anomaly_723', // 勇士召喚
+    kind: A,
+    startGame: (G, p) => {
+      G.s.shared ??= some(G, G.poolIds((id) => tierOf(id) === 6), 3);
+      const d = { options: [...G.s.shared], title: '勇士召喚：所有玩家從同樣的選項發現一個旅店等級 6 的手下' };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+  },
+  { id: 'BG27_Anomaly_751', kind: A, startGame: (G, p) => spell(G, p, 'BG34_Treasure_955') }, // 完美鍊金術
+  { id: 'BG27_Anomaly_803', kind: A, startTurn: (G, p) => void (G.round >= 4 && offerRewards(G, p, 2, '異常的證據：選擇一個任務獎勵')) }, // 異常的證據
+  {
+    id: 'BG27_Anomaly_805', // 打假賽
+    kind: A,
+    startTurn: (G, p) => {
+      const o = G.opponentOf(p.idx);
+      if (o === null || o < 0) return;
+      const d = { options: [p.heroId, G.player(o).heroId], bet: [p.idx, o], title: '打假賽：猜猜你的下一場戰鬥誰會贏（猜對拿到 3 枚幸運幣）' };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+  },
+  { id: 'BG27_Anomaly_810', kind: A, needBuddies: true, buddyPool: true }, // 叫夥伴來
+  { id: 'BG27_Anomaly_820', kind: A, startTurn: (G, p) => void (spell(G, p, 'BG26_502t', true), spell(G, p, 'BG26_502t', true)) }, // 接著帶來深情藍調
+  { id: 'BG31_Anomaly_115', kind: A, spellTickets: true }, // 魔法商店
+  { id: 'BG31_Anomaly_124', kind: A, startTurn: (G, p) => void (G.round % 3 === 0 && spell(G, p, 'BG31_Anomaly_124t4')) }, // 黃金箭
+  { id: 'BG33_Anomaly_002', kind: A, needBuddies: true, onBuddy: (G, p) => G.s.buddies && discoverBuddy(G, p) }, // 友誼精神
+  { id: 'BG33_Anomaly_003', kind: A, needBuddies: true, buddyThird: true }, // 自然共存
+  { id: 'BG33_Anomaly_009', kind: A, needBuddies: true, buddyCostMult: 1.5, onBuy: (_G, p) => void (p.buddy && (p.buddy.cost = Math.max(0, p.buddy.cost - 1))) }, // 友善救治
+  { id: 'BG34_Anomaly_805', kind: A, needTimewarp: true, startTurn: (G) => G.timewarpPool() }, // 誓言石的召喚
 ];
+
+
+// —— 第二批飾品用的工具 ——
+const LENS = 'BG35_MagicItem_817t';
+/** 造法：每回合拿到一張只限這回合的法術（法術就是這個飾品本身） */
+function craft(G: BgGame, p: BPlayer, id: string) {
+  spell(G, p, id, true);
+}
+/** 對手下使用鮮血寶石 n 次（不觸發「使用鮮血寶石時」的效果） */
+function gemOn(_G: BgGame, p: BPlayer, m: BMinion | undefined, n: number) {
+  if (!m) return;
+  m.atk += n * (1 + cnt(p, 'gemA'));
+  m.hp += n * (1 + cnt(p, 'gemH'));
+  m.gems = (m.gems ?? 0) + n;
+}
+/** 從 n 個飾品中選一個取代這個飾品（pay = 要付錢） */
+function swapTrinket(G: BgGame, p: BPlayer, self: string, kind: 'lesser' | 'greater', n: number, pay = kind === 'greater') {
+  if (!(p.relics ?? []).includes(self)) return;
+  const options = some(G, RELICS.filter((r) => r.kind === kind && r.id !== self && G.relicAvailable(p, r)).map((r) => r.id), n);
+  if (!options.length) return;
+  const d = { options, relics: kind, freeRelic: self, payRelic: pay, title: `${bgCard(self).name}：選擇一個${kind === 'lesser' ? '次級' : '強效'}飾品取代它` };
+  if (p.discover) p.dq.push(d);
+  else p.discover = d;
+}
+/** 記下飾品拿到時的計數 */
+function mark(p: BPlayer, id: string, key: string) {
+  p.c[`r:${id}s`] = cnt(p, key);
+}
+/** 計數達標後換成同種族的強效飾品 */
+function evolveTrinket(G: BgGame, p: BPlayer, id: string, key: string, n: number, tribe: Tribe) {
+  if (!(p.relics ?? []).includes(id) || cnt(p, key) - cnt(p, `r:${id}s`) < n) return;
+  const next = G.pick(RELICS.filter((r) => r.kind === 'greater' && r.needTribe === tribe && G.relicAvailable(p, r)).map((r) => r.id));
+  p.relics = (p.relics ?? []).filter((x) => x !== id);
+  if (next) G.gainRelic(p, next);
+}
+/** 命運之輪：隨機 6 種效果之一 */
+function yogg(G: BgGame, p: BPlayer) {
+  const roll = Math.floor(G.rand() * 6);
+  if (roll === 0) p.gold += 3;
+  else if (roll === 1) G.discoverFor(p, upTo(p), '命運之輪：發現一個手下');
+  else if (roll === 2) [0, 1].forEach(() => randomSpell(G, p));
+  else if (roll === 3) p.board.forEach((m) => buff(m, 2, 2));
+  else if (roll === 4) G.recruit(p).tavernBuff(3, 3);
+  else G.goldenize(p, G.pick(p.board.filter((m) => !m.golden && tierOf(m.id) <= 3)));
+  p.notes.push(`命運之輪：${['獲得 3 枚金幣', '發現一個手下', '拿到 2 張酒館法術', '手下 +2/+2', '酒館的手下 +3/+3', '一個低本手下變成金卡'][roll]}`);
+}
+/** 普崔希德的造物：選一個能力（黑暗贈禮） */
+function creation(G: BgGame, p: BPlayer) {
+  const gifts = some(G, GIFT_IDS, 3);
+  const st = 2 * p.tier + 2;
+  const d = { options: gifts.map(() => 'BG25_HERO_100pt'), gifts, noPool: true, stats: [st, st] as [number, number], title: '打造不死族：選擇它的能力' };
+  if (p.discover) p.dq.push(d);
+  else p.discover = d;
+}
+/** 風落龍捲 */
+function tornado(G: BgGame, p: BPlayer, n: number) {
+  const m = G.make('BG31_817');
+  const k = n * (1 + turnCnt(p, 'sold'));
+  m.atk += k;
+  m.hp += k;
+  G.addMinion(p, m);
+}
+/** 英雄能力的夥伴 */
+function buddyOf(G: BgGame, p: BPlayer, golden: boolean) {
+  const id = `${p.powerHero ?? p.heroId}_Buddy`;
+  if (BUDDY_IDS.has(id)) G.addMinion(p, G.make(id, golden));
+}
+function discoverBuddy(G: BgGame, p: BPlayer) {
+  const options = some(G, [...BUDDY_IDS].filter((id) => tierOf(id) <= p.tier), 3);
+  if (!options.length) return;
+  const d = { options, title: '發現一個夥伴', noPool: true };
+  if (p.discover) p.dq.push(d);
+  else p.discover = d;
+}
+function volumizer(G: BgGame, p: BPlayer, n: number) {
+  for (let k = 0; k < n; k++) plain(G, p, G.pick(['BG34_170t', 'BG34_170t2', 'BG34_170t3'])!);
+}
+function satellite(G: BgGame, p: BPlayer, base: number) {
+  const m = G.make('BG31_171t');
+  const k = base + 2 * turnCnt(p, 'tsp');
+  m.atk = k;
+  m.hp = k;
+  G.addMinion(p, m);
+}
+function drakes(G: BgGame, p: BPlayer, n: number) {
+  for (let k = 0; k < n; k++) plain(G, p, G.pick(['BG34_634t', 'BG34_635t', 'BG34_636t', 'BG34_637t', 'BG34_638t'])!);
+}
+/** 從 n 個任務獎勵選一個（免費） */
+function offerRewards(G: BgGame, p: BPlayer, n: number, title: string) {
+  const options = some(G, REWARDS_ALL().filter((id) => G.relicAvailable(p, RELIC_SPEC.get(id)!)), n);
+  if (!options.length) return;
+  const d = { options, relics: 'reward' as const, title };
+  if (p.discover) p.dq.push(d);
+  else p.discover = d;
+}
+const REWARDS_ALL = () => RELICS.filter((r) => r.kind === 'reward').map((r) => r.id);
+/** 絲瑟拉貼紙：每場戰鬥第一個死掉的惡魔 */
+const firstDemon = new WeakMap<Combat, BMinion>();
 
 /** 瑪卓薩斯匕首：發現一個友方手下的普通複製，帶著黑暗贈禮 */
 function dagger(G: BgGame, p: BPlayer) {
@@ -1633,9 +2815,10 @@ function cloak(G: BgGame, p: BPlayer) {
   }
 }
 
-function setTier(p: BPlayer, t: number) {
+function setTier(p: BPlayer, t: number, set?: number[]) {
   p.tier = t;
-  p.upgradeCost = UPGRADE_COST[t + 1] ?? 0;
+  const next = set ? set.find((x) => x > t) : t + 1;
+  p.upgradeCost = next ? UPGRADE_COST[next] ?? 0 : 0;
 }
 
 export const RELIC_SPEC = new Map<string, RelicSpec>(RELICS.map((r) => [r.id, r]));
@@ -1665,6 +2848,8 @@ export const QUESTS: QuestSpec[] = [
   { id: 'BG24_Quest_114', key: 'q:summon', need: 12, label: '召喚手下' }, // 列隊指認
   { id: 'BG24_Quest_120', key: 'q:lose', need: 4, label: '輸掉或平手的戰鬥' }, // 揭發犯人
   { id: 'BG24_Quest_124', key: 'q:die', need: 20, label: '友方手下死亡' }, // 重現兇案
+  { id: 'BG24_Quest_125', key: 'q:order', need: 4, label: '手下依攻擊力由低到高排列的戰鬥' }, // 梳理案情
+  { id: 'BG24_Quest_318', key: 'q:taunt', need: 12, label: '友方嘲諷手下被攻擊' }, // 保護證人
   { id: 'BG24_Quest_126', key: 'spentTotal', need: 45, label: '花費金幣' }, // 追查金流
   { id: 'BG24_Quest_311', key: 'q:bc', need: 6, label: '打出戰吼手下' }, // 呼叫救援
   { id: 'BG24_Quest_313', key: 'bought', need: 9, label: '購買手下' }, // 邀請賓客
@@ -1698,3 +2883,129 @@ export function anomalyFits(a: RelicSpec, tribes: Tribe[], o: { buddies: boolean
 }
 
 export { COIN };
+
+// —— 飾品、獎勵、異象給的法術（造法法術、衍生法術）與 7 本酒館法術 ——
+const relicSpell = (s: Omit<SpellSpec, 'v'> & { v?: number }) => SPELL_SPEC.set(s.id, { ...s, v: () => s.v ?? 5 });
+// 古神的印記：選一個手下，再選一個高一本的手下變成它
+relicSpell({
+  id: 'BG30_MagicItem_416',
+  target: 'friend',
+  cast: ({ G, p }, t) => void (t && G.discoverFor(p, (id) => tierOf(id) === Math.min(7, tierOf(t.id) + 1), '古神的印記：選擇要變成的手下', { transform: t.uid })),
+});
+// 魔血葫蘆：選一個友方手下吃掉酒館裡隨機一個手下
+relicSpell({
+  id: 'BG30_MagicItem_429',
+  target: 'friend',
+  cast: ({ G, p, r }, t) => {
+    const f = G.pick(p.shop);
+    if (t && f) r.consume(t, f);
+  },
+});
+// 鮮豔泡泡：魚人隨機一個額外關鍵字
+relicSpell({
+  id: 'BG32_MagicItem_892',
+  target: 'friend',
+  filter: (m) => race(m, 'MURLOC'),
+  cast: ({ G }, t) => {
+    const kw = t && G.pick(BONUS_KEYWORDS.filter((k) => !t[k]));
+    if (t && kw) t[kw] = true;
+  },
+});
+// 閻獄之主貼紙（次級 / 強效）：摧毀一個友方不死族，拿到 1 / 2 個隨機不死族
+for (const [id, n] of [
+  ['BG35_MagicItem_306', 1],
+  ['BG35_MagicItem_733', 2],
+] as const)
+  relicSpell({
+    id,
+    target: 'friend',
+    filter: (m) => race(m, 'UNDEAD'),
+    cast: ({ G, p, r }, t) => {
+      if (!t) return;
+      r.destroy(t);
+      for (let k = 0; k < n; k++) randomMinion(G, p, (x) => isRace(x, 'UNDEAD') && upTo(p)(x));
+    },
+  });
+// 爬蛇法杖：野獸 +2/+2 與復生
+relicSpell({ id: 'BG35_MagicItem_872', target: 'friend', filter: (m) => race(m, 'BEAST'), cast: ({ r }, t) => void (t && (r.spellBuff(t, 2, 2), (t.reborn = true))) });
+// 寶貴珍珠：直到下回合 +30/+30
+relicSpell({ id: 'BG30_MagicItem_714', target: 'friend', cast: ({ r }, t) => void (t && r.tmpBuff(t, 30, 30)) });
+// 雙重縫針：身材變成兩倍，鎖定在手牌 1 回合
+relicSpell({
+  id: 'BG35_MagicItem_838',
+  target: 'friend',
+  cast: ({ G, p }, t) => {
+    if (!t || p.hand.length >= 10) return;
+    t.atk *= 2;
+    t.hp *= 2;
+    p.board = p.board.filter((m) => m !== t);
+    G.addMinion(p, t);
+    const h = p.hand.find((x) => x.kind === 'minion' && x.m === t);
+    if (h) h.locked = G.round + 1;
+  },
+});
+// 迴旋疾風：風怒與聖盾
+relicSpell({ id: 'BG33_Reward_006', target: 'friend', cast: (_ctx, t) => void (t && ((t.windfury = true), (t.shield = true))) });
+// 複製鏡片：選一個 3 本以下的手下，拿到普通的複製
+relicSpell({ id: LENS, target: 'any', filter: (m) => tierOf(m.id) <= 3, cast: ({ G, p }, t) => void (t && plain(G, p, t.id)) });
+// 三合一獎品：發現一個等級 3 的暗月獎品
+relicSpell({ id: 'BG35_MagicItem_812t', target: false, cast: ({ G, p }) => G.discoverPrize(p, 3) });
+// 加速器：把手下變成高一本的隨機手下
+relicSpell({
+  id: 'BG27_Reward_504t',
+  target: 'friend',
+  cast: ({ G, p }, t) => {
+    if (!t) return;
+    const id = G.draw((x) => tierOf(x) === Math.min(7, tierOf(t.id) + 1));
+    const k = p.board.indexOf(t);
+    if (!id || k < 0) return;
+    G.returnToPool(t);
+    p.board[k] = G.make(id);
+  },
+  v: 7,
+});
+// 黃金箭：讓酒館裡的一個手下變成金卡
+relicSpell({ id: 'BG31_Anomaly_124t4', target: 'any', filter: (m, { p }) => p.shop.includes(m) && !m.golden, cast: ({ G, p }, t) => G.goldenize(p, t ?? undefined), v: 8 });
+// 深情藍調：直到下回合 +2/+2（之後的深情藍調更強）
+relicSpell({
+  id: 'BG26_502t',
+  target: 'friend',
+  cast: ({ p, r }, t) => {
+    const n = 2 + 2 * cnt(p, 'deepBlue');
+    if (t) r.tmpBuff(t, n, n);
+    inc(p, 'deepBlue');
+  },
+});
+// 小豬撲滿：獲得金幣（每回合增加）
+relicSpell({
+  id: 'BG27_Anomaly_302t',
+  target: false,
+  cast: ({ G, p }) => void (p.gold += Math.max(1, G.round - 1)),
+  v: 4,
+});
+// 夢想者的擁抱：觸發一個友方手下的戰吼
+relicSpell({ id: 'BG28_883', target: 'friend', filter: (m) => hasBattlecry(m.id), cast: ({ r }, t) => void (t && r.battlecry(t)) });
+// 掠奪者的契約：從酒館偷一個隨機的海盜
+relicSpell({
+  id: 'BG31_891',
+  target: false,
+  cast: ({ G, p }) => {
+    const m = G.pick(p.shop.filter((x) => race(x, 'PIRATE')));
+    if (!m || p.hand.length >= 10) return;
+    p.shop = p.shop.filter((x) => x !== m);
+    G.addMinion(p, m);
+  },
+});
+// —— 7 本酒館法術 ——
+relicSpell({ id: 'BG28_507', target: 'any', cast: (_ctx, t) => void (t && (t.shield = true)), v: 5 }); // 神聖禮物
+relicSpell({ id: 'BG31_889', target: false, cast: ({ p }) => void inc(p, 'peace'), v: 10 }); // 有福同享（戰鬥開始時處理）
+relicSpell({ id: 'BG31_896', target: false, cast: ({ G, p }) => G.discoverFor(p, (id) => tierOf(id) === 7, '聖化儀式：發現一個旅店等級 7 的手下'), v: 12 }); // 聖化儀式
+relicSpell({
+  id: 'BG34_272', // 展覽廳餐具
+  target: false,
+  cast: ({ p, r }) => {
+    const n = 1 + typesOf(p.board);
+    for (let k = 0; k < n; k++) for (const m of p.board) r.spellBuff(m, 3, 3);
+  },
+  v: 14,
+});

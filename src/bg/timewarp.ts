@@ -3,7 +3,7 @@
 // 這裡不在最上層用到 cards.ts / spells.ts 的東西，避免循環引用時還沒初始化
 import type { Combat, MinionSpec, Recruit } from './api';
 import { bgCard, hasBgCard, isRace, racesOf, tierOf } from './data';
-import { hasBattlecry } from './rules';
+import { hasBattlecry, LATE } from './late';
 import type { SpellSpec } from './spells';
 import { TRIBES, type BMinion, type Tribe } from './types';
 
@@ -282,7 +282,7 @@ export const TW_MINIONS: MinionSpec[] = [
     id: W('602'), // 雷義
     startTurn: (r, _s, g) => {
       const id = `${r.p.powerHero ?? r.p.heroId}_Buddy`;
-      if (hasBgCard(id) && SPEC_REF?.has(id)) times(g, () => r.getMinion(id));
+      if (hasBgCard(id) && SPEC_REF.has(id)) times(g, () => r.getMinion(id));
     },
     scale: 5,
   },
@@ -820,24 +820,11 @@ export function TW_IDS(): string[] {
 }
 
 // —— 延遲取得（避免和 cards.ts / spells.ts 互相引用時還沒初始化）——
-let POOL_REF: string[] = [];
-let SPEC_REF: Map<string, MinionSpec> | null = null;
-let TAVERN_REF: string[] = [];
-let SPELLCRAFT_REF: string[] = [];
-let STATS_REF: string[] = [];
-const POOL = () => POOL_REF;
-const TAVERN = () => TAVERN_REF;
-const SPELLCRAFT = () => SPELLCRAFT_REF;
-const STATS = () => STATS_REF;
-const hasDr = (m: BMinion) => !!SPEC_REF?.get(m.id)?.deathrattle || !!m.extraDr?.length || m.mags.some((x) => SPEC_REF?.get(x.id)?.deathrattle);
-const hasDrId = (id: string) => !!SPEC_REF?.get(id)?.deathrattle;
-const isPoolSpell = (id: string) => TAVERN_REF.includes(id) || (hasBgCard(id) && !!bgCard(id).pool);
-export function linkTimewarpCards(pool: string[], spec: Map<string, MinionSpec>, spellcraft: Iterable<string>) {
-  POOL_REF = pool;
-  SPEC_REF = spec;
-  SPELLCRAFT_REF = [...spellcraft];
-}
-export function linkTimewarpSpells(tavern: string[], stats: string[]) {
-  TAVERN_REF = tavern;
-  STATS_REF = stats;
-}
+const POOL = () => LATE.pool;
+const TAVERN = () => LATE.tavern;
+const SPELLCRAFT = () => LATE.spellcraft;
+const STATS = () => LATE.stats;
+const SPEC_REF = LATE.spec;
+const hasDr = (m: BMinion) => !!SPEC_REF.get(m.id)?.deathrattle || !!m.extraDr?.length || m.mags.some((x) => SPEC_REF.get(x.id)?.deathrattle);
+const hasDrId = (id: string) => !!SPEC_REF.get(id)?.deathrattle;
+const isPoolSpell = (id: string) => LATE.tavern.includes(id) || (hasBgCard(id) && !!bgCard(id).pool);

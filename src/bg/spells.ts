@@ -7,7 +7,8 @@ import { bgCard, hasBgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry } from './rules';
 import { PRIZES } from './prizes';
-import { linkTimewarpSpells, TW_SPELLS } from './timewarp';
+import { TW_SPELLS } from './timewarp';
+import { LATE } from './late';
 import { RAYNOR_SPELLS } from './herocards';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type BPlayer, type Keyword, type Tribe } from './types';
 
@@ -677,9 +678,11 @@ for (const s of [...SPELLS, ...PRIZES, ...TW_SPELLS, ...RAYNOR_SPELLS]) if (!SPE
 export const STAT_SPELLS = SPELLS.filter((s) => s.stats && hasBgCard(s.id) && bgCard(s.id).pool).map((s) => s.id);
 
 /** 酒館裡會賣的法術（有實作、不含 7 本） */
-export const TAVERN_SPELLS = [...SPELL_SPEC.keys()].filter((id) => hasBgCard(id) && bgCard(id).pool && (bgCard(id).tier ?? 1) <= 6);
+export const TAVERN_SPELLS = [...SPELL_SPEC.keys()].filter((id) => hasBgCard(id) && bgCard(id).pool && (bgCard(id).tier ?? 1) <= 7);
 
-linkTimewarpSpells(TAVERN_SPELLS, STAT_SPELLS);
+LATE.tavern = TAVERN_SPELLS;
+LATE.bounties = BOUNTIES;
+LATE.stats = STAT_SPELLS;
 
 export function isTavernSpell(id: string): boolean {
   return hasBgCard(id) && (!!bgCard(id).pool || id === POINTY || id === CONFLAG || id === ABSORB);

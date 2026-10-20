@@ -120,6 +120,9 @@ export class CombatSim implements Combat {
     const d = this.make(DEITY);
     d.atk = 1 + this.cnt(side, 'deityA');
     d.hp = 1 + this.cnt(side, 'deityH');
+    // 古神面具：神祇是金卡；邪惡實驗：甦醒後獲得復生
+    if (this.hooks(side).some((hk) => hk.deityGolden)) (d.atk *= 2), (d.hp *= 2), (d.golden = true);
+    if (this.hooks(side).some((hk) => hk.deityReborn)) d.reborn = true;
     const placed = this.summon(side, d);
     if (!placed) return;
     const others = this.alive(side).filter((m) => m !== placed);
@@ -214,6 +217,11 @@ export class CombatSim implements Combat {
     const b = this.boards[this.side(m)];
     const i = b.indexOf(m);
     if (!isRace(m.id, 'DRAGON')) return false;
+    // 塔瑞克苟莎貼紙：最左與最右的龍
+    if (this.hooks(this.side(m)).some((hk) => hk.keepEnds)) {
+      const dragons = b.filter((x) => !x.dead && isRace(x.id, 'DRAGON'));
+      if (dragons[0] === m || dragons[dragons.length - 1] === m) return true;
+    }
     return [b[i - 1], b[i + 1]].some((x) => x && !x.dead && x.id === 'BG29_813');
   }
   buff(m: BMinion, atk: number, hp: number) {
@@ -267,7 +275,10 @@ export class CombatSim implements Combat {
 
   summon(side: 0 | 1, m: BMinion, index?: number): BMinion | null {
     const board = this.boards[side];
-    if (board.filter((x) => !x.dead).length >= BOARD_MAX) return null;
+    if (board.filter((x) => !x.dead).length >= BOARD_MAX) {
+      for (const hk of this.hooks(side)) hk.onOverflow?.(this, side);
+      return null;
+    }
     const [a, h] = auraOf(this.counts[side], m, this.sides[side].player.hp);
     m.atk += a;
     m.hp += h;
@@ -306,6 +317,7 @@ export class CombatSim implements Combat {
     this.hits.push({ uid: t.uid, amount });
     if (source && this.side(source) !== side) for (const hk of this.hooks(side)) hk.onHitBy?.(this, side, source, amount);
     for (const { s, g } of specsOf(t)) s.onDamaged?.(this, t, amount, g);
+    for (const hk of this.hooks(side)) hk.onFriendDamaged?.(this, side, t);
     if (source) {
       for (const f of this.alive(this.side(source))) {
         if (f === source) continue;
@@ -380,7 +392,7 @@ export class CombatSim implements Combat {
     this.hits = [];
     for (const hk of this.hooks(s)) hk.onAttack?.(this, s, att);
     this.counter(s, 'q:attack', 1);
-    const rallies = 1 + this.alive(s).reduce((n, x) => n + (x.id === DEIOS ? (x.golden ? 2 : 1) : 0), 0);
+    const rallies = 1 + this.alive(s).reduce((n, x) => n + (x.id === DEIOS ? (x.golden ? 2 : 1) : 0), 0) + this.hooks(s).reduce((n, hk) => n + (hk.rallyExtra ?? 0), 0);
     for (let k = 0; k < rallies; k++) for (const { s: sp, g } of specsOf(att)) sp.rally?.(this, att, g, target);
     for (const f of this.alive(s)) {
       if (f === att) continue;
@@ -392,6 +404,7 @@ export class CombatSim implements Combat {
       return;
     }
     for (const hk of this.hooks((1 - s) as 0 | 1)) hk.onAttacked?.(this, (1 - s) as 0 | 1, target, att);
+    if (target.taunt) this.counter((1 - s) as 0 | 1, 'q:taunt', 1);
     if (att.dead || target.dead) {
       this.frame(att.uid, target.uid);
       this.resolveDeaths();
@@ -410,16 +423,21 @@ export class CombatSim implements Combat {
     // 無敵（黑暗贈禮）：攻擊時免疫
     const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990' || att.id === 'BG31_HERO_811t8';
     if (!immune) this.damage(att, td, target);
+    const venomLost = (m: BMinion) => {
+      m.venom = false;
+      for (const hk of this.hooks(this.side(m))) hk.onVenomLost?.(this, this.side(m), m);
+    };
     if (att.venom && !tShield && ad > 0 && !target.dead) {
       target.hp = 0;
       this.markDead(target, att);
-      att.venom = false;
-    } else if (att.venom && !tShield && ad > 0) att.venom = false;
+      venomLost(att);
+    } else if (att.venom && !tShield && ad > 0) venomLost(att);
     if (target.venom && !aShield && !immune && td > 0 && !att.dead) {
       att.hp = 0;
       this.markDead(att, target);
-      target.venom = false;
+      venomLost(target);
     }
+    for (const hk of this.hooks(s)) hk.afterAttack?.(this, s, att);
     for (const { s: sp, g } of specsOf(att)) sp.afterAttack?.(this, att, g, target, !!target.dead, excess);
     for (const f of this.alive(s)) {
       if (f === att) continue;
@@ -537,6 +555,12 @@ export class CombatSim implements Combat {
       const m = this.pick(this.alive(foe));
       if (m) m.hp = m.maxHp = 1;
     }
+    // 有福同享：最左邊的手下獲得最近的敵方手下的身材
+    for (let k = 0; k < this.cnt(side, 'peace'); k++) {
+      const m = this.alive(side)[0];
+      const e = this.alive(foe)[0];
+      if (m && e) this.buff(m, e.atk, e.hp);
+    }
     for (let k = 0; k < this.cnt(side, 'brood'); k++) {
       const m = this.alive(side)[0];
       if (m) m.atk *= 2;
@@ -600,6 +624,12 @@ export class CombatSim implements Combat {
     }
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
       for (const h of [...this.hands[side]]) for (const { s, g } of specsOf(h)) s.socInHand?.(this, h, side, g);
+    }
+    // 晉升頭像：每場戰鬥第一個起始戰鬥效果多觸發一次
+    for (const side of [this.first, (1 - this.first) as 0 | 1]) {
+      if (!this.hooks(side).some((hk) => hk.firstSocExtra)) continue;
+      const m = this.boards[side].find((x) => !x.dead && specsOf(x).some(({ s }) => s.soc));
+      if (m) for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
     }
     for (const side of [this.first, (1 - this.first) as 0 | 1]) {
       // 沃卓肯風鈴：起始戰鬥效果多觸發一次

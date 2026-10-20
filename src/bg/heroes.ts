@@ -116,6 +116,24 @@ export interface HeroSpec {
   combatDamage?: (p: BPlayer, dmg: number) => number;
   // 戰鬥中
   onShieldLost?(c: Combat, side: 0 | 1, m: BMinion): void;
+  /** 友方手下受到傷害後、失去烈毒後、攻擊之後 */
+  onFriendDamaged?(c: Combat, side: 0 | 1, m: BMinion): void;
+  onVenomLost?(c: Combat, side: 0 | 1, m: BMinion): void;
+  afterAttack?(c: Combat, side: 0 | 1, m: BMinion): void;
+  /** 最左與最右的龍保留戰鬥中的身材 */
+  keepEnds?: boolean;
+  /** 奮戰多觸發幾次 */
+  rallyExtra?: number;
+  /** 神祇：金卡 / 甦醒後有復生 */
+  deityGolden?: boolean;
+  deityReborn?: boolean;
+  /** 這次購買改用生命值支付 */
+  healthCost?: (p: BPlayer, kind: 'minion' | 'spell', id: string) => boolean;
+  /** 這次刷新只有這個等級的手下 */
+  refreshTier?: (p: BPlayer) => number | undefined;
+  /** 在戰鬥外摧毀手下後、手下吃掉酒館的手下後 */
+  onDestroy?(G: BgGame, p: BPlayer, m: BMinion): void;
+  onConsume?(G: BgGame, p: BPlayer, eater: BMinion, food: BMinion): void;
   /** 友方手下被攻擊時（傷害前） */
   onAttacked?(c: Combat, side: 0 | 1, target: BMinion, attacker: BMinion): void;
   /** 敵方手下對你的手下造成傷害後 */
@@ -128,8 +146,25 @@ export interface HeroSpec {
   drExtra?: number;
   /** 每場戰鬥第一個亡語多觸發一次 */
   firstDrExtra?: boolean;
-  /** 三合一獎勵改成發現暗月獎品 */
+  /** 三合一獎勵改成發現暗月獎品（等級越來越高 / 固定等級 3） */
   prizeTriples?: boolean;
+  prizeTriple3?: boolean;
+  /** 只有這些酒館等級（真是稀「奇」！） */
+  tierSet?: number[];
+  /** 酒館法術有法術彩票（魔法商店） */
+  spellTickets?: boolean;
+  /** 戰鬥中每場第一個起始戰鬥效果多觸發一次 */
+  firstSocExtra?: boolean;
+  /** 戰鬥中召喚的手下放不下時 */
+  onOverflow?(c: Combat, side: 0 | 1): void;
+  /** 夥伴按鈕：按下後、可以按第 3 次、價格倍率 */
+  onBuddy?(G: BgGame, p: BPlayer): void;
+  buddyThird?: boolean;
+  buddyCostMult?: number;
+  /** 夥伴會出現在酒館裡 */
+  buddyPool?: boolean;
+  /** 所有人都是這位英雄 */
+  allHeroes?: string;
   /** 時光扭曲：多幾枚時光晶幣、時光晶幣可以帶到下一次、第 8 和 9 回合都去高級、這個時光扭曲都是金卡 */
   chronumExtra?: number;
   chronumPool?: boolean;
