@@ -85,6 +85,7 @@ const EXTRA_IDS = [
   'BG23_HERO_303pt', // 沒有手下
   'TB_BaconShop_HP_038t', // 野生香蕉
   'BG_TTN_401', // 先祖自動機（自動機頭像）
+  'BG30_MagicItem_442t', // 鮮血魔像（魔像術）
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -158,6 +159,8 @@ async function main() {
     else if (c.type === 'BATTLEGROUND_ANOMALY') add(c, { kind: 'anomaly' });
     else if (/^BG2[478]_Quest_\d+$/.test(c.id)) add(c, { kind: 'quest' });
     else if (c.isBattlegroundsBuddy && c.type === 'MINION' && c.id.endsWith('_Buddy')) add(c);
+    // 黑暗贈禮（「(0)」是官方用來顯示計數的位置，拿掉）
+    else if ((c as { isBattlegroundsDarkGift?: boolean }).isBattlegroundsDarkGift) add(c, { kind: 'gift', text: clean(c.text).replace(/\s*<i>\(0\)<\/i>|\s*\(0\)/g, '') });
   }
   // 英雄與英雄能力
   for (const c of zh) {

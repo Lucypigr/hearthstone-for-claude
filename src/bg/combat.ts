@@ -5,6 +5,7 @@ import { isRace, tierOf } from './data';
 const DEITY = 'BGFYM_000';
 import { SPEC } from './cards';
 import { HERO_SPEC, type HeroSpec } from './heroes';
+import { hasGift } from './gifts';
 import { nextRandom } from '../engine/rng';
 import { auraOf, BOARD_MAX, makeMinion, specsOf, spellExtraOf } from './rules';
 import type { BMinion, BPlayer, CombatFrame, CombatResult, Keyword } from './types';
@@ -207,7 +208,7 @@ export class CombatSim implements Combat {
   }
   /** 塔瑞克苟薩、堅毅詩人旁邊的龍：戰鬥中獲得的身材與關鍵字永久保留 */
   private keeps(m: BMinion): boolean {
-    if (m.id === 'BG21_015') return true;
+    if (m.id === 'BG21_015' || hasGift(m, 50)) return true;
     const b = this.boards[this.side(m)];
     const i = b.indexOf(m);
     if (!isRace(m.id, 'DRAGON')) return false;
@@ -286,6 +287,12 @@ export class CombatSim implements Combat {
     if (t.dead || amount <= 0) return 0;
     const side = this.side(t);
     if (t.shield) {
+      // 托瑞斯的祝福（黑暗贈禮）：聖盾要打 3 次才會破
+      if (hasGift(t, 15) && (t.shieldHits ?? 0) < 2) {
+        t.shieldHits = (t.shieldHits ?? 0) + 1;
+        this.hits.push({ uid: t.uid, amount: 0 });
+        return 0;
+      }
       t.shield = false;
       this.hits.push({ uid: t.uid, amount: 0 });
       for (const f of this.alive(side)) for (const { s, g } of specsOf(f)) s.onShieldLost?.(this, f, t, g);
@@ -390,13 +397,15 @@ export class CombatSim implements Combat {
     const near = specsOf(att).some(({ s: sp }) => sp.cleave) ? [tb[ti - 1], tb[ti + 1]].filter((m) => m && !m.dead) : [];
     const excess = this.damage(target, ad, att);
     for (const m of near) this.damage(m, ad, att);
-    this.damage(att, td, target);
+    // 無敵（黑暗贈禮）：攻擊時免疫
+    const immune = hasGift(att, 60);
+    if (!immune) this.damage(att, td, target);
     if (att.venom && !tShield && ad > 0 && !target.dead) {
       target.hp = 0;
       this.markDead(target, att);
       att.venom = false;
     } else if (att.venom && !tShield && ad > 0) att.venom = false;
-    if (target.venom && !aShield && td > 0 && !att.dead) {
+    if (target.venom && !aShield && !immune && td > 0 && !att.dead) {
       att.hp = 0;
       this.markDead(att, target);
       target.venom = false;
@@ -468,10 +477,20 @@ export class CombatSim implements Combat {
           r.reborn = false;
           r.reborned = true;
           r.src = d.m.src;
+          // 恐懼延續（黑暗贈禮）：以完整的身材與額外關鍵字復生
+          if (hasGift(d.m, 12)) {
+            r.gifts = d.m.gifts?.slice();
+            r.atk = d.m.atk;
+            r.hp = d.m.maxHp ?? r.hp;
+            r.mags = d.m.mags.slice();
+            for (const k of ['taunt', 'windfury', 'venom', 'stealth'] as Keyword[]) if (d.m[k]) r[k] = true;
+          }
           const placed = this.summon(d.side, r, Math.min(at, this.boards[d.side].length));
           if (placed) {
-            placed.hp = 1;
-            placed.maxHp = 1;
+            if (!hasGift(d.m, 12)) {
+              placed.hp = 1;
+              placed.maxHp = 1;
+            }
             for (const f of this.alive(d.side)) {
               if (f === placed) continue;
               for (const { s, g } of specsOf(f)) s.onFriendReborn?.(this, f, placed, g);

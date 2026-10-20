@@ -7,6 +7,7 @@ import type { BgGame } from './game';
 import type { HeroSpec } from './heroes';
 import { hasBattlecry, isMagnetic, UPGRADE_COST } from './rules';
 import { BOUNTIES, isTavernSpell, STAT_SPELLS, TAVERN_SPELLS } from './spells';
+import { GIFT_IDS } from './gifts';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type BPlayer, type Tribe } from './types';
 
 export type RelicKind = 'lesser' | 'greater' | 'reward' | 'anomaly';
@@ -753,7 +754,34 @@ export const RELICS: RelicSpec[] = [
     soc: (c, side) => alive(c, side).forEach((m) => m.id === 'BG25_008' && (c.giveKw(m, 'taunt'), c.giveKw(m, 'reborn'))),
   },
 
+  {
+    id: 'BG36_MagicItem_206', // 不祥之石
+    kind: L,
+    v: 6,
+    onGain: (G, p) => {
+      const t = G.mostCommonType(p);
+      G.discoverGift(p, (id) => tierOf(id) === 4 && (!t || isRace(id, t)), '不祥之石：發現一個有黑暗贈禮的旅店等級 4 手下');
+    },
+  },
+
   // ———————— 強效飾品 ————————
+  { id: 'BG36_MagicItem_309', kind: GR, v: 7, onGain: (G, p) => G.discoverGift(p, (id) => tierOf(id) === 7, '燭蠟長槍：發現一個有黑暗贈禮的旅店等級 7 手下') }, // 燭蠟長槍
+  {
+    id: 'BG36_MagicItem_610', // 邪惡邀請函
+    kind: GR,
+    v: 7,
+    onGain: (G, p) => {
+      const t = G.mostCommonType(p);
+      G.discoverGift(p, (id) => tierOf(id) <= p.tier && (!t || isRace(id, t)), '邪惡邀請函：發現一個有黑暗贈禮的金色手下', { golden: true });
+    },
+  },
+  {
+    id: 'BG36_MagicItem_370', // 瑪卓薩斯匕首
+    kind: GR,
+    v: 6,
+    onGain: (G, p) => dagger(G, p),
+    startTurn: (G, p) => void (G.round % 2 === 0 && dagger(G, p)),
+  },
   { id: 'BG30_MagicItem_403', kind: GR, v: 5, soc: (c, side) => alive(c, side).forEach((m) => !racesOf(m.id).length && c.buff(m, m.atk * 2, m.hp * 2)) }, // 鐵爐堡鐵砧
   { id: 'BG30_MagicItem_406', kind: GR, v: 6, needTribe: 'UNDEAD', onGain: (G, p) => spell(G, p, 'BG28_604'), startTurn: (G, p) => spell(G, p, 'BG28_604') }, // 屠夫鐮刀
   {
@@ -1551,8 +1579,18 @@ export const RELICS: RelicSpec[] = [
     },
   },
   { id: 'BG33_Anomaly_001', kind: A, needBuddies: true, onUpgrade: (_G, p) => void (p.buddy && (p.buddy.cost = Math.max(0, p.buddy.cost - 2))) }, // 召喚契約
-  { id: 'BG33_Anomaly_005', kind: A, needBuddies: true }, // 多彩情誼
+  { id: 'BG36_Anomaly_002', kind: A }, // 黑暗贈禮！（按鈕在 game.ts 的 darkState）
 ];
+
+/** 瑪卓薩斯匕首：發現一個友方手下的普通複製，帶著黑暗贈禮 */
+function dagger(G: BgGame, p: BPlayer) {
+  const ids = some(G, [...new Set(p.board.map((m) => m.id))].filter((id) => !TOKENS.has(id) || hasBgCard(id)), 3);
+  if (!ids.length) return;
+  const gifts = some(G, GIFT_IDS, ids.length);
+  const d = { options: ids, gifts, title: '瑪卓薩斯匕首：發現一個友方手下的複製（有黑暗贈禮）', noPool: true };
+  if (p.discover) p.dq.push(d);
+  else p.discover = d;
+}
 
 function steal(G: BgGame, p: BPlayer) {
   if (!p.shop.length || p.hand.length >= 10) return;

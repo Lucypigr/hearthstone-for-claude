@@ -47,7 +47,7 @@ export interface BgCardData {
   mech?: string[];
   cost?: number;
   /** 飾品、任務、任務獎勵、異象 */
-  kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest';
+  kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest' | 'gift';
   armor?: number;
   power?: string;
   /** 酒館裡會賣的法術 */
@@ -127,6 +127,12 @@ export interface BMinion {
   extraDr?: { id: string; g: number }[];
   /** 跳舞的戴瑞：帽子 */
   hat?: number;
+  /** 黑暗贈禮 */
+  gifts?: string[];
+  /** 黑暗贈禮的計時（孵育：在這個回合身材加倍） */
+  gt?: number;
+  /** 戰鬥中：聖盾已經被打了幾次（托瑞斯的祝福） */
+  shieldHits?: number;
 }
 
 export type HandCard =
@@ -186,6 +192,8 @@ export interface Discover {
   stats?: [number, number];
   /** 拿到時鎖定幾回合 */
   lockTurns?: number;
+  /** 每個選項帶的黑暗贈禮 */
+  gifts?: string[];
 }
 
 export interface Seen {

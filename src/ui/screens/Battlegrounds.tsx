@@ -229,6 +229,11 @@ function MinionTip({ m, p, G }: { m: BMinion; p: BPlayer | null; G: BgGame }) {
       {m.golden && <div className="bg-tip-note">金卡：身材與效果加倍</div>}
       {m.both && <div className="bg-tip-note">二選一的兩個效果都會發動</div>}
       {m.mags.length > 0 && <div className="bg-tip-note">磁力：{m.mags.map((x) => bgCard(x.id).name).join('、')}</div>}
+      {m.gifts?.map((id, i) => (
+        <div key={i} className="bg-tip-note bg-gift-note">
+          🌑 黑暗贈禮・<b>{bgCard(id).name}</b>：<span dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(id).text) }} />
+        </div>
+      ))}
       {kws.length > 0 && <div className="bg-tip-note">{kws.map((k) => KEYWORD_NAMES[k]).join('・')}</div>}
       {m.memo && <div className="bg-tip-note">記住的手下：{bgCard(m.memo).name}</div>}
       {(m.tmpAtk || m.tmpHp || m.tmpKw.length) > 0 && (
@@ -302,6 +307,7 @@ function MinionToken({
         {e.kw.windfury && <span title="風怒">🌀</span>}
         {e.kw.reborn && <span title="復生">👼</span>}
         {m.mags.length > 0 && <span title="磁力">🧲{m.mags.length}</span>}
+        {m.gifts?.length ? <span title={`黑暗贈禮：${m.gifts.map((x) => bgCard(x).name).join('、')}`}>🌑</span> : null}
         {!combat && specs.some(({ s }) => s.activate) && <span title={m.act === G.round ? '本回合已啟動' : '啟動技能：點這個手下來使用'}>{m.act === G.round ? '✔' : '🔆'}</span>}
         {avenge && combat && <span title="報復">{avenge[0] - (m.avenge ?? 0)}</span>}
       </div>
@@ -613,6 +619,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   const hero = heroOf(me)!;
   const pst = G.powerState(me);
   const bst = G.buddyState(me);
+  const dst = G.darkState(me);
   const handCard = mode.k === 'hand' || mode.k === 'target' || mode.k === 'choose' ? me.hand.find((h) => h.uid === mode.uid) : undefined;
   const choice = mode.k === 'hand' || mode.k === 'target' ? mode.choice ?? 0 : 0;
   const spellTargets = handCard?.kind === 'spell' && mode.k === 'hand' ? G.spellTargets(me, handCard.id, choice) : [];
@@ -1056,6 +1063,12 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   </div>
                 </button>
               )}
+              {dst && (
+                <button className={`btn small bg-dark-btn ${dst.usable ? 'primary' : ''}`} disabled={!dst.usable || busy} title={dst.reason ?? ''} onClick={(e) => (e.stopPropagation(), act(() => G.pressDark(0)))}>
+                  🌑 黑暗發現 🪙{dst.cost}
+                  <small>（剩 {dst.left} 次）</small>
+                </button>
+              )}
               <RelicBar G={G} p={me} />
             </div>
             <div className="bg-hand">
@@ -1227,6 +1240,11 @@ function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }
             <MinionToken m={m} p={me} G={G} tipSide="bottom" onClick={() => onPick(i)} />
             <b>{bgCard(m.id).name}</b>
             <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(cardText(m, me)) }} />
+            {d.gifts?.[i] && (
+              <div className="small bg-gift-note">
+                🌑 <b>{bgCard(d.gifts[i]).name}</b>：<span dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(d.gifts[i]).text) }} />
+              </div>
+            )}
           </div>
         ))}
       </div>

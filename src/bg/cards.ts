@@ -3,6 +3,7 @@
 import type { Combat, MinionSpec } from './api';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import { BUDDIES, linkBuddyPools } from './buddies';
+import { GIFTS, linkGiftPool } from './gifts';
 import { BOUNTIES, isTavernSpell, TAVERN_SPELLS, spellCostOf } from './spells';
 import { BONUS_KEYWORDS, type BMinion, type Keyword, type Tribe } from './types';
 
@@ -59,6 +60,8 @@ function summonFromHand(c: Combat, self: BMinion, filter: (m: BMinion) => boolea
 const n3 = (r: { p: { c: Record<string, number> } }) => Math.floor((r.p.c.spells ?? 0) / 3);
 
 export const MINIONS: MinionSpec[] = [
+  // 黑暗悖論：每局的等級、身材與黑暗贈禮都不同（在 game.ts 決定）
+  { id: 'BG36_360', val: 4 },
   // —— 旅店等級 1 ——
   { id: 'BG31_803', deathrattle: (c, s, g, i) => summonAt(c, s, BEETLE, 1, g > 1, i), syn: 'BEAST', val: 3 },
   { id: 'BG36_200', rally: (c, s, g) => void c.summon(c.side(s), c.make('BG36_200t', g > 1)), syn: 'BEAST', val: 2 },
@@ -2110,6 +2113,7 @@ export const TOKENS = new Set([
   'BG22_HERO_001p_t1et',
   'BG22_HERO_001p_t1',
   'BG20_HERO_282p',
+  'BG30_MagicItem_442t',
 ]);
 
 /** 不死族（致命打擊者用） */
@@ -2117,7 +2121,7 @@ const UNDEAD_IDS: string[] = [];
 /** 所有種族（最後的倖存者用） */
 const TRIBES_ALL = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'] as Tribe[];
 
-export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES].map((s) => [s.id, s]));
+export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS].map((s) => [s.id, s]));
 // 英雄夥伴不在酒館卡池裡
 for (const b of BUDDIES) TOKENS.add(b.id);
 
@@ -2128,6 +2132,7 @@ export const POOL_IDS = MINIONS.map((s) => s.id).filter((id) => !TOKENS.has(id))
 export const DEATHRATTLE_POOL = POOL_IDS.filter((id) => SPEC.get(id)?.deathrattle);
 UNDEAD_IDS.push(...POOL_IDS.filter((id) => isRace(id, 'UNDEAD')));
 linkBuddyPools(POOL_IDS, SPEC);
+linkGiftPool(POOL_IDS);
 
 export const SPELLCRAFT_SPELLS = new Set(MINIONS.map((s) => s.spellcraft).filter((x): x is string => !!x));
 export const TRIPLE_REWARD = 'TB_BaconShop_Triples_01';

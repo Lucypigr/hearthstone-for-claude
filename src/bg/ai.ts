@@ -254,8 +254,14 @@ function step(M: Mind): boolean {
   if (playFromHand(M)) return true;
   // 5. 英雄能力
   if (usePower(M)) return true;
-  // 6. 夥伴按鈕
+  // 6. 夥伴按鈕、黑暗發現
   if (pressBuddy(M)) return true;
+  const dark = G.darkState(p);
+  if (dark?.usable && (p.gold >= 3 + G.minionCost(p) || G.round >= 6) && p.hand.length < HAND_MAX - 1 && M.r() < 0.4 + persona.skill * 0.6) {
+    G.pressDark(p.idx);
+    M.bought.push('黑暗發現');
+    return true;
+  }
   // 7. 買手下
   if (buySomething(M)) return true;
   // 7. 啟動技能
@@ -292,6 +298,14 @@ function wantsLevel(M: Mind, look = 0): boolean {
   // 升級後還要買得起東西
   if (persona.skill > 0.5 && p.tier + 1 > target) return false;
   return p.tier < target;
+}
+
+/** 黑暗贈禮大概值多少（身材、強力的起始戰鬥效果比較值錢） */
+function GIFT_VALUE(id: string): number {
+  const n = Number(id.split('t').pop());
+  if ([72, 81, 90, 13, 12].includes(n)) return 8;
+  if ([0, 2, 4, 7, 71, 15, 60, 73, 28, 29, 30, 88].includes(n)) return 5;
+  return 3;
 }
 
 /** 夥伴按鈕：買得起、又不會影響這回合的發展就按 */
@@ -379,7 +393,7 @@ function chooseDiscover(M: Mind) {
     if (d.powers) v = (HERO_SPEC.get(id)?.rank ?? 2) * 3 + gauss(M) * (1 - M.persona.skill) * 4;
     else if (d.spells) v = spellValue(M, id);
     else if (d.objs) v = minionValue(G, p, d.objs[i], M.focus, M.persona.skill);
-    else v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0);
+    else v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0) + (d.gifts ? GIFT_VALUE(d.gifts[i]) : 0);
     if (v > bestV) {
       bestV = v;
       best = i;

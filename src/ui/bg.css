@@ -1248,3 +1248,13 @@
     height: 28px;
   }
 }
+
+/* 黑暗贈禮 */
+.bg-gift-note {
+  color: #d7b8ff;
+}
+
+.bg-dark-btn small {
+  margin-left: 4px;
+  opacity: 0.8;
+}

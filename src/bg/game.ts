@@ -8,7 +8,8 @@ const FODDER = 'BG35_150t';
 import { BOUNTIES, isTavernSpell, mostCommonType, SPELL_SPEC, spellCostOf, TAVERN_SPELLS, type SpellCtx } from './spells';
 import { BUDDY_IDS } from './buddies';
 import { CombatSim, runCombat, type SideInput } from './combat';
-import { bgCard, isRace, racesOf, tierOf } from './data';
+import { bgCard, isRace, racesOf, setParadox, tierOf } from './data';
+import { attachGift, GIFT_IDS, hasGift, PARADOX } from './gifts';
 import { heroOf, HERO_SPEC, heroAvailable, HEROES, SWAPPABLE_POWERS, type HeroSpec } from './heroes';
 import { ANOMALIES, anomalyFits, QUEST_SPEC, QUESTS, questProgress, relicCost, RELIC_SPEC, RELICS, REWARDS, type RelicSpec } from './relics';
 import { nextRandom } from '../engine/rng';
@@ -64,6 +65,8 @@ export interface BgState {
   trinkets?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  /** 黑暗悖論這局的樣子 */
+  paradox?: { tier: number; atk: number; hp: number; gift: string };
 }
 
 export interface NewGameOptions {
@@ -126,6 +129,7 @@ export class BgGame {
 
   constructor(s: BgState) {
     this.s = s;
+    setParadox(s.paradox);
   }
 
   static create(o: NewGameOptions): BgGame {
@@ -142,7 +146,16 @@ export class BgGame {
     const an = anomaly ? RELIC_SPEC.get(anomaly) : undefined;
     if (an?.tribes) tribes = an.tribes(tribes, [...TRIBES]);
     const players = [newPlayer(0, o.humanName, true), ...o.ais.map((a, i) => newPlayer(i + 1, a.name, false, a.persona))];
+    // 黑暗悖論：每局隨機的等級、身材與黑暗贈禮
+    const ptier = 1 + Math.floor(r() * 6);
+    const paradox = {
+      tier: ptier,
+      atk: 2 * ptier + Math.floor(r() * 3),
+      hp: 2 * ptier + 1 + Math.floor(r() * 3),
+      gift: GIFT_IDS.filter((x) => !x.endsWith('t11'))[Math.floor(r() * (GIFT_IDS.length - 1))],
+    };
     const g = new BgGame({
+      paradox,
       rng: rngState.rng,
       uid: 1,
       round: 0,
@@ -515,6 +528,8 @@ export class BgGame {
     // 阮大師：每回合從 2 個新的英雄能力中挑選一個
     if (p.heroId === 'BG20_HERO_202') this.offerPowers(p, 2, '阮大師：選擇這回合的英雄能力');
     for (const m of p.board) this.giveSpellcraft(p, m);
+    // 時間流轉（黑暗贈禮）：回合結束效果在回合開始時也觸發
+    for (const m of [...p.board]) if (hasGift(m, 21)) for (const { s, g } of specsOf(m)) s.endTurn?.(r, m, g);
   }
 
   private giveSpellcraft(p: BPlayer, m: BMinion) {
@@ -821,6 +836,39 @@ export class BgGame {
     else p.discover = d;
   }
 
+  /** 發現一個有黑暗贈禮的手下（每個選項的贈禮都不同） */
+  discoverGift(p: BPlayer, filter: (id: string) => boolean, title: string, extra: Partial<Discover> = {}) {
+    const ids = this.poolIds((id) => filter(id) && id !== PARADOX && (this.s.pool[id] ?? 0) > 0);
+    const options: string[] = [];
+    const bag = [...ids];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const gb = [...GIFT_IDS];
+    const gifts = options.map(() => gb.splice(Math.floor(this.rand() * gb.length), 1)[0]);
+    const d: Discover = { options, gifts, title, ...extra };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+  /** 「黑暗贈禮！」異象：第 3 回合起，花 3 金幣發現一個有黑暗贈禮的手下（一局 3 次） */
+  darkState(p: BPlayer): { cost: number; usable: boolean; reason: string | null; left: number } | null {
+    if (this.s.anomaly !== 'BG36_Anomaly_002') return null;
+    const left = 3 - (p.c.darkUses ?? 0);
+    if (left <= 0) return { cost: 3, usable: false, reason: '已經用完了', left };
+    if (this.s.round < 3) return { cost: 3, usable: false, reason: '第 3 回合起才能使用', left };
+    if (p.gold < 3) return { cost: 3, usable: false, reason: '金幣不夠', left };
+    return { cost: 3, usable: true, reason: null, left };
+  }
+  pressDark(pi: number) {
+    const p = this.player(pi);
+    this.ensure(p);
+    const st = this.darkState(p);
+    if (!st?.usable) throw new BgError(st?.reason ?? '不能使用');
+    this.spend(p, 3);
+    p.c.darkUses = (p.c.darkUses ?? 0) + 1;
+    const top = Math.min(this.maxTier(p), p.tier + 1);
+    this.discoverGift(p, (id) => tierOf(id) === p.tier || tierOf(id) === top, `黑暗發現：發現一個旅店等級 ${p.tier}${top > p.tier ? ` 或 ${top}` : ''} 有黑暗贈禮的手下`);
+  }
+
   discoverSpell(p: BPlayer, filter: (id: string) => boolean, title: string) {
     const bag = TAVERN_SPELLS.filter((id) => this.spellInLobby(id) && filter(id));
     const options: string[] = [];
@@ -901,6 +949,16 @@ export class BgGame {
     }
     if (!d.noPool) this.takeFromPool(id);
     const m = this.make(id, !!d.golden);
+    // 黑暗贈禮（雙重幻象：多拿一張複製）
+    const gift = d.gifts?.[Math.max(0, Math.min(d.options.length - 1, i))];
+    if (gift) {
+      attachGift(m, gift, this.s.round);
+      if (gift.endsWith('t11')) {
+        const copy = this.make(id, !!d.golden);
+        attachGift(copy, gift, this.s.round);
+        this.addMinion(p, copy);
+      }
+    }
     if (d.doom) m.doom = this.s.round;
     if (d.both) m.both = true;
     if (d.stats) [m.atk, m.hp] = d.stats;
@@ -1191,6 +1249,8 @@ export class BgGame {
     m.act = this.s.round;
     if (h !== null) this.discard(p, h);
     act.use(this.recruit(p), m, m.golden ? 2 : 1, t, h);
+    // 效率（黑暗贈禮）：啟動技能觸發兩次
+    if (hasGift(m, 78) && p.board.includes(m)) act.use(this.recruit(p), m, m.golden ? 2 : 1, t && (p.board.includes(t) || p.shop.includes(t)) ? t : null, null);
   }
 
   /** 荊棘開路者：每回合有一張二選一卡兩個效果都會發動（回傳 -1） */
@@ -1213,6 +1273,7 @@ export class BgGame {
       if (target && !p.board.includes(target)) target = null;
       spec.battlecry(r, m, m.golden ? 2 : 1, target, choice);
       p.c['t:bc'] = (p.c['t:bc'] ?? 0) + 1;
+      p.c.bcTotal = (p.c.bcTotal ?? 0) + 1;
       for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.afterBattlecry?.(r, x, m, g);
       for (const hk of this.hooks(p)) hk.onBattlecry?.(this, p, m);
     }

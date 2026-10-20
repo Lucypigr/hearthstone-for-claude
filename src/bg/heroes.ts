@@ -1385,6 +1385,19 @@ export const HEROES: HeroSpec[] = [
     rank: 3,
   },
   {
+    id: 'BG36_HERO_101', // 『靈魂寄生者』崔斯塔斯：開局發現一個有黑暗贈禮的 5 本手下，第 7 回合解鎖
+    passive: true,
+    startGame: (G, p) => G.discoverGift(p, (id) => tierOf(id) === 5, '虛無力量：發現一個有黑暗贈禮的旅店等級 5 手下（第 7 回合解鎖）', { lockTurns: 6 }),
+    rank: 3,
+  },
+  {
+    id: 'BG36_HERO_105', // 夢魘之王薩維斯：每 4 回合發現一個有黑暗贈禮的手下
+    passive: true,
+    startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverGift(p, (id) => tierOf(id) <= p.tier, '感受毀滅：發現一個有黑暗贈禮的手下')),
+    status: (_p, G) => `還有 ${4 - (G.round % 4) || 4} 回合`,
+    rank: 3,
+  },
+  {
     id: 'BG24_HERO_100', // 戴納瑟斯王：開局從 2 個任務中選一個
     passive: true,
     startGame: (G, p) => G.offerQuests(p, 2),

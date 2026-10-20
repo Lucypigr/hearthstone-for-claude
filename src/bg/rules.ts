@@ -1,6 +1,7 @@
 // 英雄戰場的基本規則數值與共用函式
 import { BEETLE, SPEC } from './cards';
-import { bgCard, isRace, racesOf } from './data';
+import { bgCard, isRace, paradoxGift, racesOf } from './data';
+import { attachGift, PARADOX } from './gifts';
 import type { MinionSpec } from './api';
 import type { BMinion } from './types';
 
@@ -40,6 +41,10 @@ export function specsOf(m: BMinion): { s: MinionSpec; g: number }[] {
     const s = SPEC.get(x.id);
     if (s) out.push({ s, g: x.g });
   }
+  for (const id of m.gifts ?? []) {
+    const s = SPEC.get(id);
+    if (s) out.push({ s, g: 1 });
+  }
   return out;
 }
 
@@ -77,7 +82,7 @@ export function makeMinion(id: string, golden: boolean, uid: number): BMinion {
   // 金燦桂冠詩人：永遠是金卡（但不給三合一獎勵）
   if (id === 'BG32_236') golden = true;
   const k = golden && id !== 'BG32_236' ? 2 : 1;
-  return {
+  const m: BMinion = {
     uid,
     id,
     atk: (d.atk ?? 0) * k,
@@ -95,6 +100,9 @@ export function makeMinion(id: string, golden: boolean, uid: number): BMinion {
     tmpKw: [],
     n: 0,
   };
+  // 黑暗悖論：帶著這局的黑暗贈禮
+  if (id === PARADOX && paradoxGift) attachGift(m, paradoxGift, 0);
+  return m;
 }
 
 export function isMagnetic(id: string): boolean {

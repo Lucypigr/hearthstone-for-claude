@@ -38,6 +38,24 @@ export function hasMech(id: string, mech: string): boolean {
   return DATA[id]?.mech?.includes(mech) ?? false;
 }
 
+/** 黑暗悖論：這局的等級、身材與黑暗贈禮（每局不同） */
+export let paradoxGift: string | null = null;
+export function setParadox(o: { tier: number; atk: number; hp: number; gift: string } | null | undefined) {
+  const d = DATA['BG36_360'];
+  if (!d) return;
+  if (!o) {
+    d.tier = 1;
+    d.atk = 1;
+    d.hp = 1;
+    paradoxGift = null;
+    return;
+  }
+  d.tier = o.tier;
+  d.atk = o.atk;
+  d.hp = o.hp;
+  paradoxGift = o.gift;
+}
+
 export function allBgIds(): string[] {
   return Object.keys(DATA);
 }
