@@ -60,6 +60,7 @@ export function auraOf(cnt: Record<string, number>, m: BMinion, heroHp: number):
   a += cnt.allA ?? 0;
   h += cnt.allH ?? 0;
   if (isRace(m.id, 'UNDEAD')) a += cnt.undeadA ?? 0;
+  if (isRace(m.id, 'BEAST')) (a += cnt.beastA ?? 0), (h += cnt.beastH ?? 0);
   if (isRace(m.id, 'BEAST')) a += cnt['~beastA'] ?? 0;
   // 音量機兵：本賽局的加成（吸附在別的機械身上也算）
   for (const id of [m.id, ...m.mags.map((x) => x.id)]) {

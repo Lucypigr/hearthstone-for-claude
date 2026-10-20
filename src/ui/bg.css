@@ -1258,3 +1258,18 @@
   margin-left: 4px;
   opacity: 0.8;
 }
+
+/* 時光扭曲 */
+.bg-warp-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  color: #9fe3ff;
+}
+
+.bg-chronum {
+  color: #9fe3ff;
+  font-size: 0.85em;
+}

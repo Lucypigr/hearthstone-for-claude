@@ -8,6 +8,7 @@ import { BgError, type BgGame, type CombatRecord } from '../../bg/game';
 import { heroOf, HERO_SPEC, powerCardOf } from '../../bg/heroes';
 import { canMagnetize, goldForTurn, specsOf } from '../../bg/rules';
 import { QUEST_SPEC, questProgress, relicCost, RELIC_SPEC } from '../../bg/relics';
+import { twCost } from '../../bg/timewarp';
 import { KEYWORD_NAMES, TRIBE_ICONS, TRIBE_NAMES, TRIBES, type BMinion, type BPlayer, type CombatFrame, type HandCard, type Keyword, type Tribe } from '../../bg/types';
 import { BG_PLACE_GOLD } from '../../game/economy';
 import { newBgStats } from '../../game/battlegrounds';
@@ -23,13 +24,15 @@ const OPT_KEY = 'hearthstone-for-claude/bg-options';
 
 export interface BgOptions {
   trinkets: boolean;
+  timewarp: boolean;
   anomaly: boolean;
   quests: boolean;
   buddies: boolean;
 }
-const DEFAULT_OPTIONS: BgOptions = { trinkets: true, anomaly: true, quests: true, buddies: true };
+const DEFAULT_OPTIONS: BgOptions = { trinkets: true, timewarp: true, anomaly: true, quests: true, buddies: true };
 const OPTION_NAMES: [keyof BgOptions, string, string][] = [
   ['trinkets', '💍 飾品', '第 6 回合開次級飾品商店、第 9 回合開強效飾品商店，花金幣買一個飾品'],
+  ['timewarp', '⏳ 時光扭曲', '第 6 回合去次級、第 9 回合去高級時光扭曲，用時光晶幣買特別的手下與法術'],
   ['anomaly', '🌀 異象', '每局隨機一個改變規則的異象（例如以 10 枚金幣開始、只有 1～4 本……）'],
   ['quests', '📜 任務', '第 4 回合從 3 個任務中選一個，完成後拿到它的獎勵'],
   ['buddies', '🤝 英雄夥伴', '每位英雄都有專屬的夥伴手下：按下夥伴按鈕花金幣拿到它（越晚越便宜，2 張就能做成金卡）'],
@@ -1176,11 +1179,38 @@ function Slot({ onClick }: { onClick: () => void }) {
 function DiscoverModal({ G, onPick }: { G: BgGame; onPick: (i: number) => void }) {
   const me = G.human;
   const d = me.discover!;
-  const ms = useMemo(() => (d.spells || d.powers || d.relics || d.rewards ? [] : d.objs ? d.objs : d.options.map((id) => G.make(id, !!d.golden))), [d]);
+  const ms = useMemo(
+    () => (d.spells || d.powers || d.relics || d.rewards || d.timewarp ? [] : d.objs ? d.objs : d.options.filter((id) => bgCard(id).type === 'MINION').map((id) => G.make(id, !!d.golden))),
+    [d],
+  );
+  const warp = useMemo(() => (d.timewarp ? d.options.map((id) => (bgCard(id).type === 'MINION' ? G.make(id, !!d.golden) : null)) : []), [d, d.options.length]);
   return (
     <div className="bg-modal" onClick={(e) => e.stopPropagation()}>
       <h3>{d.title}</h3>
+      {d.timewarp && (
+        <div className="bg-warp-head">
+          ⏳ 時光晶幣：<b>{d.chronum ?? 0}</b>
+          <button className="btn small" onClick={() => onPick(-1)}>
+            離開
+          </button>
+        </div>
+      )}
       <div className="bg-discover">
+        {d.timewarp &&
+          d.options.map((id, i) => {
+            const cost = twCost(id);
+            const ok = cost <= (d.chronum ?? 0);
+            const m = warp[i];
+            return (
+              <div key={id + i} className={`bg-discover-opt ${ok ? '' : 'disabled'}`} onClick={() => ok && onPick(i)}>
+                {m ? <MinionToken m={m} p={me} G={G} tipSide="bottom" onClick={() => ok && onPick(i)} /> : <SpellCard card={{ id, g: 1 }} selected={false} tipSide="bottom" cost={`⏳${cost}`} onClick={() => ok && onPick(i)} />}
+                <b>
+                  {bgCard(id).name} <span className="bg-chronum">⏳{cost}</span>
+                </b>
+                <div className="small" dangerouslySetInnerHTML={{ __html: formatCardText(m ? cardText(m, me) : bgCard(id).text) }} />
+              </div>
+            );
+          })}
         {d.powers &&
           d.options.map((id, i) => {
             const pw = bgCard(bgCard(id).power!);

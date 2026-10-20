@@ -198,6 +198,11 @@ export interface Discover {
   lockTurns?: number;
   /** 每個選項帶的黑暗贈禮 */
   gifts?: string[];
+  /** 拿到時多給的關鍵字 */
+  kw?: Keyword[];
+  /** 時光扭曲商店：次級 / 高級、剩下的時光晶幣 */
+  timewarp?: 'minor' | 'major';
+  chronum?: number;
 }
 
 export interface Seen {

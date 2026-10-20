@@ -16,6 +16,7 @@ import { heroOf, HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { BOARD_MAX, canMagnetize, HAND_MAX, MINION_COST, specsOf } from './rules';
 import { relicCost, RELIC_SPEC } from './relics';
+import { twCost } from './timewarp';
 import { TRIBE_NAMES, TRIBES, type BgPersona, type BgStyle, type BMinion, type BPlayer, type HandCard, type Tribe } from './types';
 
 export type BgDifficulty = 'novice' | 'normal' | 'expert' | 'master';
@@ -366,6 +367,17 @@ function chooseDiscover(M: Mind) {
   if (!d) return;
   let best = 0;
   let bestV = -Infinity;
+  // 時光扭曲：用時光晶幣買最值得的（每枚晶幣的價值），買不起就離開
+  if (d.timewarp) {
+    d.options.forEach((id, i) => {
+      if (twCost(id) > (d.chronum ?? 0)) return;
+      const v = (bgCard(id).type === 'MINION' ? buyValue(M, G.make(id, !!d.golden)) : spellValue(M, id) + 2) / twCost(id);
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    if (bestV === -Infinity || (p.hand.length >= HAND_MAX && bgCard(d.options[best]).type === 'MINION')) return G.choose(p.idx, -1);
+    M.notes.push(`時光扭曲買了${bgCard(d.options[best]).name}`);
+    return G.choose(p.idx, best);
+  }
   if (d.relics) {
     d.options.forEach((id, i) => {
       const v = G.relicPrice(p, d, id) > p.gold ? -Infinity : relicValue(M, id);

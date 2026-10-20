@@ -86,6 +86,7 @@ const EXTRA_IDS = [
   'TB_BaconShop_HP_038t', // 野生香蕉
   'BG_TTN_401', // 先祖自動機（自動機頭像）
   'BG30_MagicItem_442t', // 鮮血魔像（魔像術）
+  'BG34_Giant_610t', // 衛星（時光扭曲的電子）
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -159,6 +160,8 @@ async function main() {
     else if (c.type === 'BATTLEGROUND_ANOMALY') add(c, { kind: 'anomaly' });
     else if (/^BG2[478]_Quest_\d+$/.test(c.id)) add(c, { kind: 'quest' });
     else if (c.isBattlegroundsBuddy && c.type === 'MINION' && c.id.endsWith('_Buddy')) add(c);
+    // 時光扭曲的卡（費用 = 時光晶幣）
+    else if ((c as { battlegroundsTimewarpCard?: number }).battlegroundsTimewarpCard && !/_G$/.test(c.id)) add(c, { cost: c.cost ?? 1 });
     // 暗月馬戲團獎品
     else if ((c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn) add(c, { prize: (c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn });
     // 黑暗贈禮（「(0)」是官方用來顯示計數的位置，拿掉）

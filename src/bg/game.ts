@@ -3,6 +3,8 @@ import type { Recruit } from './api';
 import { COIN, GEM, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TOKENS, TRIPLE_REWARD } from './cards';
 
 const SURPRISE = 'BG26_175';
+/** 時光扭曲的戴奧斯：戰吼、亡語、奮戰觸發兩次 */
+const DEIOS = 'BG34_Giant_376';
 const LOCKBOX = 'BG36_520t';
 const FODDER = 'BG35_150t';
 import { BOUNTIES, isTavernSpell, mostCommonType, SPELL_SPEC, spellCostOf, TAVERN_SPELLS, type SpellCtx } from './spells';
@@ -12,6 +14,7 @@ import { bgCard, isRace, racesOf, setParadox, tierOf } from './data';
 import { attachGift, GIFT_IDS, hasGift, PARADOX } from './gifts';
 import { heroOf, HERO_SPEC, heroAvailable, HEROES, SWAPPABLE_POWERS, type HeroSpec } from './heroes';
 import { PRIZE_IDS, prizeTier } from './prizes';
+import { TW_IDS, TW_SPELL_SPEC, twCost, twKind } from './timewarp';
 import { ANOMALIES, anomalyFits, QUEST_SPEC, QUESTS, questProgress, relicCost, RELIC_SPEC, RELICS, REWARDS, type RelicSpec } from './relics';
 import { nextRandom } from '../engine/rng';
 import {
@@ -66,6 +69,8 @@ export interface BgState {
   trinkets?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  /** 這局有時光扭曲 */
+  timewarp?: boolean;
   /** 黑暗悖論這局的樣子 */
   paradox?: { tier: number; atk: number; hp: number; gift: string };
 }
@@ -80,6 +85,7 @@ export interface NewGameOptions {
   /** 異象：true = 隨機一個、字串 = 指定、false = 沒有 */
   anomaly?: boolean | string;
   trinkets?: boolean;
+  timewarp?: boolean;
   quests?: boolean;
   buddies?: boolean;
 }
@@ -141,7 +147,7 @@ export class BgGame {
     let anomaly: string | null = null;
     if (typeof o.anomaly === 'string') anomaly = o.anomaly;
     else if (o.anomaly) {
-      const fits = ANOMALIES.filter((a) => anomalyFits(a, tribes, { buddies: !!o.buddies }));
+      const fits = ANOMALIES.filter((a) => anomalyFits(a, tribes, { buddies: !!o.buddies, timewarp: !!o.timewarp }));
       anomaly = fits[Math.floor(r() * fits.length)]?.id ?? null;
     }
     const an = anomaly ? RELIC_SPEC.get(anomaly) : undefined;
@@ -169,6 +175,7 @@ export class BgGame {
       combats: [],
       anomaly,
       trinkets: o.trinkets ?? false,
+      timewarp: !!o.timewarp,
       quests: !!o.quests || anomaly === 'BG27_Anomaly_Quests',
       buddies: !!o.buddies || anomaly === 'BG27_Anomaly_Buddies',
     });
@@ -478,6 +485,10 @@ export class BgGame {
     p.c.nextGoldC = 0;
     p.c.carry = 0;
     p.freeRefreshes += (p.c.freeRefC ?? 0) + (p.c.prizeRef1 ?? 0) + 5 * (p.c.prizeRef5 ?? 0);
+    // 戰鬥中增加的金幣上限（回收者、劫掠者）
+    p.maxGoldBonus += p.c.maxGoldC ?? 0;
+    p.gold += p.c.maxGoldC ?? 0;
+    p.c.maxGoldC = 0;
     p.c.freeRefC = 0;
     // 費林大使、詹莉‧伊夏：跳過前幾回合
     if (this.s.round <= (p.c.skip ?? 0)) p.gold = 0;
@@ -522,6 +533,15 @@ export class BgGame {
       if (this.s.round === (p.c.greaterAt || 9)) this.offerTrinkets(p, 'greater');
     }
     if (this.s.quests && this.s.round === 4 && !p.c.questOffered) this.offerQuests(p);
+    if (this.s.timewarp) {
+      const both = this.hooks(p).some((hk) => hk.majorTwice);
+      if (!both && this.s.round === (p.c.minorAt || 6)) this.offerTimewarp(p, 'minor');
+      if (this.s.round === (p.c.majorAt || 9) || (both && this.s.round === 8)) this.offerTimewarp(p, 'major');
+    }
+    // 時光扭曲買到的：每回合的刺眼戒指、魔法套索；大贏家每 3 回合
+    for (let k = 0; k < (p.c.twRing ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BG28_168', g: 1 });
+    for (let k = 0; k < (p.c.twLasso ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BG28_512', g: 1 });
+    if (p.c.bigWinner && this.s.round > p.c.bigWinner && (this.s.round - p.c.bigWinner) % 3 === 0) this.discoverPrize(p, 3);
     const bud = this.buddyId(p);
     if (bud) {
       if (!p.buddy) p.buddy = { cost: this.buddyBase(bud), presses: 0 };
@@ -566,9 +586,73 @@ export class BgGame {
   /** 沒選的發現自動選哪一個 */
   autoChoice(p: BPlayer): number {
     const d = p.discover;
+    if (d?.timewarp) {
+      let best = -1;
+      let bv = -Infinity;
+      d.options.forEach((id, i) => {
+        if (twCost(id) > (d.chronum ?? 0)) return;
+        const v = tierOf(id) + twCost(id);
+        if (v > bv) (bv = v), (best = i);
+      });
+      return best;
+    }
     if (!d?.relics) return 0;
     const i = d.options.findIndex((id) => this.relicPrice(p, d, id) <= p.gold);
     return Math.max(0, i);
+  }
+
+  // —— 時光扭曲 ——
+  /** 時光扭曲商店：4 個手下 + 2 張法術，用時光晶幣購買 */
+  offerTimewarp(p: BPlayer, kind: 'minor' | 'major') {
+    const ok = (id: string) => twKind(id) === kind && this.idInLobby(id);
+    const minions = TW_IDS().filter((id) => ok(id) && bgCard(id).type === 'MINION');
+    const spells = TW_IDS().filter((id) => ok(id) && bgCard(id).type !== 'MINION');
+    const pickN = (arr: string[], n: number) => {
+      const bag = [...arr];
+      const out: string[] = [];
+      while (out.length < n && bag.length) out.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+      return out;
+    };
+    const options = [...pickN(minions, 4), ...pickN(spells, 2)];
+    if (!options.length) return;
+    let chronum = 2 + (p.c.chronumNext ?? 0) + this.hooks(p).reduce((n, hk) => n + (hk.chronumExtra ?? 0), 0);
+    p.c.chronumNext = 0;
+    // 扭曲沙漏：4 枚時光晶幣都可以在次級時光扭曲用掉
+    if (kind === 'minor' && this.hooks(p).some((hk) => hk.chronumPool)) chronum += 2;
+    const golden = this.hooks(p).some((hk) => hk.goldenWarp === kind);
+    const d: Discover = { options, title: kind === 'minor' ? '次級時光扭曲：用時光晶幣購買' : '高級時光扭曲：用時光晶幣購買', timewarp: kind, chronum, golden, noPool: true };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+  /** 在時光扭曲買一張卡（i = -1 離開） */
+  private buyTimewarp(p: BPlayer, i: number) {
+    const d = p.discover!;
+    const close = () => {
+      // 扭曲沙漏：沒用完的帶到高級時光扭曲
+      if (d.timewarp === 'minor' && this.hooks(p).some((hk) => hk.chronumPool)) p.c.chronumNext = (p.c.chronumNext ?? 0) + (d.chronum ?? 0);
+      p.discover = p.dq.shift() ?? null;
+    };
+    if (i < 0 || i >= d.options.length) return close();
+    const id = d.options[i];
+    const cost = twCost(id);
+    if (cost > (d.chronum ?? 0)) throw new BgError('時光晶幣不夠');
+    if (p.hand.length >= HAND_MAX && !TW_SPELL_SPEC.get(id)?.whenBought) throw new BgError('手牌已滿');
+    d.chronum = (d.chronum ?? 0) - cost;
+    d.options = d.options.filter((_, k) => k !== i);
+    if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id, !!d.golden));
+    else if (TW_SPELL_SPEC.get(id)?.whenBought) this.castSpec(p, id, null, 1, 0);
+    else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+    if (!d.options.some((x) => twCost(x) <= (d.chronum ?? 0))) close();
+  }
+  /** 從時光扭曲的卡裡發現（不用時光晶幣） */
+  offerTimewarpCards(p: BPlayer, filter: (id: string) => boolean, title: string, lock = false) {
+    const bag = TW_IDS().filter((id) => filter(id) && this.idInLobby(id));
+    const options: string[] = [];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const d: Discover = { options, title, noPool: true, lock };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
   }
 
   /** 配對：盡量不要連續遇到同一個人；人數是單數時，有人打殘影 */
@@ -621,7 +705,7 @@ export class BgGame {
     for (const m of kept) m.iced = false;
     p.shop = kept;
     const hooks = this.hooks(p);
-    const full = hooks.some((hk) => hk.shopFull);
+    const full = hooks.some((hk) => hk.shopFull) || !!p.c.full7;
     const size = Math.max(1, (full ? 7 : SHOP_SIZE[p.tier] + hooks.reduce((n, hk) => n + (hk.shopExtra ?? 0), 0)) - kept.length);
     const only = hooks.find((hk) => hk.onlyTribe)?.onlyTribe;
     const tribe = opts.tribe ?? only;
@@ -651,6 +735,8 @@ export class BgGame {
       p.shop.push(m);
     }
     for (const hk of this.hooks(p)) hk.onRefresh?.(this, p);
+    // 蘋果（時光扭曲）：刷新後施放蘋果大放送
+    for (let k = 0; k < (p.c.twApples ?? 0); k++) this.castRandom(p, 'BG28_966');
     // 精靈吹焰者、東來之風：刷新後隨機一個 +10/+10、+9/+9
     for (const [key, n] of [
       ['refreshBuff', 10],
@@ -908,6 +994,7 @@ export class BgGame {
     const p = this.player(pi);
     const d = p.discover;
     if (!d) throw new BgError('沒有正在發現的卡');
+    if (d.timewarp) return this.buyTimewarp(p, i);
     const id = d.options[Math.max(0, Math.min(d.options.length - 1, i))];
     // 飾品：付錢後拿到
     if (d.relics) {
@@ -974,8 +1061,15 @@ export class BgGame {
       } else p.shop.push(n);
       return;
     }
+    // 選項是法術（時光扭曲的卡可能是法術）
+    if (bgCard(id).type !== 'MINION') {
+      this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      if (d.lock || d.lockTurns) p.hand[p.hand.length - 1].locked = this.s.round + (d.lockTurns ?? 1) - 1;
+      return;
+    }
     if (!d.noPool) this.takeFromPool(id);
     const m = this.make(id, !!d.golden);
+    for (const k of d.kw ?? []) m[k] = true;
     // 黑暗贈禮（雙重幻象：多拿一張複製）
     const gift = d.gifts?.[Math.max(0, Math.min(d.options.length - 1, i))];
     if (gift) {
@@ -1296,7 +1390,7 @@ export class BgGame {
     if (!spec?.battlecry) return;
     const brann = p.board.reduce((n, x) => n + (x.id === 'BG_LOE_077' ? (x.golden ? 2 : 1) : 0), 0);
     // 布萊恩的傑出一手（暗月獎品）：這回合戰吼多觸發一次
-    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0) + (p.c['t:bcx'] ?? 0);
+    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0) + (p.c['t:bcx'] ?? 0) + this.count(p, DEIOS);
     for (let t = 0; t <= Math.min(2, brann) + extra; t++) {
       if (target && !p.board.includes(target)) target = null;
       spec.battlecry(r, m, m.golden ? 2 : 1, target, choice);

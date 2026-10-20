@@ -122,6 +122,11 @@ export interface HeroSpec {
   firstDrExtra?: boolean;
   /** 三合一獎勵改成發現暗月獎品 */
   prizeTriples?: boolean;
+  /** 時光扭曲：多幾枚時光晶幣、時光晶幣可以帶到下一次、第 8 和 9 回合都去高級、這個時光扭曲都是金卡 */
+  chronumExtra?: number;
+  chronumPool?: boolean;
+  majorTwice?: boolean;
+  goldenWarp?: 'minor' | 'major';
   /** 酒館法術的費用 */
   spellCost?: (p: BPlayer, cost: number, id?: string) => number;
   // 戰鬥中
@@ -1417,6 +1422,20 @@ export const HEROES: HeroSpec[] = [
       if (p.c.tickets % 3 === 0) G.discoverFor(p, (id) => tierOf(id) === p.tier, '暗月彩票：發現一個你的等級的手下');
     },
     status: (p) => `彩票 ${(p.c.tickets ?? 0) % 3}/3`,
+    rank: 3,
+  },
+  {
+    id: 'BG34_HERO_000', // 『無縛者』姆多茲諾：第 8 回合去高級時光扭曲
+    passive: true,
+    startTurn: (G, p) => void (G.round === 8 && G.offerTimewarp(p, 'major')),
+    status: (_p, G) => (G.round < 8 ? `還有 ${8 - G.round} 回合` : '已經去過了'),
+    rank: 4,
+  },
+  {
+    id: 'BG34_HERO_004', // 米羅克：第 5 回合去次級時光扭曲
+    passive: true,
+    startTurn: (G, p) => void (G.round === 5 && G.offerTimewarp(p, 'minor')),
+    status: (_p, G) => (G.round < 5 ? `還有 ${5 - G.round} 回合` : '已經去過了'),
     rank: 3,
   },
   {

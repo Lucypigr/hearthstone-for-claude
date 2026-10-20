@@ -3,6 +3,8 @@ import type { Combat } from './api';
 import { isRace, tierOf } from './data';
 
 const DEITY = 'BGFYM_000';
+/** 時光扭曲的戴奧斯：戰吼、亡語、奮戰觸發兩次 */
+const DEIOS = 'BG34_Giant_376';
 import { SPEC } from './cards';
 import { HERO_SPEC, type HeroSpec } from './heroes';
 import { hasGift } from './gifts';
@@ -341,7 +343,7 @@ export class CombatSim implements Combat {
     const all = [...specsOf(m), ...extra].filter(({ s }) => s.deathrattle);
     if (!all.length) return;
     // 瑞文戴爾男爵、動盪陵墓、阿古斯的迴響、死亡骨匣（每場第一個亡語）
-    let times = 1 + this.alive(side).reduce((n, x) => n + (x.id === 'BG25_354' ? (x.golden ? 2 : 1) : 0), 0);
+    let times = 1 + this.alive(side).reduce((n, x) => n + (x.id === 'BG25_354' || x.id === DEIOS ? (x.golden ? 2 : 1) : 0), 0);
     for (const hk of this.hooks(side)) times += hk.drExtra ?? 0;
     if (!this.firstDr[side]) {
       this.firstDr[side] = true;
@@ -377,7 +379,8 @@ export class CombatSim implements Combat {
     this.hits = [];
     for (const hk of this.hooks(s)) hk.onAttack?.(this, s, att);
     this.counter(s, 'q:attack', 1);
-    for (const { s: sp, g } of specsOf(att)) sp.rally?.(this, att, g, target);
+    const rallies = 1 + this.alive(s).reduce((n, x) => n + (x.id === DEIOS ? (x.golden ? 2 : 1) : 0), 0);
+    for (let k = 0; k < rallies; k++) for (const { s: sp, g } of specsOf(att)) sp.rally?.(this, att, g, target);
     for (const f of this.alive(s)) {
       if (f === att) continue;
       for (const { s: sp, g } of specsOf(f)) sp.onFriendAttack?.(this, f, att, g, target);
@@ -398,7 +401,7 @@ export class CombatSim implements Combat {
     const excess = this.damage(target, ad, att);
     for (const m of near) this.damage(m, ad, att);
     // 無敵（黑暗贈禮）：攻擊時免疫
-    const immune = hasGift(att, 60);
+    const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990';
     if (!immune) this.damage(att, td, target);
     if (att.venom && !tShield && ad > 0 && !target.dead) {
       target.hp = 0;

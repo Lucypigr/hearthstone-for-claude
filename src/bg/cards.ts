@@ -4,6 +4,7 @@ import type { Combat, MinionSpec } from './api';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import { BUDDIES, linkBuddyPools } from './buddies';
 import { GIFTS, linkGiftPool } from './gifts';
+import { linkTimewarpCards, TW_MINIONS } from './timewarp';
 import { BOUNTIES, isTavernSpell, TAVERN_SPELLS, spellCostOf } from './spells';
 import { BONUS_KEYWORDS, type BMinion, type Keyword, type Tribe } from './types';
 
@@ -2134,9 +2135,9 @@ const UNDEAD_IDS: string[] = [];
 /** 所有種族（最後的倖存者用） */
 const TRIBES_ALL = ['BEAST', 'DEMON', 'DRAGON', 'ELEMENTAL', 'MECHANICAL', 'MURLOC', 'PIRATE', 'QUILBOAR', 'UNDEAD', 'NAGA', 'ABERRATION'] as Tribe[];
 
-export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS].map((s) => [s.id, s]));
-// 英雄夥伴不在酒館卡池裡
-for (const b of BUDDIES) TOKENS.add(b.id);
+export const SPEC = new Map<string, MinionSpec>([...MINIONS, ...BUDDIES, ...GIFTS, ...TW_MINIONS].map((s) => [s.id, s]));
+// 英雄夥伴、時光扭曲的手下不在酒館卡池裡
+for (const b of [...BUDDIES, ...TW_MINIONS]) TOKENS.add(b.id);
 
 /** 酒館卡池（有實作的手下，不含衍生物） */
 export const POOL_IDS = MINIONS.map((s) => s.id).filter((id) => !TOKENS.has(id));
@@ -2149,4 +2150,5 @@ linkGiftPool(POOL_IDS);
 
 export const SPELLCRAFT_SPELLS = new Set(MINIONS.map((s) => s.spellcraft).filter((x): x is string => !!x));
 export const TRIPLE_REWARD = 'TB_BaconShop_Triples_01';
+linkTimewarpCards(POOL_IDS, SPEC, SPELLCRAFT_SPELLS);
 export { BEETLE, GEM, COIN, KNIGHT };
