@@ -178,7 +178,7 @@ async function main() {
     /^BG20_HERO_283p_t\d$/,
     /^BG21_HERO_000(p_t1|_Buddyt3|_Buddyt4)$/,
     /^BG25_HERO_100pt$/,
-    /^TB_Bacon_Secrets_\d+$/,
+    /^TB_Bacon_Secrets_\d+b?$/,
     /^BG_EX1_170$/,
     /^BG_EX1_554t$/,
   ];

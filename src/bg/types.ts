@@ -135,6 +135,8 @@ export interface BMinion {
   hat?: number;
   /** 黑暗贈禮（也用來放暗月獎品給的效果） */
   gifts?: string[];
+  /** 戰鬥中：這次攻擊免疫 */
+  immuneAtk?: boolean;
   /** 變換者澤魯斯：在手牌裡每回合變形 */
   shifter?: boolean;
   /** 黃金錘：暫時的金卡（下一回合變回來時要扣掉的身材） */

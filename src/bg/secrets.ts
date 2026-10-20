@@ -9,6 +9,8 @@ import type { BMinion } from './types';
 const S = (n: string) => `TB_Bacon_Secrets_${n}`;
 const COBRA = 'BG_EX1_170';
 const SNAKE = 'BG_EX1_554t';
+/** 恐懼之盾（黑暗贈禮）：聖盾要打兩次 */
+const TWO_HITS = 'BG36_MidGameEffect_000t15';
 
 /** 這場戰鬥還沒觸發過（觸發後記下來，戰鬥結束時從場上移除） */
 function fire(c: Combat, side: 0 | 1, id: string): boolean {
@@ -106,6 +108,35 @@ export const SECRETS: SecretSpec[] = [
       c.summon(side, x, c.index(t) + 1);
     },
   },
+  // —— 進階奧秘（街頭魔術師） ——
+  {
+    id: S('01b'), // 進階眼鏡蛇陷阱：眼鏡蛇也有復生
+    v: 6,
+    onAttacked: (c, side, t) => {
+      if (!fire(c, side, S('01b'))) return;
+      const m = c.make(COBRA);
+      m.reborn = true;
+      c.summon(side, m, c.index(t) + 1);
+    },
+  },
+  {
+    id: S('07b'), // 進階自動防禦矩陣：聖盾要打兩次才會破
+    v: 6,
+    onAttacked: (c, side, t) => {
+      if (t.shield || !fire(c, side, S('07b'))) return;
+      c.giveKw(t, 'shield');
+      (t.gifts ??= []).push(TWO_HITS);
+    },
+  },
+  {
+    id: S('10b'), // 進階救贖：以完整的生命值與附魔復活
+    v: 7,
+    onFriendDeath: (c, side, d) => {
+      if (!fire(c, side, S('10b'))) return;
+      c.summonLater(side, copyOf(c, d));
+    },
+  },
+  { id: S('15b'), v: 6, onAttacked: (c, side, t) => void (fire(c, side, S('15b')) && c.summon(side, copyOf(c, t), c.index(t) + 1)) }, // 進階獸群戰術
 ];
 export const SECRET_SPEC = new Map(SECRETS.map((s) => [s.id, s]));
 

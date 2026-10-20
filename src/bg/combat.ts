@@ -34,6 +34,7 @@ export interface CombatOptions {
   inLobbySpell?: (id: string) => boolean;
   give?: (p: BPlayer, id: string, o?: GiveOpts) => void;
   giveRandom?: (p: BPlayer, filter: (id: string) => boolean) => void;
+  goldenize?: (p: BPlayer, m: BMinion) => void;
 }
 
 /** 戰鬥用的複製（不影響招募階段的手下） */
@@ -206,6 +207,7 @@ export class CombatSim implements Combat {
     m.atk = Math.max(0, m.atk + atk);
     m.hp += hp;
     m.maxHp = (m.maxHp ?? m.hp) + hp;
+    if ((atk > 0 || hp > 0) && (this.boards[0].includes(m) || this.boards[1].includes(m))) for (const f of this.alive(this.side(m))) for (const { s, g } of specsOf(f)) s.onCombatGain?.(this, f, m, atk, hp, g);
     // 緋紅倖存者：攻擊力達到 6 時獲得聖盾
     if (m.id === 'BG35_814' && m.atk >= 6 && !m.n) {
       m.shield = true;
@@ -241,6 +243,15 @@ export class CombatSim implements Combat {
       src.atk += atk;
       src.hp += hp;
     }
+  }
+  goldenPerm(m: BMinion) {
+    if (m.golden) return;
+    const base = this.make(m.id, false);
+    const gold = this.make(m.id, true);
+    this.rawBuff(m, gold.atk - base.atk, gold.hp - base.hp);
+    m.golden = true;
+    const src = this.source(m);
+    if (src) this.o.goldenize?.(this.sides[this.side(m)].player, src);
   }
   permKw(m: BMinion, kw: Keyword) {
     const src = this.source(m);
@@ -365,6 +376,7 @@ export class CombatSim implements Combat {
   }
 
   private firstDr: [boolean, boolean] = [false, false];
+  private illidari: [boolean, boolean] = [false, false];
   private runDeathrattle(m: BMinion, side: 0 | 1, index: number) {
     const extra = (m.extraDr ?? []).map((x) => ({ s: SPEC.get(x.id)!, g: x.g })).filter((x) => x.s);
     const all = [...specsOf(m), ...extra].filter(({ s }) => s.deathrattle);
@@ -437,7 +449,13 @@ export class CombatSim implements Combat {
     const excess = this.damage(target, ad, att);
     for (const m of near) this.damage(m, ad, att);
     // 無敵（黑暗贈禮）：攻擊時免疫
-    const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990' || att.id === 'BG31_HERO_811t8';
+    // 伊克利普森伊利達瑞（夥伴）：第一個攻擊的手下這次攻擊免疫
+    if (!this.illidari[s] && this.alive(s).some((m) => m.id === 'TB_BaconShop_HERO_08_Buddy')) {
+      this.illidari[s] = true;
+      att.immuneAtk = true;
+    }
+    const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990' || att.id === 'BG31_HERO_811t8' || !!att.immuneAtk;
+    att.immuneAtk = false;
     if (!immune) this.damage(att, td, target);
     const venomLost = (m: BMinion) => {
       m.venom = false;

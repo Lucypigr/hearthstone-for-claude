@@ -312,6 +312,11 @@ export class BgGame {
     // 瑪格努斯‧曼納斯頓（夥伴）：每回合 2 次刷新免費
     if ((p.c['t:magnus'] ?? 0) < 2 * this.count(p, 'TB_BaconShop_HERO_49_Buddy')) return 0;
     if ((p.c.malch ?? 0) < p.board.filter((m) => m.id === 'BG26_524').length * 2) return 0;
+    // 鴿子領主（夥伴）：酒館裡沒有這回合老鼠王的種族時，刷新免費
+    if (this.count(p, 'TB_BaconShop_HERO_12_Buddy')) {
+      const t = this.s.tribes[this.s.round % this.s.tribes.length];
+      if (!p.shop.some((m) => isRace(m, t))) return 0;
+    }
     return this.hooks(p).find((hk) => hk.refreshCost !== undefined)?.refreshCost ?? REFRESH_COST;
   }
   upgradeCost(p: BPlayer): number {
@@ -437,6 +442,8 @@ export class BgGame {
     // 共犯：任務的獎勵是金卡夥伴
     const buddy = this.buddyId(p);
     if (reward === 'BG33_Anomaly_008') return void (buddy && this.addMinion(p, this.make(buddy, true)));
+    // 陰險貴族（夥伴）：8 枚金幣的錢袋
+    if (reward === 'BG24_HERO_100_Buddy') return void (p.gold += 8);
     this.gainRelic(p, reward);
   }
   /** 這位英雄的夥伴（沒開啟或沒有實作 = null） */
@@ -954,7 +961,7 @@ export class BgGame {
     if (this.s.phase === 'recruit' || this.s.phase === 'combat') {
       p.c['q:cards'] = (p.c['q:cards'] ?? 0) + 1;
       const r = this.recruit(p);
-      for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onGetCard?.(r, m, g);
+      for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onGetCard?.(r, m, g, card);
       for (const hk of this.hooks(p)) hk.onGetCard?.(this, p, card);
     }
     return true;
@@ -1157,7 +1164,11 @@ export class BgGame {
     }
     // 魚爾摩斯：猜對拿到旅店幸運幣
     if (d.guess !== undefined) {
-      if (id === d.guess) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+      if (id === d.guess) {
+        this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+        // 蛙生（夥伴）：猜對時拿到那個手下的分身
+        for (let k = 0; k < this.count(p, 'BG23_HERO_303_Buddy'); k++) if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
+      }
       return;
     }
     // 換英雄能力（slot2 = 第二個英雄能力）
@@ -1236,12 +1247,19 @@ export class BgGame {
         return;
       }
     }
+    if (!d.objs && !d.reserve) this.afterDiscover(p, m);
     this.addMinion(p, m);
     if (d.lock || d.lockTurns) {
       const h = p.hand.find((x) => x.kind === 'minion' && x.m === m);
       if (h) h.locked = this.s.round + (d.lockTurns ?? 1) - 1;
     }
     if (d.hurt) this.hurtHero(p, tierOf(id));
+  }
+
+  /** 發現的手下拿到之前（伯斯） */
+  private afterDiscover(p: BPlayer, m: BMinion) {
+    const r = this.recruit(p);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.afterDiscoverMinion?.(r, x, m, g);
   }
 
   /** 芬利、阮大師、揭露身分：發現一個英雄能力 */
@@ -1480,7 +1498,7 @@ export class BgGame {
     }
     if (host.id === 'BG36_506') host.n = 0;
     // 時光扭曲普羅比斯：吸附的機械變成金卡；時光扭曲戰爭機兵：目標身材加倍
-    if (m.id === 'BG34_Giant_121' && isRace(host, 'MECHANICAL')) this.goldenize(p, host);
+    if ((m.id === 'BG34_Giant_121' || m.id === 'BG31_HERO_802_Buddy') && isRace(host, 'MECHANICAL')) this.goldenize(p, host);
     if (m.id === 'BG34_Giant_677') for (let k = 0; k < (m.golden ? 2 : 1); k++) (host.atk *= 2), (host.hp *= 2);
     this.volumize(p, m.id, m.golden ? 2 : 1);
     for (const t of targets) for (const hk of this.hooks(p)) hk.onMagnetize?.(this, p, t);
@@ -1614,7 +1632,10 @@ export class BgGame {
       }
       const set = this.hooks(p).find((hk) => hk.tierSet)?.tierSet;
       const t = set ? p.tier : card.tier ?? Math.min(this.maxTier(p), p.tier + 1);
-      this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的手下`);
+      // 石殼守護者（夥伴）：每回合第一個三合一獎勵發現金卡
+      const gold = (p.c['t:stoneshell'] ?? 0) < this.count(p, 'BG33_HERO_000_Buddy');
+      if (gold) p.c['t:stoneshell'] = (p.c['t:stoneshell'] ?? 0) + 1;
+      this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的${gold ? '金卡' : ''}手下`, { golden: gold });
       return;
     }
     if (card.id === LOCKBOX) throw new BgError('帶鎖箱不能使用，過幾回合會自己打開');
@@ -1656,7 +1677,7 @@ export class BgGame {
     const m = this.make(id, o.golden);
     if (o.copy) {
       const c = o.copy;
-      Object.assign(m, { atk: c.atk, hp: o.full ? (c.maxHp ?? c.hp) : c.hp, taunt: c.taunt, shield: c.shield, windfury: c.windfury, venom: c.venom, reborn: c.reborn, golden: c.golden || !!o.golden });
+      Object.assign(m, { atk: c.atk, hp: o.full ? (c.maxHp ?? c.hp) : c.hp, taunt: c.taunt, shield: c.shield, windfury: c.windfury, venom: c.venom, reborn: c.reborn, golden: c.golden || !!o.golden, gifts: c.gifts?.slice() });
       m.hp = Math.max(1, m.hp);
     }
     this.addMinion(p, m);
@@ -1692,6 +1713,7 @@ export class BgGame {
       inLobby: (id) => id in this.s.pool,
       inLobbySpell: (id) => this.spellInLobby(id),
       give: (pl, id, o) => this.giveFromCombat(pl, id, o),
+      goldenize: (pl, m) => this.goldenize(pl, m),
       giveRandom: (pl, f) => {
         const id = this.draw(f);
         if (id) this.addMinion(pl, this.make(id));
@@ -1826,6 +1848,13 @@ export class BgGame {
     p.powerUses++;
     if (h.once) p.powerSpent = true;
     h.use(this, p, t, t2, h.target === 'hand' ? target ?? null : null, choice);
+    // 暗影看守者（夥伴）：下一次英雄能力讓目標變成金卡
+    if (t && p.c.powerGold) {
+      p.c.powerGold = 0;
+      this.goldenize(p, t);
+    }
+    const rp = this.recruit(p);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onPowerUse?.(rp, x, t, g);
     // 遠古許願骨：英雄能力觸發兩次（目標還在的話）
     if (this.hooks(p).some((hk) => hk.powerTwice) && h.target !== 'hand') {
       const still = (m: BMinion | null) => !m || p.board.includes(m) || p.shop.includes(m);
@@ -1861,6 +1890,7 @@ export class BgGame {
         inLobby: (id) => id in this.s.pool,
         inLobbySpell: (id) => this.spellInLobby(id),
         give: (p, id, o) => this.giveFromCombat(p, id, o),
+        goldenize: (p, m) => this.goldenize(p, m),
         giveRandom: (p, f) => {
           const id = this.draw(f);
           if (id) this.addMinion(p, this.make(id));
@@ -1961,6 +1991,7 @@ export class BgGame {
     const G = this;
     return {
       p,
+      G,
       turn: G.s.round,
       tribes: G.s.tribes,
       rand: () => G.rand(),

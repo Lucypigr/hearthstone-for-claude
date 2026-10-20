@@ -1,7 +1,7 @@
 // 晚一點才綁定的卡池與規格（夥伴、黑暗贈禮、時光扭曲、英雄專屬的卡、奧秘用）
 // 這些檔案會被 cards.ts 載入；為了避免循環引用時還沒初始化，它們只依賴這裡，
 // 由 cards.ts / spells.ts 初始化完之後填進來（只在效果觸發時才讀取）
-import type { MinionSpec } from './api';
+import type { Combat, MinionSpec } from './api';
 import { bgCard, hasBgCard } from './data';
 import type { BMinion, Tribe } from './types';
 import { TRIBES } from './types';
@@ -19,6 +19,8 @@ export const LATE = {
   /** 造法法術 */
   spellcraft: [] as string[],
   bounties: [] as string[],
+  /** 布魯坎的元素祈願（heroes.ts 填入） */
+  brukan: (_c: Combat, _side: 0 | 1, _n: number) => {},
 };
 
 export const hasBattlecry = (id: string) => !!LATE.spec.get(id)?.battlecry;

@@ -3,6 +3,7 @@
 // 這裡不在最上層用到 cards.ts / spells.ts 的東西，避免循環引用時還沒初始化
 import type { Combat, MinionSpec, Recruit } from './api';
 import { bgCard, hasBgCard, isRace, racesOf, tierOf } from './data';
+import { GIFT_IDS } from './gifts';
 import { hasBattlecry, LATE } from './late';
 import type { SpellCtx, SpellSpec } from './spells';
 import { TRIBES, type BMinion, type Tribe } from './types';
@@ -21,6 +22,7 @@ const IMP = 'BG_BRM_006t';
 const ENRICH = 'BG28_886';
 const TRIPLE = 'TB_BaconShop_Triples_01';
 const FULL_REBORN = 'BG36_MidGameEffect_000t12';
+const CREATION = 'BG25_HERO_100pt';
 const PROTOSS_IDS = ['BG31_HERO_802pt', 'BG31_HERO_802pt1', 'BG31_HERO_802pt4', 'BG31_HERO_802pt5', 'BG31_HERO_802pt7'];
 const race = (m: BMinion, t: Tribe) => isRace(m, t);
 const alive = (c: Combat, side: 0 | 1) => c.board(side).filter((m) => !m.dead);
@@ -456,14 +458,17 @@ export const TW_MINIONS: MinionSpec[] = [
     val: 4,
   },
   {
-    id: W('590'), // 膿腸：召喚並拿到一個隨機的不死族
+    id: W('590'), // 膿腸：召喚並拿到一個隨機的不死族造物（普崔希德的造物，帶一個隨機黑暗贈禮）
     deathrattle: (c, s, g) => {
       const side = c.side(s);
       times(g, () => {
-        const id = c.pick(POOL().filter((x) => isRace(x, 'UNDEAD') && tierOf(x) <= c.heroTier(side) && c.inLobby(x)));
-        if (!id) return;
-        c.summon(side, c.make(id), c.index(s) + 1);
-        c.give(side, id);
+        const m = c.make(CREATION);
+        const st = 2 * c.heroTier(side) + 2;
+        m.atk = st;
+        m.hp = st;
+        m.gifts = [c.pick(GIFT_IDS)!];
+        const x = c.summon(side, m, c.index(s) + 1);
+        c.give(side, CREATION, { copy: x ?? m });
       });
     },
     syn: 'UNDEAD',
@@ -1176,7 +1181,7 @@ export const TW_SPELL_SPEC = new Map(TW_SPELLS.map((s) => [s.id, s]));
 let twIds: string[] | null = null;
 /** 有實作的時光扭曲卡（有資料的才算） */
 /** 尤格薩輪（和尤格競技場同樣的六個結果） */
-function wheel(r: Recruit) {
+export function wheel(r: Recruit) {
   const p = r.p;
   const roll = Math.floor(r.rand() * 6);
   if (roll === 0) r.gainGold(3);

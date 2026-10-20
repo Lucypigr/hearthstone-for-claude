@@ -1,5 +1,6 @@
 // 卡牌效果用到的介面（招募階段 / 戰鬥中），由 game.ts 與 combat.ts 實作
-import type { BMinion, BPlayer, Discover, Keyword, Tribe } from './types';
+import type { BgGame } from './game';
+import type { BMinion, BPlayer, Discover, HandCard, Keyword, Tribe } from './types';
 
 /** 招募階段 */
 export interface Recruit {
@@ -76,6 +77,8 @@ export interface Recruit {
   goldenize(m: BMinion): void;
   /** 發現一個手下，拿到時多給身材 */
   discoverBonus(filter: (id: string) => boolean, title: string, atk: number, hp: number): void;
+  /** 整個遊戲（少數需要看別的玩家的效果用） */
+  G: BgGame;
   /** 從卡池發現，帶額外的設定（例如變形成選到的手下） */
   discoverOpts(filter: (id: string) => boolean, title: string, extra: Partial<Discover>): void;
   /** 直接給選項（不從卡池拿） */
@@ -100,6 +103,8 @@ export interface Combat {
   buff(m: BMinion, atk: number, hp: number): void;
   /** 戰鬥中的加成同時永久保存 */
   perm(m: BMinion, atk: number, hp: number): void;
+  /** 永久變成金卡（招募階段的手下也會變） */
+  goldenPerm(m: BMinion): void;
   /** 永久獲得關鍵字（招募階段的手下也會有） */
   permKw(m: BMinion, kw: Keyword): void;
   giveKw(m: BMinion, kw: Keyword): void;
@@ -180,7 +185,7 @@ export interface MinionSpec {
   /** 你棄掉一張牌後 */
   onDiscard?(r: Recruit, self: BMinion, g: number): void;
   /** 有東西被加入你的手牌後 */
-  onGetCard?(r: Recruit, self: BMinion, g: number): void;
+  onGetCard?(r: Recruit, self: BMinion, g: number, card: HandCard): void;
   /** 你發現一張卡後 */
   onDiscover?(r: Recruit, self: BMinion, g: number): void;
   /** 你購買酒館法術後 */
@@ -197,6 +202,10 @@ export interface MinionSpec {
   onStatGain?(r: Recruit, self: BMinion, m: BMinion, atk: number, hp: number, g: number): void;
   /** 同上，但自己在手牌裡 */
   inHandStatGain?(r: Recruit, self: BMinion, m: BMinion, atk: number, hp: number, g: number): void;
+  /** 招募階段：使用英雄能力後（target = 英雄能力的目標） */
+  onPowerUse?(r: Recruit, self: BMinion, target: BMinion | null, g: number): void;
+  /** 招募階段：發現一個手下之後（拿到手牌之前） */
+  afterDiscoverMinion?(r: Recruit, self: BMinion, m: BMinion, g: number): void;
   /** 招募階段：有手下被吞噬後 */
   onConsumeAny?(r: Recruit, self: BMinion, eater: BMinion, food: BMinion, g: number): void;
   /** 使用鮮血寶石到這個手下身上後 */
@@ -229,6 +238,8 @@ export interface MinionSpec {
   /** 友方手下死亡後 */
   onFriendDeath?(c: Combat, self: BMinion, dead: BMinion, g: number): void;
   onFriendReborn?(c: Combat, self: BMinion, m: BMinion, g: number): void;
+  /** 戰鬥中：友方手下獲得身材後 */
+  onCombatGain?(c: Combat, self: BMinion, m: BMinion, atk: number, hp: number, g: number): void;
   /** 戰鬥中：你觸發一個亡語後 */
   afterDr?(c: Combat, self: BMinion, m: BMinion, g: number): void;
   /** 戰鬥中：友方手下被攻擊時 */

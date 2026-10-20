@@ -5,7 +5,8 @@ import { COIN, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TRIPLE_REWARD } from './cards'
 import { BUDDY_IDS } from './buddies';
 import { GIFT_IDS } from './gifts';
 import { ALL_ZERG, CREATION, CRUISER, LARVA, PROTOSS, RAYNOR_IDS, upgradeFor, ZERG } from './herocards';
-import { SECRETS } from './secrets';
+import { SECRET_SPEC, SECRETS } from './secrets';
+import { LATE } from './late';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry, isMagnetic } from './rules';
@@ -289,7 +290,7 @@ export const HEROES: HeroSpec[] = [
   {
     id: 'TB_BaconShop_HERO_42', // 伊莉絲‧尋星者
     target: 'none',
-    cost: (p) => 1 + cnt(p, 'elise'),
+    cost: (p) => Math.max(0, 1 + cnt(p, 'elise') - cnt(p, 'eliseDisc')),
     use: (G, p) => {
       add(p, 'elise');
       G.discoverFor(p, (id) => tierOf(id) === p.tier, `發現一個旅店等級 ${p.tier} 的手下`);
@@ -331,7 +332,8 @@ export const HEROES: HeroSpec[] = [
     canTarget: (_p, t) => !t.golden,
     use: (G, p, t) => {
       if (!t) return;
-      const tier = tierOf(t.id);
+      // 奧核領主（夥伴）：換成高一本的卡
+      const tier = Math.min(G.maxTier(p), tierOf(t.id) + (G.count(p, 'TB_BaconShop_HERO_58_Buddy') ? 1 : 0));
       const id = G.draw((x) => tierOf(x) === tier && x !== t.id);
       if (!id) return;
       G.returnToPool(t);
@@ -348,9 +350,12 @@ export const HEROES: HeroSpec[] = [
     id: 'TB_BaconShop_HERO_60', // 凱爾薩斯
     passive: true,
     status: (p) => `還差 ${3 - (cnt(p, 'kael') % 3)} 個`,
-    onBuy: (G, p) => {
+    onBuy: (G, p, m) => {
       add(p, 'kael');
-      if (cnt(p, 'kael') % 3 === 0) giveCoin(G, p);
+      if (cnt(p, 'kael') % 3) return;
+      giveCoin(G, p);
+      // 紅手百夫長（夥伴）：獲得最後買的手下的身材
+      for (const b of p.board) if (b.id === 'TB_BaconShop_HERO_60_Buddy') for (let k = 0; k < (b.golden ? 2 : 1); k++) (b.atk += m.atk), (b.hp += m.hp);
     },
     rank: 3,
   },
@@ -632,6 +637,8 @@ export const HEROES: HeroSpec[] = [
     use: (G, p, t) => {
       if (!t) return;
       const tier = Math.max(1, tierOf(t.id) - 1);
+      // 狂怒的參賽者（夥伴）：獲得等同移除手下等級的金幣
+      p.gold += G.count(p, 'TB_BaconShop_HERO_67_Buddy') * tierOf(t.id);
       p.board = p.board.filter((m) => m !== t);
       G.returnToPool(t);
       G.discoverFor(p, (id) => tierOf(id) === tier, `發現一個旅店等級 ${tier} 的手下`);
@@ -669,10 +676,16 @@ export const HEROES: HeroSpec[] = [
     use: (G, p, t) => {
       if (!t) return;
       const others = p.board.filter((m) => m !== t);
-      const to = G.pick(others);
+      // 夢魘軟漿怪（夥伴）：吞噬它時多吐給一個手下
+      const n = t.id === 'BG20_HERO_301_Buddy' ? 1 + (t.golden ? 2 : 1) : 1;
+      const tos: BMinion[] = [];
+      for (let k = 0; k < n; k++) {
+        const to = G.pick(others.filter((m) => !tos.includes(m)));
+        if (to) tos.push(to);
+      }
       const { atk, hp } = t;
       G.sell(p.idx, t.uid);
-      if (to) (to.atk += atk), (to.hp += hp);
+      for (const to of tos) (to.atk += atk), (to.hp += hp);
     },
     rank: 3,
     ai: (G, p) => (p.board.length >= 6 && G.round >= 4 ? weakest(p.board) : undefined),
@@ -974,6 +987,8 @@ export const HEROES: HeroSpec[] = [
       p.shop = p.shop.filter((m) => m !== t);
       G.returnToPool(t);
       p.c.tavish = (p.c.tavish ?? 0) + t.atk;
+      // 阿蟹（夥伴）：拿到移除的手下的分身
+      for (let k = 0; k < G.count(p, 'BG22_HERO_000_Buddy'); k++) G.addMinion(p, G.make(t.id));
     },
     soc: (c, side) => {
       const n = c.cnt(side, 'tavish');
@@ -991,30 +1006,12 @@ export const HEROES: HeroSpec[] = [
     cost: fixed(0),
     choices: ['大地祈願：4 個隨機友方手下獲得「亡語：召喚一個 1/1 元素」', '火焰祈願：你最左邊的手下攻擊力加倍', '流水祈願：你最右邊的手下獲得聖盾與嘲諷', '雷電祈願：對 5 個隨機敵方手下造成 1 點傷害'],
     powerId: (p) => (cnt(p, 'brukan') ? `BG22_HERO_001p_t${cnt(p, 'brukan')}` : 'BG22_HERO_001p'),
-    use: (_G, p, _t, _t2, _h, choice = 0) => void (p.c.brukan = choice + 1),
-    soc: (c, side) => {
-      const b = c.board(side).filter((m) => !m.dead);
-      switch (c.cnt(side, 'brukan')) {
-        case 1:
-          for (const m of [...b].sort(() => c.rand() - 0.5).slice(0, 4)) (m.extraDr ??= []).push({ id: 'BG22_HERO_001p_t1', g: 1 });
-          break;
-        case 2:
-          if (b[0]) c.buff(b[0], b[0].atk, 0);
-          break;
-        case 3:
-          if (b.length) {
-            c.giveKw(b[b.length - 1], 'shield');
-            c.giveKw(b[b.length - 1], 'taunt');
-          }
-          break;
-        case 4:
-          for (let k = 0; k < 5; k++) {
-            const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
-            if (t) c.damage(t, 1, null);
-          }
-          break;
-      }
+    use: (_G, p, _t, _t2, _h, choice = 0) => {
+      // 幽靈迅猛龍（夥伴）：記住叫過的元素
+      if (p.c.brukan !== choice + 1) for (const m of p.board) if (m.id === 'BG22_HERO_001_Buddy') m.n |= 1 << choice;
+      p.c.brukan = choice + 1;
     },
+    soc: (c, side) => brukanElement(c, side, c.cnt(side, 'brukan')),
     rank: 3,
     ai: (_G, p) => (cnt(p, 'brukan') ? undefined : 'none'),
     aiChoice: (_G, p) => {
@@ -1032,6 +1029,9 @@ export const HEROES: HeroSpec[] = [
       const copy = G.shopMinion(p, best.id);
       best.iced = true;
       copy.iced = true;
+      // 瓦登的水靈戰士（夥伴）：兩個都獲得等同旅店等級的身材
+      const n = G.count(p, 'BG22_HERO_004_Buddy') * p.tier;
+      for (const m of [best, copy]) (m.atk += n), (m.hp += n);
       p.shop.push(copy);
     },
     rank: 3,
@@ -1640,7 +1640,12 @@ export const HEROES: HeroSpec[] = [
     cost: fixed(0),
     locked: (p) => ((p.secrets?.length ?? 0) >= 4 ? '場上的奧秘已滿' : null),
     use: (G, p) => {
-      const bag = SECRETS.map((s) => s.id).filter((id) => !(p.secrets ?? []).includes(id));
+      // 街頭魔術師（夥伴）：從進階奧秘中選
+      const better = G.count(p, 'TB_BaconShop_HERO_21_Buddy') > 0;
+      const bag = SECRETS.map((s) => s.id)
+        .filter((id) => !id.endsWith('b'))
+        .map((id) => (better && SECRET_SPEC.has(`${id}b`) ? `${id}b` : id))
+        .filter((id) => !(p.secrets ?? []).includes(id));
       const options: string[] = [];
       while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
       G.offerPick(p, 'secret', options, '變戲法：選擇一個奧秘');
@@ -1747,3 +1752,29 @@ export function powerCardOf(p: BPlayer): string {
 export function heroAvailable(h: HeroSpec, tribes: Tribe[]): boolean {
   return !h.needTribe || tribes.includes(h.needTribe);
 }
+
+/** 布魯坎的元素祈願（幽靈迅猛龍的亡語也會用到） */
+export function brukanElement(c: Combat, side: 0 | 1, n: number) {
+  const b = c.board(side).filter((m) => !m.dead);
+  switch (n) {
+    case 1:
+      for (const m of [...b].sort(() => c.rand() - 0.5).slice(0, 4)) (m.extraDr ??= []).push({ id: 'BG22_HERO_001p_t1', g: 1 });
+      break;
+    case 2:
+      if (b[0]) c.buff(b[0], b[0].atk, 0);
+      break;
+    case 3:
+      if (b.length) {
+        c.giveKw(b[b.length - 1], 'shield');
+        c.giveKw(b[b.length - 1], 'taunt');
+      }
+      break;
+    case 4:
+      for (let k = 0; k < 5; k++) {
+        const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
+        if (t) c.damage(t, 1, null);
+      }
+      break;
+  }
+}
+LATE.brukan = brukanElement;
