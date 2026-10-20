@@ -322,3 +322,15 @@ describe('決戰荒蕪之地', () => {
     }
   });
 });
+
+describe('返回手牌並加身材', () => {
+  it('酒吧釀酒大師：回到手牌的手下 +2/+2', () => {
+    const g = newGame();
+    const m = put(g, 'CS2_182', 0);
+    play(g, 'WW_423', { target: m.uid });
+    const hc = g.s.players[0].hand.filter((h) => h.cardId === 'CS2_182').pop();
+    expect(hc).toBeTruthy();
+    expect(hc!.atkBuff).toBe(2);
+    expect(hc!.hpBuff).toBe(2);
+  });
+});

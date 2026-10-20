@@ -5994,7 +5994,9 @@ export class Game {
       case 'buff': {
         const atkAll = e.atk !== undefined ? this.amount(e.atk, ctx) : 0;
         const hpAll = e.hp !== undefined ? this.amount(e.hp, ctx) : 0;
-        if (e.target.t === 'it' && ctx.it?.kind === 'hand') {
+        // 「使一個友方手下返回你手中，並賦予它 +2/+2」：目標已經回到手牌，加在手牌那張上
+        const backToHand = e.target.t === 'chosen' && ctx.it?.kind === 'hand' && ctx.chosen != null && !this.minion(ctx.chosen);
+        if ((e.target.t === 'it' || backToHand) && ctx.it?.kind === 'hand') {
           const hc = this.handCard(ctx.it.uid);
           if (hc) {
             const dbl = getCard(hc.card.cardId).flags?.includes('saidan') ? 2 : 1;
