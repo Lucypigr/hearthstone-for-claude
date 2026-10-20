@@ -353,13 +353,14 @@ export class BgGame {
     if (cost <= p.gold) return cost;
     return d.options.some((x) => relicCost(x) <= p.gold) ? Infinity : p.gold;
   }
-  /** 第 4 回合：從 3 個任務中選一個（每個任務有不同的獎勵） */
-  offerQuests(p: BPlayer) {
+  /** 第 4 回合：從 3 個任務中選一個（每個任務有不同的獎勵）；戴納瑟斯王開局從 2 個選 */
+  offerQuests(p: BPlayer, n = 3) {
+    p.c.questOffered = 1;
     const qs = [...QUESTS];
     const rs = REWARDS.filter((id) => this.relicAvailable(p, RELIC_SPEC.get(id)!));
     const options: string[] = [];
     const rewards: string[] = [];
-    while (options.length < 3 && qs.length && rs.length) {
+    while (options.length < n && qs.length && rs.length) {
       options.push(qs.splice(Math.floor(this.rand() * qs.length), 1)[0].id);
       rewards.push(rs.splice(Math.floor(this.rand() * rs.length), 1)[0]);
     }
@@ -504,7 +505,7 @@ export class BgGame {
       if (this.s.round === (p.c.lesserAt || 6)) this.offerTrinkets(p, 'lesser');
       if (this.s.round === (p.c.greaterAt || 9)) this.offerTrinkets(p, 'greater');
     }
-    if (this.s.quests && this.s.round === 4) this.offerQuests(p);
+    if (this.s.quests && this.s.round === 4 && !p.c.questOffered) this.offerQuests(p);
     const bud = this.buddyId(p);
     if (bud) {
       if (!p.buddy) p.buddy = { cost: this.buddyBase(bud), presses: 0 };

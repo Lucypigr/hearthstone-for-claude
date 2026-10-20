@@ -1,5 +1,6 @@
 // 英雄戰場的英雄與英雄能力（依官方敘述實作；只收錄能完整執行的英雄）
 import type { Combat } from './api';
+import { BUDDY_IDS } from './buddies';
 import { COIN, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TRIPLE_REWARD } from './cards';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
@@ -1368,6 +1369,43 @@ export const HEROES: HeroSpec[] = [
     passive: true,
     status: () => '每回合開始時選擇新的英雄能力',
     rank: 4,
+  },
+  {
+    id: 'BG30_HERO_304', // 經理馬林：第 5 回合選一個次級飾品購買
+    passive: true,
+    startTurn: (G, p) => void (G.round === 5 && G.offerTrinkets(p, 'lesser')),
+    status: (_p, G) => (G.round < 5 ? `還有 ${5 - G.round} 回合` : '已經開過了'),
+    rank: 3,
+  },
+  {
+    id: 'BG32_HERO_002', // 扣仔：第 8 回合選一個強效飾品購買
+    passive: true,
+    startTurn: (G, p) => void (G.round === 8 && G.offerTrinkets(p, 'greater')),
+    status: (_p, G) => (G.round < 8 ? `還有 ${8 - G.round} 回合` : '已經開過了'),
+    rank: 3,
+  },
+  {
+    id: 'BG24_HERO_100', // 戴納瑟斯王：開局從 2 個任務中選一個
+    passive: true,
+    startGame: (G, p) => G.offerQuests(p, 2),
+    rank: 3,
+  },
+  {
+    id: 'BG25_HERO_105', // 『樂團經理』精英牛頭大佬：發現一個夥伴（2 本解鎖）
+    target: 'none',
+    cost: fixed(3),
+    locked: (p) => (p.tier < 2 ? '升到 2 本才能使用' : null),
+    use: (G, p) => {
+      const bag = [...BUDDY_IDS].filter((id) => tierOf(id) <= p.tier && id !== 'BG25_HERO_105_Buddy');
+      const options: string[] = [];
+      while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
+      if (!options.length) return;
+      const d = { options, title: '精英牛頭大佬：發現一個夥伴', noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 3,
+    ai: (G, p) => (p.hand.length < 9 && p.gold >= 3 + (G.round > 6 ? 0 : 3) ? 'none' : undefined),
   },
 ];
 

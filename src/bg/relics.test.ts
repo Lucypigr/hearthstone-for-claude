@@ -111,6 +111,46 @@ describe('英雄戰場：飾品、任務、異象、夥伴', () => {
     expect(golden && golden.kind === 'minion' && golden.m.golden).toBe(true);
   });
 
+  it('經理馬林第 5 回合、扣仔第 8 回合開飾品商店（沒開飾品也一樣）', () => {
+    for (const [hero, round, kind] of [
+      ['BG30_HERO_304', 5, 'lesser'],
+      ['BG32_HERO_002', 8, 'greater'],
+    ] as const) {
+      const ais = Array.from({ length: 7 }, (_, i) => ({ name: `AI${i}`, persona: makePersona(i, { difficulty: 'normal' }) }));
+      const G = BgGame.create({ seed: 9, humanName: '你', ais });
+      for (const p of G.s.players) {
+        const h = p.isHuman ? hero : PATCHWERK;
+        G.s.heroOffers[p.idx] = [h];
+        G.pickHero(p.idx, h);
+      }
+      while (G.round < round) {
+        expect(G.human.discover?.relics).toBeUndefined();
+        G.finishRecruit();
+        G.nextRound();
+      }
+      expect(G.human.discover?.relics).toBe(kind);
+    }
+  });
+
+  it('戴納瑟斯王開局選任務、精英牛頭大佬發現夥伴', () => {
+    const ais = Array.from({ length: 7 }, (_, i) => ({ name: `AI${i}`, persona: makePersona(i, { difficulty: 'normal' }) }));
+    const G = BgGame.create({ seed: 10, humanName: '你', ais });
+    G.s.heroOffers[0] = ['BG24_HERO_100'];
+    G.s.heroOffers[1] = ['BG25_HERO_105'];
+    for (const p of G.s.players) G.pickHero(p.idx, p.idx === 0 ? 'BG24_HERO_100' : p.idx === 1 ? 'BG25_HERO_105' : (G.s.heroOffers[p.idx] = [PATCHWERK])[0]);
+    expect(G.human.discover?.rewards).toHaveLength(2);
+    G.choose(0, 0);
+    expect(G.human.quest).toBeTruthy();
+    const etc = G.player(1);
+    expect(G.powerState(etc).usable).toBe(false);
+    etc.tier = 2;
+    etc.gold = 5;
+    G.usePower(1);
+    expect(etc.discover?.options.every((id) => id.endsWith('_Buddy'))).toBe(true);
+    G.choose(1, 0);
+    expect(etc.hand.some((h) => h.kind === 'minion' && h.m.id.endsWith('_Buddy'))).toBe(true);
+  });
+
   it('異象：金錢遊戲、小小聯盟、諾甘農的秘密', () => {
     let G = newGame(7, { anomaly: 'BG27_Anomaly_000' });
     expect(G.human.gold).toBe(10);
