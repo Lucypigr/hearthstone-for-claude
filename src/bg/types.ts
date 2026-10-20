@@ -359,6 +359,8 @@ export interface CombatFrame {
   /** 受到傷害的手下（顯示數字） */
   hits?: { uid: number; amount: number }[];
   note?: string;
+  /** 雙人模式：現在在場上的是哪位玩家 */
+  who?: [number, number];
 }
 
 export interface CombatResult {
@@ -374,4 +376,6 @@ export interface CombatResult {
   died: [string[], string[]];
   /** 死掉的手下在招募階段的 uid */
   diedSrc: [number[], number[]];
+  /** 雙人模式：每位玩家死掉的手下 */
+  byPlayer?: Record<number, { died: string[]; diedSrc: number[] }>;
 }

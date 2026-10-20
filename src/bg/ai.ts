@@ -254,6 +254,8 @@ function step(M: Mind): boolean {
       return true;
     }
   }
+  // 雙人模式：把隊友湊得到三連的手下傳過去
+  if (passToMate(M)) return true;
   // 4. 打出手牌
   if (playFromHand(M)) return true;
   // 5. 英雄能力
@@ -310,6 +312,23 @@ function GIFT_VALUE(id: string): number {
   if ([72, 81, 90, 13, 12].includes(n)) return 8;
   if ([0, 2, 4, 7, 71, 15, 60, 73, 28, 29, 30, 88].includes(n)) return 5;
   return 3;
+}
+
+/** 雙人模式：手上的手下隊友已經有兩張（自己沒有別張）就傳給隊友 */
+function passToMate(M: Mind): boolean {
+  const { G, p, persona } = M;
+  const mate = G.partner(p);
+  if (!mate?.alive || p.gold < 1 || mate.hand.length >= HAND_MAX || (p.c['t:passes'] ?? 0) >= 2) return false;
+  // 新手比較不會想到要傳卡
+  if (persona.skill < 0.35 && M.r() < 0.6) return false;
+  const all = (q: BPlayer) => [...q.board, ...q.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))];
+  const count = (q: BPlayer, id: string) => all(q).filter((m) => m.id === id && !m.golden).length;
+  const card = p.hand.find((h) => h.kind === 'minion' && !h.m.golden && count(mate, h.m.id) >= 2 && count(p, h.m.id) === 1);
+  if (!card) return false;
+  G.pass(p.idx, card.uid);
+  p.c['t:passes'] = (p.c['t:passes'] ?? 0) + 1;
+  M.notes.push(`把${bgCard(card.kind === 'minion' ? card.m.id : card.id).name}傳給${mate.name}`);
+  return true;
 }
 
 /** 夥伴按鈕：買得起、又不會影響這回合的發展就按 */

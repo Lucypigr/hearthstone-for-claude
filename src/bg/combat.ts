@@ -23,6 +23,8 @@ export interface SideInput {
   hand: BMinion[];
   /** 這一方的永久效果要不要保存（模擬或殘影 = false） */
   persist: boolean;
+  /** 雙人模式：這個戰隊被打光之後上場的隊友 */
+  next?: SideInput;
 }
 
 export interface CombatOptions {
@@ -72,6 +74,10 @@ export class CombatSim implements Combat {
   private diedSrc: [number[], number[]] = [[], []];
   /** 有空位時才召喚的手下（泰朗‧血魔） */
   private later: [BMinion[], BMinion[]] = [[], []];
+  /** 雙人模式：每位玩家死掉的手下 */
+  private byPlayer: Record<number, { died: string[]; diedSrc: number[] }> = {};
+  /** 雙人模式：這一方出場過的玩家（算傷害用的旅店等級） */
+  private fought: [SideInput[], SideInput[]];
 
   constructor(
     private sides: [SideInput, SideInput],
@@ -86,6 +92,61 @@ export class CombatSim implements Combat {
     this.hands = [sides[0].persist ? sides[0].hand : sides[0].hand.map(snap), sides[1].persist ? sides[1].hand : sides[1].hand.map(snap)];
     this.frames = o.record ? [] : null;
     this.starting = [this.boards[0].map((m) => m.id), this.boards[1].map((m) => m.id)];
+    this.fought = [[sides[0]], [sides[1]]];
+  }
+
+  /** 雙人模式：戰隊被打光了，換隊友上場 */
+  private swapIn(side: 0 | 1): boolean {
+    const next = this.sides[side].next;
+    if (!next || this.later[side].length) return false;
+    this.sides[side] = next;
+    this.fought[side].push(next);
+    this.counts[side] = { ...next.player.c };
+    this.boards[side] = next.board.map((m) => toCombatMinion(m, this.counts[side], next.player.hp));
+    this.hands[side] = next.persist ? next.hand : next.hand.map(snap);
+    this.starting[side] = this.boards[side].map((m) => m.id);
+    this.firstDr[side] = false;
+    this.illidari[side] = false;
+    this.firstKill[side] = false;
+    this.heroAvenge[side] = new Map();
+    this.aberDeaths[side] = 0;
+    this.awakened[side] = false;
+    this.deathCount[side] = 0;
+    this.frame(undefined, undefined, `${next.player.name} 上場`);
+    this.startOfCombat([side]);
+    this.hits = [];
+    this.frame(undefined, undefined, '起始戰鬥');
+    this.resolveDeaths();
+    this.runImmediate();
+    return true;
+  }
+
+  /** 起始戰鬥：英雄能力 → 手牌 → 手下 */
+  private startOfCombat(order: (0 | 1)[]) {
+    for (const side of order) {
+      for (const hk of this.hooks(side)) hk.soc?.(this, side);
+      this.socSpells(side);
+    }
+    for (const side of order) {
+      for (const h of [...this.hands[side]]) for (const { s, g } of specsOf(h)) s.socInHand?.(this, h, side, g);
+    }
+    // 晉升頭像：每場戰鬥第一個起始戰鬥效果多觸發一次
+    for (const side of order) {
+      if (!this.hooks(side).some((hk) => hk.firstSocExtra)) continue;
+      const m = this.boards[side].find((x) => !x.dead && specsOf(x).some(({ s }) => s.soc));
+      if (m) for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
+    }
+    for (const side of order) {
+      // 沃卓肯風鈴：起始戰鬥效果多觸發一次
+      const times = 1 + this.hooks(side).reduce((n, hk) => n + (hk.socExtra ?? 0), 0);
+      for (let t = 0; t < times; t++) {
+        if (t > 0) for (const hk of this.hooks(side)) hk.soc?.(this, side);
+        for (const m of [...this.boards[side]]) {
+          if (m.dead) continue;
+          for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
+        }
+      }
+    }
   }
 
   /** 這一方的英雄能力、飾品、任務獎勵、異象 */
@@ -506,6 +567,9 @@ export class CombatSim implements Combat {
         this.deathCount[d.side]++;
         if (!d.m.temp) this.died[d.side].push(d.m.id);
         if (d.m.src !== undefined) this.diedSrc[d.side].push(d.m.src);
+        const bp = (this.byPlayer[this.sides[d.side].player.idx] ??= { died: [], diedSrc: [] });
+        if (!d.m.temp) bp.died.push(d.m.id);
+        if (d.m.src !== undefined) bp.diedSrc.push(d.m.src);
         if (isRace(d.m, 'ABERRATION') && d.m.id !== DEITY) this.aberDeaths[d.side]++;
         this.withGhost(d.m, d.side, at, () => {
           for (const { s, g } of specsOf(d.m)) s.onDeath?.(this, d.m, g);
@@ -617,7 +681,7 @@ export class CombatSim implements Combat {
 
   private frame(attacker?: number, target?: number, note?: string) {
     if (!this.frames) return;
-    this.frames.push({ boards: [this.boards[0].map(snap), this.boards[1].map(snap)], attacker, target, hits: this.hits.length ? this.hits : undefined, note });
+    this.frames.push({ boards: [this.boards[0].map(snap), this.boards[1].map(snap)], attacker, target, hits: this.hits.length ? this.hits : undefined, note, who: [this.sides[0].player.idx, this.sides[1].player.idx] });
     this.hits = [];
   }
 
@@ -655,31 +719,7 @@ export class CombatSim implements Combat {
     const n1 = this.boards[1].length;
     this.first = n0 > n1 ? 0 : n1 > n0 ? 1 : this.rand() < 0.5 ? 0 : 1;
     this.frame(undefined, undefined, '戰鬥開始');
-    // 起始戰鬥：英雄能力 → 手牌 → 手下
-    for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      for (const hk of this.hooks(side)) hk.soc?.(this, side);
-      this.socSpells(side);
-    }
-    for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      for (const h of [...this.hands[side]]) for (const { s, g } of specsOf(h)) s.socInHand?.(this, h, side, g);
-    }
-    // 晉升頭像：每場戰鬥第一個起始戰鬥效果多觸發一次
-    for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      if (!this.hooks(side).some((hk) => hk.firstSocExtra)) continue;
-      const m = this.boards[side].find((x) => !x.dead && specsOf(x).some(({ s }) => s.soc));
-      if (m) for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
-    }
-    for (const side of [this.first, (1 - this.first) as 0 | 1]) {
-      // 沃卓肯風鈴：起始戰鬥效果多觸發一次
-      const times = 1 + this.hooks(side).reduce((n, hk) => n + (hk.socExtra ?? 0), 0);
-      for (let t = 0; t < times; t++) {
-        if (t > 0) for (const hk of this.hooks(side)) hk.soc?.(this, side);
-        for (const m of [...this.boards[side]]) {
-          if (m.dead) continue;
-          for (const { s, g } of specsOf(m)) s.soc?.(this, m, g);
-        }
-      }
-    }
+    this.startOfCombat([this.first, (1 - this.first) as 0 | 1]);
     this.hits = [];
     this.frame(undefined, undefined, '起始戰鬥');
     this.resolveDeaths();
@@ -687,8 +727,17 @@ export class CombatSim implements Combat {
 
     const ptr: [number, number] = [0, 0];
     let cur = this.first;
-    for (let guard = 0; guard < 400; guard++) {
+    for (let guard = 0; guard < 600; guard++) {
       this.runImmediate();
+      // 雙人模式：被打光的一方換隊友上場（兩邊都打光就結束）
+      if (this.alive(0).length && !this.alive(1).length && this.swapIn(1)) {
+        ptr[1] = 0;
+        continue;
+      }
+      if (this.alive(1).length && !this.alive(0).length && this.swapIn(0)) {
+        ptr[0] = 0;
+        continue;
+      }
       if (!this.alive(0).length || !this.alive(1).length) break;
       let att = this.nextAttacker(cur, ptr);
       if (!att) {
@@ -715,9 +764,16 @@ export class CombatSim implements Combat {
     if (a0.length && !a1.length) winner = 0;
     else if (a1.length && !a0.length) winner = 1;
     const survivors = winner === null ? [] : this.alive(winner).filter((m) => !m.temp);
-    const damage = winner === null ? 0 : this.sides[winner].tier + survivors.reduce((n, m) => n + tierOf(m.id), 0);
+    let damage = 0;
+    if (winner !== null) {
+      // 雙人模式：用隊伍裡最高的旅店等級；還沒上場的隊友也一起來補傷害
+      const team = [...this.fought[winner]];
+      for (let n = this.sides[winner].next; n; n = n.next) team.push(n);
+      const extra = this.sides[winner].next ? team.slice(this.fought[winner].length).flatMap((x) => x.board).reduce((n, m) => n + tierOf(m.id), 0) : 0;
+      damage = Math.max(...team.map((x) => x.tier)) + survivors.reduce((n, m) => n + tierOf(m.id), 0) + extra;
+    }
     this.frame(undefined, undefined, winner === null ? '平手' : undefined);
-    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first, died: this.died, diedSrc: this.diedSrc };
+    return { winner, damage, survivors, frames: this.frames ?? undefined, first: this.first, died: this.died, diedSrc: this.diedSrc, byPlayer: this.byPlayer };
   }
 
   private nextAttacker(side: 0 | 1, ptr: [number, number]): BMinion | null {

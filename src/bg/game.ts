@@ -50,6 +50,9 @@ export interface CombatRecord {
   /** 戰鬥開始時的雙方戰隊 */
   boards: [BMinion[], BMinion[]];
   frames?: CombatFrame[];
+  /** 雙人模式：兩隊的隊員 */
+  teamA?: number[];
+  teamB?: number[];
 }
 
 export interface BgState {
@@ -78,6 +81,12 @@ export interface BgState {
   shared?: string[];
   /** 黑暗悖論這局的樣子 */
   paradox?: { tier: number; atk: number; hp: number; gift: string };
+  /** 雙人模式：兩人一隊（0+1、2+3、4+5、6+7），共用生命值與護甲 */
+  duos?: boolean;
+  /** 雙人模式：上次同步時的隊伍生命值與護甲 */
+  teamHp?: Record<number, { hp: number; armor: number }>;
+  /** 雙人模式：每隊上一場先上場的隊員與連續次數 */
+  teamFirst?: Record<number, { idx: number; streak: number }>;
 }
 
 export interface NewGameOptions {
@@ -93,6 +102,8 @@ export interface NewGameOptions {
   timewarp?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  /** 雙人模式 */
+  duos?: boolean;
 }
 
 export class BgError extends Error {}
@@ -186,6 +197,7 @@ export class BgGame {
       timewarp: !!o.timewarp,
       quests: !!o.quests || anomaly === 'BG27_Anomaly_Quests',
       buddies: !!o.buddies || anomaly === 'BG27_Anomaly_Buddies',
+      duos: !!o.duos,
     });
     for (const id of POOL_IDS) if (g.idInLobby(id)) g.s.pool[id] = COPIES[tierOf(id)] ?? 7;
     // 英雄：每個人拿到不重複的選擇
@@ -511,7 +523,61 @@ export class BgGame {
 
   private startGame() {
     for (const p of this.s.players) for (const hk of this.hooks(p)) hk.startGame?.(this, p);
+    // 雙人模式：隊伍共用生命值（30）與護甲（兩位英雄比較高的那個）
+    if (this.s.duos) {
+      this.s.teamHp = {};
+      for (let t = 0; t < this.s.players.length / 2; t++) {
+        const [a, b] = this.teamMembers(t);
+        const hp = Math.max(a.hp, b.hp);
+        const armor = Math.max(a.armor, b.armor);
+        for (const x of [a, b]) (x.hp = hp), (x.armor = armor);
+        this.s.teamHp[t] = { hp, armor };
+      }
+    }
     this.startRound();
+  }
+
+  // —— 雙人模式 ——
+  teamOf(p: BPlayer | number): number {
+    return Math.floor((typeof p === 'number' ? p : p.idx) / 2);
+  }
+  teamMembers(t: number): [BPlayer, BPlayer] {
+    return [this.player(2 * t), this.player(2 * t + 1)];
+  }
+  /** 隊友（不是雙人模式 = null） */
+  partner(p: BPlayer): BPlayer | null {
+    return this.s.duos ? this.player(p.idx ^ 1) : null;
+  }
+  /** 把兩位隊員各自的生命值、護甲變化合在一起（共用生命值） */
+  syncTeam(t: number, min = -Infinity) {
+    const last = this.s.teamHp?.[t];
+    if (!last) return;
+    const [a, b] = this.teamMembers(t);
+    const hp = Math.max(min, last.hp + (a.hp - last.hp) + (b.hp - last.hp));
+    const armor = Math.max(0, last.armor + (a.armor - last.armor) + (b.armor - last.armor));
+    for (const x of [a, b]) (x.hp = hp), (x.armor = armor);
+    this.s.teamHp![t] = { hp, armor };
+  }
+  syncTeams() {
+    if (!this.s.duos) return;
+    for (let t = 0; t < this.s.players.length / 2; t++) this.syncTeam(t);
+  }
+  /** 傳給隊友（1 枚金幣） */
+  pass(pi: number, uid: number) {
+    const p = this.player(pi);
+    this.ensure(p);
+    const mate = this.partner(p);
+    if (!mate) throw new BgError('只有雙人模式可以傳卡');
+    if (!mate.alive) throw new BgError('隊友已經被淘汰了');
+    const card = p.hand.find((h) => h.uid === uid);
+    if (!card) throw new BgError('手牌裡沒有這張卡');
+    if (card.kind === 'spell' && (card.temp || card.id === LOCKBOX)) throw new BgError('這張卡不能傳');
+    if (mate.hand.length >= HAND_MAX) throw new BgError('隊友的手牌已滿');
+    if (p.gold < 1) throw new BgError('金幣不夠');
+    this.spend(p, 1);
+    p.hand = p.hand.filter((h) => h !== card);
+    this.addHand(mate, { ...card, locked: undefined, pair: undefined });
+    mate.notes.push(`${p.name} 傳給你：${bgCard(card.kind === 'minion' ? card.m.id : card.id).name}`);
   }
 
   // —— 回合 ——
@@ -730,6 +796,7 @@ export class BgGame {
 
   /** 配對：盡量不要連續遇到同一個人；人數是單數時，有人打殘影 */
   private pair() {
+    if (this.s.duos) return this.pairTeams();
     const alive = this.alive().map((p) => p.idx);
     let best: [number, number][] = [];
     let bestCost = Infinity;
@@ -744,6 +811,32 @@ export class BgGame {
         const pa = this.player(a);
         if (b >= 0 && pa.lastOpp === b) cost += 10;
         if (b >= 0 && pa.seen[b] && this.s.round - pa.seen[b].round <= 2) cost += 3;
+        if (b < 0 && pa.lastOpp === -1) cost += 5;
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = pairs;
+        if (!cost) break;
+      }
+    }
+    this.s.pairs = best;
+  }
+
+  /** 雙人模式的配對：隊伍對隊伍（兩位隊員各自對上對方的一位隊員） */
+  private pairTeams() {
+    const teams = [...new Set(this.alive().map((p) => this.teamOf(p)))];
+    let best: [number, number][] = [];
+    let bestCost = Infinity;
+    for (let t = 0; t < 40; t++) {
+      const order = shuffleWith([...teams], () => this.rand());
+      const pairs: [number, number][] = [];
+      let cost = 0;
+      for (let i = 0; i < order.length; i += 2) {
+        const a = order[i];
+        const b = i + 1 < order.length ? order[i + 1] : -1;
+        pairs.push([2 * a, b < 0 ? -1 : 2 * b], [2 * a + 1, b < 0 ? -1 : 2 * b + 1]);
+        const pa = this.player(2 * a);
+        if (b >= 0 && pa.lastOpp !== null && pa.lastOpp >= 0 && this.teamOf(pa.lastOpp) === b) cost += 10;
         if (b < 0 && pa.lastOpp === -1) cost += 5;
       }
       if (cost < bestCost) {
@@ -1324,6 +1417,7 @@ export class BgGame {
     const fromArmor = Math.min(p.armor, n);
     p.armor -= fromArmor;
     p.hp = Math.max(1, p.hp - (n - fromArmor));
+    if (this.s.duos) this.syncTeam(this.teamOf(p), 1);
   }
 
   buy(pi: number, uid: number) {
@@ -1870,56 +1964,11 @@ export class BgGame {
     for (const p of this.alive()) this.endTurn(p);
     this.s.phase = 'combat';
     const damage = new Map<number, number>();
-    for (const [a, b] of this.s.pairs) {
-      const pa = this.player(a);
-      const ghost = b < 0 ? this.ghost() : null;
-      const pb = b < 0 ? ghost : this.player(b);
-      const boards: [BMinion[], BMinion[]] = [pa.board.map((m) => ({ ...m })), pb ? (b < 0 ? pb.deathBoard ?? [] : pb.board).map((m) => ({ ...m })) : []];
-      const record = pa.isHuman || (b >= 0 && this.player(b).isHuman);
-      const sideA = this.sideInput(pa, true);
-      const sideB: SideInput = pb
-        ? b < 0
-          ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.powerHero ?? pb.heroId, hooks: this.hooks(pb), hand: [], persist: false }
-          : this.sideInput(pb, true)
-        : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
-      const res = runCombat([sideA, sideB], {
-        rng: this.s,
-        turn: this.s.round,
-        record,
-        nextUid: () => this.nextUid(),
-        inLobby: (id) => id in this.s.pool,
-        inLobbySpell: (id) => this.spellInLobby(id),
-        give: (p, id, o) => this.giveFromCombat(p, id, o),
-        goldenize: (p, m) => this.goldenize(p, m),
-        giveRandom: (p, f) => {
-          const id = this.draw(f);
-          if (id) this.addMinion(p, this.make(id));
-        },
-      });
-      const cap = damageCap(this.s.round, this.alive().length);
-      const dmg = Math.min(cap, res.damage);
-      const winner = res.winner === null ? null : res.winner === 0 ? a : b;
-      this.s.combats.push({ round: this.s.round, a, b, ghostOf: ghost?.idx ?? null, winner, damage: dmg, boards, frames: res.frames });
-      pa.results.push(res.winner === null ? 'draw' : res.winner === 0 ? 'win' : 'loss');
-      pa.lastDied = res.died[0];
-      pa.lastDiedUids = res.diedSrc[0];
-      pa.lastBoardIds = boards[0].map((m) => m.id);
-      for (const hk of this.hooks(pa)) hk.afterCombat?.(this, pa, pa.results[pa.results.length - 1]);
-      pa.lastOpp = b;
-      if (b >= 0) {
-        const pbb = this.player(b);
-        pbb.results.push(res.winner === null ? 'draw' : res.winner === 1 ? 'win' : 'loss');
-        pbb.lastDied = res.died[1];
-        pbb.lastDiedUids = res.diedSrc[1];
-        pbb.lastBoardIds = boards[1].map((m) => m.id);
-        for (const hk of this.hooks(pbb)) hk.afterCombat?.(this, pbb, pbb.results[pbb.results.length - 1]);
-        pbb.lastOpp = a;
-        pa.seen[b] = { round: this.s.round, board: boards[1], tier: pbb.tier, heroId: pbb.heroId };
-        pbb.seen[a] = { round: this.s.round, board: boards[0], tier: pa.tier, heroId: pa.heroId };
-      }
-      if (res.winner === 1) damage.set(a, (damage.get(a) ?? 0) + dmg);
-      if (res.winner === 0 && b >= 0) damage.set(b, (damage.get(b) ?? 0) + dmg);
-    }
+    this.syncTeams();
+    if (this.s.duos) {
+      // 雙人模式：一場隊伍戰鬥（兩組配對的第一組代表這場）
+      for (const [a, b] of this.s.pairs) if (a % 2 === 0) this.teamCombat(this.teamOf(a), b < 0 ? -1 : this.teamOf(b), damage);
+    } else for (const [a, b] of this.s.pairs) this.soloCombat(a, b, damage);
     for (const [i, d0] of damage) {
       const p = this.player(i);
       let d = d0;
@@ -1928,6 +1977,7 @@ export class BgGame {
       p.armor -= fromArmor;
       p.hp -= d - fromArmor;
     }
+    this.syncTeams();
     // 戰鬥後才結算的酒館法術：過度自信、贏家的麵包；起始戰鬥的法術用完了
     for (const p of this.alive()) {
       const res = p.results[p.results.length - 1];
@@ -1961,6 +2011,7 @@ export class BgGame {
     const dying = this.alive()
       .filter((p) => p.hp <= 0)
       .sort((x, y) => x.hp - y.hp);
+    if (this.s.duos) return this.eliminateTeams(dying);
     let place = this.alive().length;
     for (const p of dying) {
       p.alive = false;
@@ -1972,6 +2023,148 @@ export class BgGame {
     const left = this.alive();
     if (left.length <= 1) {
       for (const p of left) p.place = 1;
+      this.s.phase = 'over';
+    }
+  }
+
+  private combatOpts(record: boolean) {
+    return {
+      rng: this.s,
+      turn: this.s.round,
+      record,
+      nextUid: () => this.nextUid(),
+      inLobby: (id: string) => id in this.s.pool,
+      inLobbySpell: (id: string) => this.spellInLobby(id),
+      give: (p: BPlayer, id: string, o?: GiveOpts) => this.giveFromCombat(p, id, o),
+      goldenize: (p: BPlayer, m: BMinion) => this.goldenize(p, m),
+      giveRandom: (p: BPlayer, f: (id: string) => boolean) => {
+        const id = this.draw(f);
+        if (id) this.addMinion(p, this.make(id));
+      },
+    };
+  }
+
+  private soloCombat(a: number, b: number, damage: Map<number, number>) {
+    const pa = this.player(a);
+    const ghost = b < 0 ? this.ghost() : null;
+    const pb = b < 0 ? ghost : this.player(b);
+    const boards: [BMinion[], BMinion[]] = [pa.board.map((m) => ({ ...m })), pb ? (b < 0 ? pb.deathBoard ?? [] : pb.board).map((m) => ({ ...m })) : []];
+    const record = pa.isHuman || (b >= 0 && this.player(b).isHuman);
+    const sideA = this.sideInput(pa, true);
+    const sideB: SideInput = pb
+      ? b < 0
+        ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.powerHero ?? pb.heroId, hooks: this.hooks(pb), hand: [], persist: false }
+        : this.sideInput(pb, true)
+      : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
+    const res = runCombat([sideA, sideB], this.combatOpts(record));
+    const cap = damageCap(this.s.round, this.alive().length);
+    const dmg = Math.min(cap, res.damage);
+    const winner = res.winner === null ? null : res.winner === 0 ? a : b;
+    this.s.combats.push({ round: this.s.round, a, b, ghostOf: ghost?.idx ?? null, winner, damage: dmg, boards, frames: res.frames });
+    pa.results.push(res.winner === null ? 'draw' : res.winner === 0 ? 'win' : 'loss');
+    pa.lastDied = res.died[0];
+    pa.lastDiedUids = res.diedSrc[0];
+    pa.lastBoardIds = boards[0].map((m) => m.id);
+    for (const hk of this.hooks(pa)) hk.afterCombat?.(this, pa, pa.results[pa.results.length - 1]);
+    pa.lastOpp = b;
+    if (b >= 0) {
+      const pbb = this.player(b);
+      pbb.results.push(res.winner === null ? 'draw' : res.winner === 1 ? 'win' : 'loss');
+      pbb.lastDied = res.died[1];
+      pbb.lastDiedUids = res.diedSrc[1];
+      pbb.lastBoardIds = boards[1].map((m) => m.id);
+      for (const hk of this.hooks(pbb)) hk.afterCombat?.(this, pbb, pbb.results[pbb.results.length - 1]);
+      pbb.lastOpp = a;
+      pa.seen[b] = { round: this.s.round, board: boards[1], tier: pbb.tier, heroId: pbb.heroId };
+      pbb.seen[a] = { round: this.s.round, board: boards[0], tier: pa.tier, heroId: pa.heroId };
+    }
+    if (res.winner === 1) damage.set(a, (damage.get(a) ?? 0) + dmg);
+    if (res.winner === 0 && b >= 0) damage.set(b, (damage.get(b) ?? 0) + dmg);
+  }
+
+  /** 雙人模式：隊伍對隊伍的戰鬥（先上場的隊員被打光後換隊友） */
+  private teamCombat(ta: number, tb: number, damage: Map<number, number>) {
+    const order = (t: number): [BPlayer, BPlayer] => {
+      const [x, y] = this.teamMembers(t);
+      const tf = (this.s.teamFirst ??= {});
+      const last = tf[t];
+      // 先上場的隊員：75% 會換人，同一個人最多連續 3 次
+      let first = x;
+      if (last) {
+        const same = this.player(last.idx);
+        const swap = last.streak >= 3 || this.rand() < 0.75;
+        first = swap ? (same === x ? y : x) : same;
+      } else first = this.rand() < 0.5 ? x : y;
+      tf[t] = { idx: first.idx, streak: last && last.idx === first.idx ? last.streak + 1 : 1 };
+      return first === x ? [x, y] : [y, x];
+    };
+    const [a1, a2] = order(ta);
+    const side = (p: BPlayer): SideInput => this.sideInput(p, true);
+    const sideA: SideInput = { ...side(a1), next: side(a2) };
+    let sideB: SideInput;
+    let ghostOf: number | null = null;
+    let teamB: BPlayer[] = [];
+    if (tb >= 0) {
+      const [b1, b2] = order(tb);
+      teamB = [b1, b2];
+      sideB = { ...side(b1), next: side(b2) };
+    } else {
+      // 殘影：最近被淘汰的隊伍
+      const g = this.ghost();
+      const gs = g ? [g, this.player(g.idx ^ 1)] : [];
+      ghostOf = g?.idx ?? null;
+      const gi = (p: BPlayer): SideInput => ({ player: p, board: p.deathBoard ?? [], tier: p.tier, heroId: p.powerHero ?? p.heroId, hooks: this.hooks(p), hand: [], persist: false });
+      sideB = gs.length ? { ...gi(gs[0]), next: gi(gs[1]) } : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
+    }
+    const teamA = [a1, a2];
+    const record = [...teamA, ...teamB].some((p) => p.isHuman);
+    const boards: [BMinion[], BMinion[]] = [a1.board.map((m) => ({ ...m })), sideB.board.map((m) => ({ ...m }))];
+    const startBoards = new Map([...teamA, ...teamB].map((p) => [p.idx, p.board.map((m) => ({ ...m }))]));
+    const res = runCombat([sideA, sideB], this.combatOpts(record));
+    const cap = damageCap(this.s.round, this.alive().length);
+    const dmg = Math.min(cap, res.damage);
+    const winner = res.winner === null ? null : res.winner === 0 ? a1.idx : tb >= 0 ? teamB[0].idx : -1;
+    this.s.combats.push({ round: this.s.round, a: a1.idx, b: tb >= 0 ? teamB[0].idx : -1, ghostOf, winner, damage: dmg, boards, frames: res.frames, teamA: teamA.map((p) => p.idx), teamB: teamB.map((p) => p.idx) });
+    const finish = (team: BPlayer[], won: 0 | 1, opp: BPlayer[]) => {
+      const r = res.winner === null ? 'draw' : res.winner === won ? 'win' : 'loss';
+      team.forEach((p, k) => {
+        p.results.push(r);
+        p.lastDied = res.byPlayer?.[p.idx]?.died ?? [];
+        p.lastDiedUids = res.byPlayer?.[p.idx]?.diedSrc ?? [];
+        p.lastBoardIds = (startBoards.get(p.idx) ?? []).map((m) => m.id);
+        for (const hk of this.hooks(p)) hk.afterCombat?.(this, p, r);
+        const o = opp[k];
+        p.lastOpp = o ? o.idx : -1;
+        for (const q of opp) p.seen[q.idx] = { round: this.s.round, board: startBoards.get(q.idx) ?? [], tier: q.tier, heroId: q.heroId };
+      });
+    };
+    finish(teamA, 0, teamB);
+    if (teamB.length) finish(teamB, 1, teamA);
+    // 共用生命值：傷害只算在一位隊員身上，之後再同步
+    if (res.winner === 1) damage.set(a1.idx, (damage.get(a1.idx) ?? 0) + dmg);
+    if (res.winner === 0 && teamB.length) damage.set(teamB[0].idx, (damage.get(teamB[0].idx) ?? 0) + dmg);
+  }
+
+  /** 雙人模式的淘汰：整隊一起出局，名次是隊伍的名次 */
+  private eliminateTeams(dying: BPlayer[]) {
+    const teamsAlive = () => new Set(this.alive().map((p) => this.teamOf(p))).size;
+    let place = teamsAlive();
+    const done = new Set<number>();
+    for (const p of dying) {
+      const t = this.teamOf(p);
+      if (done.has(t)) continue;
+      done.add(t);
+      for (const x of this.teamMembers(t)) {
+        x.alive = false;
+        x.place = place;
+        x.diedRound = this.s.round;
+        x.deathBoard = x.board.map((m) => ({ ...m }));
+      }
+      place--;
+      for (const x of this.teamMembers(t)) for (const q of this.alive()) for (const hk of this.hooks(q)) hk.onHeroDeath?.(this, q, x);
+    }
+    if (teamsAlive() <= 1) {
+      for (const p of this.alive()) p.place = 1;
       this.s.phase = 'over';
     }
   }
