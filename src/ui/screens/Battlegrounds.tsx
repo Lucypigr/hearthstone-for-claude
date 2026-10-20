@@ -1,6 +1,6 @@
 // 英雄戰場：大廳、選英雄、招募、戰鬥、結算
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
-import { aiEmote, BG_DIFFICULTY_NAMES, skillLabel, STYLE_NAMES, type BgDifficulty, type BgEmoteEvent } from '../../bg/ai';
+import { aiEmote, aiRecruit, BG_DIFFICULTY_NAMES, skillLabel, STYLE_NAMES, type BgDifficulty, type BgEmoteEvent } from '../../bg/ai';
 import { SPEC, TRIPLE_REWARD } from '../../bg/cards';
 import { SPELL_SPEC } from '../../bg/spells';
 import { bgCard, racesOf, tierOf } from '../../bg/data';
@@ -28,14 +28,16 @@ export interface BgOptions {
   anomaly: boolean;
   quests: boolean;
   buddies: boolean;
+  duos: boolean;
 }
-const DEFAULT_OPTIONS: BgOptions = { trinkets: true, timewarp: true, anomaly: true, quests: true, buddies: true };
+const DEFAULT_OPTIONS: BgOptions = { trinkets: true, timewarp: true, anomaly: true, quests: true, buddies: true, duos: false };
 const OPTION_NAMES: [keyof BgOptions, string, string][] = [
   ['trinkets', '💍 飾品', '第 6 回合開次級飾品商店、第 9 回合開強效飾品商店，花金幣買一個飾品'],
   ['timewarp', '⏳ 時光扭曲', '第 6 回合去次級、第 9 回合去高級時光扭曲，用時光晶幣買特別的手下與法術'],
   ['anomaly', '🌀 異象', '每局隨機一個改變規則的異象（例如以 10 枚金幣開始、只有 1～4 本……）'],
   ['quests', '📜 任務', '第 4 回合從 3 個任務中選一個，完成後拿到它的獎勵'],
   ['buddies', '🤝 英雄夥伴', '每位英雄都有專屬的夥伴手下：按下夥伴按鈕花金幣拿到它（越晚越便宜，2 張就能做成金卡）'],
+  ['duos', '👥 雙人模式', '兩人一隊（你和一位電腦隊友）：共用 30 點生命值，花 1 枚金幣把手牌傳給隊友；戰鬥時你們輪流上場，先上場的被打光後換隊友接著打'],
 ];
 
 function loadOptions(): BgOptions {
@@ -407,9 +409,11 @@ function Leaderboard({ s, G, now, onPeek, peek }: { s: BgSession; G: BgGame; now
   const next = G.s.phase === 'recruit' ? G.opponentOf(0) : null;
   const order = [...G.s.players].sort((a, b) => {
     if (a.alive !== b.alive) return a.alive ? -1 : 1;
-    if (!a.alive) return (a.place ?? 9) - (b.place ?? 9);
-    return b.hp + b.armor - (a.hp + a.armor);
+    if (!a.alive) return (a.place ?? 9) - (b.place ?? 9) || a.idx - b.idx;
+    // 雙人模式：隊友排在一起
+    return b.hp + b.armor - (a.hp + a.armor) || (G.s.duos ? G.teamOf(a) - G.teamOf(b) || a.idx - b.idx : 0);
   });
+  const mate = G.partner(me);
   const elapsed = (now - s.roundStart) / 1000;
   return (
     <div className="bg-board-list">
@@ -430,6 +434,8 @@ function Leaderboard({ s, G, now, onPeek, peek }: { s: BgSession; G: BgGame; now
             <div className="bg-lb-info">
               <div className="bg-lb-name">
                 {next === p.idx && <span title="下一個對手">⚔️</span>}
+                {mate === p && <span title="你的隊友">🤝</span>}
+                {G.s.duos && <span className="muted small" title="隊伍">［{G.teamOf(p) + 1}］</span>}
                 {p.name}
               </div>
               <div className="bg-lb-sub">
@@ -441,7 +447,7 @@ function Leaderboard({ s, G, now, onPeek, peek }: { s: BgSession; G: BgGame; now
                     {tribe && <span title={TRIBE_NAMES[tribe]}>{TRIBE_ICONS[tribe]}</span>}
                   </>
                 ) : (
-                  <span>{PLACE_NAMES[p.place ?? 8]}</span>
+                  <span>{G.s.duos ? `隊伍${PLACE_NAMES[p.place ?? 4]}` : PLACE_NAMES[p.place ?? 8]}</span>
                 )}
               </div>
               <div className="bg-lb-results">
@@ -467,7 +473,9 @@ function Leaderboard({ s, G, now, onPeek, peek }: { s: BgSession; G: BgGame; now
 function PeekPanel({ G, idx, onClose }: { G: BgGame; idx: number; onClose: () => void }) {
   const me = G.human;
   const p = G.player(idx);
-  const seen = me.seen[idx];
+  const isMate = G.partner(me) === p;
+  // 隊友：看得到現在的戰隊
+  const seen = isMate ? { round: G.round, board: p.board, tier: p.tier, heroId: p.heroId } : me.seen[idx];
   const hero = heroOf(p);
   const power = powerCardOf(p);
   return (
@@ -483,7 +491,7 @@ function PeekPanel({ G, idx, onClose }: { G: BgGame; idx: number; onClose: () =>
       <RelicBar G={G} p={p} side="bottom" />
       {seen ? (
         <>
-          <div className="muted small">第 {seen.round} 回合交手時的戰隊（旅店等級 {seen.tier}）</div>
+          <div className="muted small">{isMate ? `隊友現在的戰隊（旅店等級 ${seen.tier}・手牌 ${p.hand.length} 張・🪙${p.gold}）` : `第 ${seen.round} 回合交手時的戰隊（旅店等級 ${seen.tier}）`}</div>
           <div className="bg-row small">
             {seen.board.map((m) => (
               <MinionToken key={m.uid} m={m} p={null} G={G} combat tipSide="bottom" />
@@ -596,7 +604,7 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
   }
 
   if (view === 'combat') {
-    const rec = G.s.combats.find((c) => c.a === 0 || c.b === 0);
+    const rec = G.s.combats.find((c) => c.a === 0 || c.b === 0 || c.teamA?.includes(0) || c.teamB?.includes(0));
     return (
       <CombatView
         key={G.round}
@@ -1135,6 +1143,25 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                 ),
               )}
               {!me.hand.length && <div className="muted small">手牌（最多 10 張）</div>}
+              {G.s.duos && handCard && (
+                <button
+                  className="btn small bg-pass"
+                  disabled={busy || me.gold < 1}
+                  title="把這張卡傳給隊友"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    act(() => {
+                      G.pass(0, handCard.uid);
+                      // 電腦隊友收到卡後馬上想想要怎麼用
+                      const mate = G.partner(me);
+                      if (mate && !mate.isHuman && mate.alive) aiRecruit(G, mate);
+                    });
+                    setMode({ k: 'idle' });
+                  }}
+                >
+                  🎁 傳給 {G.partner(me)?.name} 🪙1
+                </button>
+              )}
             </div>
             <div className="bg-end">
               {nextOpp !== null && (
@@ -1472,16 +1499,21 @@ const FRAME_MS: Record<string, number> = { slow: 1.4, normal: 1, fast: 0.55 };
 function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord | undefined; speed: string; onDone: () => void }) {
   const G = s.game;
   const me = G.human;
-  const flip = rec ? rec.b === 0 : false;
-  const oppIdx = rec ? (flip ? rec.a : rec.b) : -1;
-  const opp = oppIdx >= 0 ? G.player(oppIdx) : rec?.ghostOf !== null && rec?.ghostOf !== undefined ? G.player(rec.ghostOf) : null;
+  const flip = rec ? rec.b === 0 || !!rec.teamB?.includes(0) : false;
   const frames: CombatFrame[] = rec?.frames ?? (rec ? [{ boards: rec.boards }] : []);
   const [i, setI] = useState(0);
+  // 雙人模式：現在在場上的是誰（隊友上場時換人）
+  const who = frames[Math.min(i, frames.length - 1)]?.who;
+  const oppIdx = rec ? (who ? who[flip ? 0 : 1] : flip ? rec.a : rec.b) : -1;
+  const ghostIdx = who && rec?.ghostOf !== null && rec?.ghostOf !== undefined ? who[flip ? 0 : 1] : rec?.ghostOf;
+  const opp = rec && rec.b >= 0 && oppIdx >= 0 ? G.player(oppIdx) : ghostIdx !== null && ghostIdx !== undefined && ghostIdx >= 0 ? G.player(ghostIdx) : null;
+  const meIdx = who ? who[flip ? 1 : 0] : 0;
+  const front = meIdx >= 0 ? G.player(meIdx) : me;
   const [bubble, setBubble] = useState<{ who: 'me' | 'opp'; text: string } | null>(null);
   const done = i >= frames.length - 1;
   const factor = FRAME_MS[speed] ?? 1;
   /** true = 你贏、false = 你輸、null = 平手 */
-  const myWin = rec ? (rec.winner === null ? null : rec.winner === 0) : null;
+  const myWin = rec ? (rec.winner === null ? null : flip ? rec.winner === rec.b : rec.winner === rec.a) : null;
 
   useEffect(() => {
     if (done) return;
@@ -1547,8 +1579,8 @@ function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord
   let resultText = '';
   if (done && rec) {
     if (myWin === null) resultText = '平手！雙方都沒有受到傷害';
-    else if (myWin) resultText = `勝利！${oppIdx < 0 ? '（殘影不會受到傷害）' : `${opp?.name ?? ''} 受到 ${rec.damage} 點傷害`}`;
-    else resultText = `落敗…你受到 ${rec.damage} 點傷害`;
+    else if (myWin) resultText = `勝利！${rec.b < 0 ? '（殘影不會受到傷害）' : `${G.s.duos ? '對手隊伍' : opp?.name ?? ''} 受到 ${rec.damage} 點傷害`}`;
+    else resultText = `落敗…${G.s.duos ? '你們的隊伍' : '你'}受到 ${rec.damage} 點傷害`;
   }
   const won = myWin === true;
 
@@ -1570,7 +1602,7 @@ function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord
             </HeroPortrait>
           )}
           <div>
-            <b>{opp ? `${opp.name}${oppIdx < 0 ? ' 的殘影' : ''}` : '（沒有對手）'}</b>
+            <b>{opp ? `${opp.name}${rec && rec.b < 0 ? ' 的殘影' : ''}` : '（沒有對手）'}</b>
             <div className="muted small">{opp && `${bgCard(opp.heroId).name}・旅店等級 ${opp.tier}`}</div>
           </div>
           {bubble?.who === 'opp' && <div className="bg-bubble">{bubble.text}</div>}
@@ -1579,13 +1611,13 @@ function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord
         <div className="bg-combat-mid">{done && <div className={`bg-result ${won ? 'win' : myWin === null ? 'draw' : 'loss'}`}>{resultText}</div>}</div>
         {row(mine, 'me')}
         <div className="bg-combat-hero me">
-          <HeroPortrait p={me} size={70}>
-            <span className="bg-hero-hp">{me.hp}</span>
-            {me.armor > 0 && <span className="bg-hero-armor">{me.armor}</span>}
+          <HeroPortrait p={front} size={70}>
+            <span className="bg-hero-hp">{front.hp}</span>
+            {front.armor > 0 && <span className="bg-hero-armor">{front.armor}</span>}
           </HeroPortrait>
           <div>
-            <b>{me.name}</b>
-            <div className="muted small">{bgCard(me.heroId).name}</div>
+            <b>{front.name}{front !== me ? '（隊友）' : ''}</b>
+            <div className="muted small">{bgCard(front.heroId).name}</div>
           </div>
           {bubble?.who === 'me' && <div className="bg-bubble me">{bubble.text}</div>}
           <div className="bg-emotes">
@@ -1614,11 +1646,11 @@ function OtherCombats({ G }: { G: BgGame }) {
   return (
     <ul className="bg-others">
       {G.s.combats
-        .filter((c) => c.a !== 0 && c.b !== 0)
+        .filter((c) => c.a !== 0 && c.b !== 0 && !c.teamA?.includes(0) && !c.teamB?.includes(0))
         .map((c, k) => (
           <li key={k}>
-            {name(c.a, c.ghostOf)} vs {name(c.b, c.ghostOf)}：
-            {c.winner === null ? '平手' : `${name(c.winner, c.ghostOf)} 獲勝（${c.damage} 點傷害）`}
+            {c.teamA ? c.teamA.map((x) => G.player(x).name).join('＋') : name(c.a, c.ghostOf)} vs {c.teamB?.length ? c.teamB.map((x) => G.player(x).name).join('＋') : name(c.b, c.ghostOf)}：
+            {c.winner === null ? '平手' : `${c.teamA && c.winner >= 0 ? `${G.player(c.winner).name} 的隊伍` : name(c.winner, c.ghostOf)} 獲勝（${c.damage} 點傷害）`}
             {[c.a, c.b].filter((x) => x >= 0 && !G.player(x).alive && G.player(x).diedRound === G.round).map((x) => (
               <b key={x} className="bg-out">・{G.player(x).name} 被淘汰</b>
             ))}
@@ -1647,7 +1679,7 @@ function ResultView({ s, onExit }: { s: BgSession; onExit: () => void }) {
       <div className="bg-results-body">
         <div className={`bg-place place-${r.place}`}>
           <HeroPortrait p={G.human} size={96} />
-          <h2>{PLACE_NAMES[r.place]}</h2>
+          <h2>{G.s.duos ? `隊伍${PLACE_NAMES[r.place]}` : PLACE_NAMES[r.place]}</h2>
           <p>
             🪙 +{r.gold}
             {s.rated && (

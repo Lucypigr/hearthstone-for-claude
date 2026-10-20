@@ -69,12 +69,13 @@ export function newSession(opts: {
   anomaly?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  duos?: boolean;
 }): BgSession {
   const p = getProfile();
   const rating = p.bg?.rating ?? 0;
   const seed = Math.floor(Math.random() * 2 ** 31);
   const lobby = findLobby(opts.rated ? { rating } : { difficulty: opts.difficulty ?? 'normal' }, seed);
-  const game = BgGame.create({ seed, humanName: opts.name, ais: lobby, trinkets: opts.trinkets, timewarp: opts.timewarp, anomaly: opts.anomaly, quests: opts.quests, buddies: opts.buddies });
+  const game = BgGame.create({ seed, humanName: opts.name, ais: lobby, trinkets: opts.trinkets, timewarp: opts.timewarp, anomaly: opts.anomaly, quests: opts.quests, buddies: opts.buddies, duos: opts.duos });
   for (const pl of game.s.players) if (!pl.isHuman) game.pickHero(pl.idx, aiPickHero(game, pl));
   const lobbyAvg = lobby.reduce((n, x) => n + x.persona.rating, 0) / lobby.length;
   const s: BgSession = { game, rated: opts.rated, difficulty: opts.difficulty, lobbyAvg, timer: opts.timer, roundStart: performance.now(), think: {} };
@@ -117,7 +118,8 @@ export function settle(s: BgSession): NonNullable<BgSession['result']> {
   if (s.result) return s.result;
   const me = s.game.human;
   const place = me.place ?? 1;
-  const r = recordBgGame(getProfile(), place, me.heroId, {
+  // 雙人模式：隊伍名次換算成八人局的名次來算積分
+  const r = recordBgGame(getProfile(), s.game.s.duos ? [0, 1, 3, 6, 8][place] ?? place : place, me.heroId, {
     rated: s.rated,
     lobbyAvg: s.lobbyAvg,
     difficulty: s.difficulty === 'mixed' ? undefined : s.difficulty,
