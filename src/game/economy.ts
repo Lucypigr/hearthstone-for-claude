@@ -12,6 +12,9 @@ export const DAILY_FIRST_WIN_BONUS = 50;
 
 export const DIFFICULTY_NAMES: Record<Difficulty, string> = { easy: '簡單', normal: '普通', hard: '困難' };
 
+/** 英雄戰場各名次的金幣獎勵（索引 = 名次） */
+export const BG_PLACE_GOLD = [0, 100, 70, 50, 35, 15, 10, 5, 5];
+
 export const CARDS_PER_PACK = 5;
 
 /** 每一格的稀有度：累積機率門檻（傳說 1.2%、史詩 3.3%、稀有 18.5%，其餘普通） */

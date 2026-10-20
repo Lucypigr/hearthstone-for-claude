@@ -25,6 +25,9 @@ export function Home({ go }: { go: (s: Screen) => void }) {
           <button className="btn big" onClick={() => go('play')}>
             ⚔️ 練習對戰
           </button>
+          <button className="btn big" onClick={() => go('bg')}>
+            🍺 英雄戰場
+          </button>
           <button className="btn big" onClick={() => go('dungeon')}>
             🕯 地城探險
           </button>
@@ -75,6 +78,7 @@ export function Home({ go }: { go: (s: Screen) => void }) {
               </li>
             ))}
             <li>天梯勝利：40 ～ 90 金幣（牌階越高越多），每月還有賽季獎勵</li>
+            <li>英雄戰場：依名次 5 ～ 100 金幣（第 1 名最多）</li>
             <li>每日首勝：額外 50 金幣 {dailyDone ? '（今天已領取）' : '（尚未領取）'}</li>
           </ul>
         </div>

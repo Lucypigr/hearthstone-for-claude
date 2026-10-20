@@ -250,7 +250,7 @@ const ZH_SUFFIX = ['大師', '王', '不會輸', '好想贏', '又輸了', '上�
 const EN_NAME = ['Dragon', 'Shadow', 'Frost', 'Pepper', 'Mochi', 'Kevin', 'Jason', 'Amy', 'Luna', 'Nova', 'Ace', 'Zed', 'Taco', 'Noob', 'Tiger', 'Wolf', 'Bread', 'Leo', 'Kai', 'Momo', 'Yuki', 'Bobo', 'Sky', 'Milk'];
 const EN_SUFFIX = ['Slayer', 'TW', 'GG', 'Main', 'Hunter', 'King', 'xD', 'owo', 'Pro', 'OTK', 'Face', 'Lord', 'Chan'];
 
-function makeName(r: () => number): string {
+export function makeName(r: () => number): string {
   const p = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)];
   const digits = () => String(Math.floor(r() * (r() < 0.5 ? 100 : 10000)));
   switch (Math.floor(r() * 7)) {
