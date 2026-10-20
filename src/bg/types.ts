@@ -198,6 +198,14 @@ export interface Discover {
   lockTurns?: number;
   /** 每個選項帶的黑暗贈禮 */
   gifts?: string[];
+  /** 選到的英雄能力變成第二個英雄能力 */
+  slot2?: boolean;
+  /** 巴羅夫：選項是玩家（索引） */
+  bet?: number[];
+  /** 選項是英雄專屬的選擇（凱瑞爾的強化、飆翼的航線、亞坦尼斯的神族、阿卡贊札拉克的奧秘） */
+  pick?: 'cariel' | 'flight' | 'protoss' | 'secret';
+  /** 凱莉根：選項是這個蟲族要變形成的樣子 */
+  morph?: number;
   /** 拿到時多給的關鍵字 */
   kw?: Keyword[];
   /** 時光扭曲商店：次級 / 高級、剩下的時光晶幣 */
@@ -239,6 +247,16 @@ export interface BPlayer {
   powerUses: number;
   /** 英雄能力已經不能再用（一局一次的能力） */
   powerSpent: boolean;
+  /** 第二個英雄能力（吉恩、雙重宇宙……）：哪位英雄的能力、這回合用了幾次、一局一次的用過了沒 */
+  power2?: string;
+  power2Uses?: number;
+  power2Spent?: boolean;
+  /** 巴羅夫：押注哪位玩家會贏下一場戰鬥 */
+  wager?: number | null;
+  /** 魔術大師阿卡贊札拉克：場上的奧秘 */
+  secrets?: string[];
+  /** 亞坦尼斯：買滿 14 張卡後拿到的神族 */
+  protoss?: string;
   freeRefreshes: number;
   /** 各種「本賽局」的計數（鮮血寶石加成、甲蟲加成、死亡的永恆騎士……） */
   c: Record<string, number>;

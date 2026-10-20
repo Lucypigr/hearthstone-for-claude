@@ -12,11 +12,12 @@ import { mostCommonType, SPELL_SPEC } from './spells';
 import { runCombat } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
-import { heroOf, HERO_SPEC, type HeroSpec } from './heroes';
+import { heroOf, heroOf2, HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { BOARD_MAX, canMagnetize, HAND_MAX, MINION_COST, specsOf } from './rules';
 import { relicCost, RELIC_SPEC } from './relics';
 import { twCost } from './timewarp';
+import { SECRET_SPEC } from './secrets';
 import { TRIBE_NAMES, TRIBES, type BgPersona, type BgStyle, type BMinion, type BPlayer, type HandCard, type Tribe } from './types';
 
 export type BgDifficulty = 'novice' | 'normal' | 'expert' | 'master';
@@ -367,14 +368,38 @@ function chooseDiscover(M: Mind) {
   if (!d) return;
   let best = 0;
   let bestV = -Infinity;
+  // 巴羅夫：押血量和酒館等級比較高的那位
+  if (d.bet) {
+    const score = (i: number) => G.player(i).hp + G.player(i).armor + G.player(i).tier * 4 + gauss(M) * (1 - M.persona.skill) * 10;
+    return G.choose(p.idx, score(d.bet[0]) >= score(d.bet[1]) ? 0 : 1);
+  }
+  // 凱莉根：變成等級最高的蟲族
+  if (d.morph !== undefined) {
+    d.options.forEach((id, i) => {
+      const v = tierOf(id) * 3 + M.r() * 2;
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    return G.choose(p.idx, best);
+  }
+  // 英雄專屬的選擇
+  if (d.pick) {
+    d.options.forEach((id, i) => {
+      let v = M.r();
+      if (d.pick === 'cariel') v += id.endsWith('p_t1') ? (G.round < 8 ? 3 : 1) : id.endsWith('t3') ? 2 : 1.5;
+      if (d.pick === 'flight') v += id.endsWith('t3') ? (G.round < 9 ? 3 : 1) : id.endsWith('t2') ? 2 : 1;
+      if (d.pick === 'secret') v += SECRET_SPEC.get(id)?.v ?? 3;
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    return G.choose(p.idx, best);
+  }
   // 時光扭曲：用時光晶幣買最值得的（每枚晶幣的價值），買不起就離開
   if (d.timewarp) {
     d.options.forEach((id, i) => {
-      if (twCost(id) > (d.chronum ?? 0)) return;
+      if (!G.canBuyWarp(p, id)) return;
       const v = (bgCard(id).type === 'MINION' ? buyValue(M, G.make(id, !!d.golden)) : spellValue(M, id) + 2) / twCost(id);
       if (v > bestV) (bestV = v), (best = i);
     });
-    if (bestV === -Infinity || (p.hand.length >= HAND_MAX && bgCard(d.options[best]).type === 'MINION')) return G.choose(p.idx, -1);
+    if (bestV === -Infinity) return G.choose(p.idx, -1);
     M.notes.push(`時光扭曲買了${bgCard(d.options[best]).name}`);
     return G.choose(p.idx, best);
   }
@@ -500,10 +525,14 @@ function playFromHand(M: Mind): boolean {
 }
 
 function usePower(M: Mind): boolean {
+  return usePowerSlot(M, 0) || usePowerSlot(M, 1);
+}
+
+function usePowerSlot(M: Mind, slot: number): boolean {
   const { G, p, persona } = M;
-  const h: HeroSpec | undefined = heroOf(p);
+  const h: HeroSpec | undefined = slot ? heroOf2(p) : heroOf(p);
   if (!h?.ai) return false;
-  const st = G.powerState(p);
+  const st = G.powerState(p, slot);
   if (!st.usable) return false;
   // 先確保有錢買東西（技術好的會算好）
   if (st.cost > 0 && persona.skill > 0.5 && p.gold - st.cost < G.minionCost(p) && p.gold - st.cost > 0 && G.round > 2 && h.id !== 'BG32_HERO_001') return false;
@@ -511,7 +540,7 @@ function usePower(M: Mind): boolean {
   const t = h.ai(G, p);
   if (t === undefined) return false;
   try {
-    G.usePower(p.idx, t === 'none' ? undefined : t.uid, undefined, h.aiChoice?.(G, p) ?? 0);
+    G.usePower(p.idx, t === 'none' ? undefined : t.uid, undefined, h.aiChoice?.(G, p) ?? 0, slot);
   } catch {
     return false;
   }

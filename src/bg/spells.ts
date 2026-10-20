@@ -8,6 +8,7 @@ import type { BgGame } from './game';
 import { hasBattlecry } from './rules';
 import { PRIZES } from './prizes';
 import { linkTimewarpSpells, TW_SPELLS } from './timewarp';
+import { RAYNOR_SPELLS } from './herocards';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type BPlayer, type Keyword, type Tribe } from './types';
 
 export interface SpellCtx {
@@ -670,7 +671,7 @@ export const SPELLS: SpellSpec[] = [
 export const COMBAT_SPELLS = new Set(['BG28_168', 'BG36_246']);
 
 export const SPELL_SPEC = new Map<string, SpellSpec>();
-for (const s of [...SPELLS, ...PRIZES, ...TW_SPELLS]) if (!SPELL_SPEC.has(s.id)) SPELL_SPEC.set(s.id, s);
+for (const s of [...SPELLS, ...PRIZES, ...TW_SPELLS, ...RAYNOR_SPELLS]) if (!SPELL_SPEC.has(s.id)) SPELL_SPEC.set(s.id, s);
 
 /** 會給身材的酒館法術 */
 export const STAT_SPELLS = SPELLS.filter((s) => s.stats && hasBgCard(s.id) && bgCard(s.id).pool).map((s) => s.id);

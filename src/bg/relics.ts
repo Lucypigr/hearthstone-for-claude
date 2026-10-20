@@ -763,6 +763,7 @@ export const RELICS: RelicSpec[] = [
     onGain: (G, p) => void ((p.c['r:707'] = G.round), G.discoverPrize(p, 3)),
     startTurn: (G, p) => void ((G.round - cnt(p, 'r:707')) % 3 === 0 && G.round > cnt(p, 'r:707') && G.discoverPrize(p, 3)),
   },
+  { id: 'BG36_MagicItem_411', kind: L, v: 6, onGain: (G, p) => void ((p.gold += 3), G.offerPowers(p, 3, '重振之光：發現第二個英雄能力', true)) }, // 重振之光
   { id: 'BG35_MagicItem_823', kind: L, v: 6, onGain: (G, p) => G.offerTimewarpCards(p, (id) => twKind(id) === 'minor' && twCost(id) === 2 && bgCard(id).type === 'MINION', '古舊燭臺：發現一個次級時光扭曲的 2 費手下') }, // 古舊燭臺
   {
     id: 'BG36_MagicItem_206', // 不祥之石
@@ -1401,6 +1402,7 @@ export const RELICS: RelicSpec[] = [
     onGain: (G, p) => void (p.c['r:015'] = G.round + 1),
     startTurn: (G, p) => void (cnt(p, 'r:015') === G.round && ((p.gold += 4), G.offerTrinkets(p, 'greater'))),
   },
+  { id: 'BG33_Reward_017', kind: R, v: 6, onGain: (G, p) => G.offerPowers(p, 3, '星宙獎勵：發現第二個英雄能力', true) }, // 星宙獎勵
   { id: 'BG33_Reward_020', kind: R, v: 6, onGain: (_G, p) => void (inc(p, 'tsA', 2), inc(p, 'tsH', 1)) }, // 永恆咒術
 
   // ———————— 異象 ————————
@@ -1590,6 +1592,7 @@ export const RELICS: RelicSpec[] = [
   },
   { id: 'BG33_Anomaly_001', kind: A, needBuddies: true, onUpgrade: (_G, p) => void (p.buddy && (p.buddy.cost = Math.max(0, p.buddy.cost - 2))) }, // 召喚契約
   { id: 'BG36_Anomaly_002', kind: A }, // 黑暗贈禮！（按鈕在 game.ts 的 darkState）
+  { id: 'BG31_Anomaly_123', kind: A, startGame: (G, p) => G.offerPowers(p, 3, '雙重宇宙：發現第二個英雄能力', true) }, // 雙重宇宙
   { id: 'BG34_Anomaly_800', kind: A, needTimewarp: true, goldenWarp: 'major' }, // 大型金棘草藥水
   { id: 'BG34_Anomaly_800t', kind: A, needTimewarp: true, goldenWarp: 'minor' }, // 小型金棘草藥水
   { id: 'BG34_Anomaly_801', kind: A, needTimewarp: true, chronumExtra: 1 }, // 時光晶幣恩澤

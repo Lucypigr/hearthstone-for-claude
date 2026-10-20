@@ -304,6 +304,7 @@ export class CombatSim implements Combat {
     const before = t.hp;
     t.hp -= amount;
     this.hits.push({ uid: t.uid, amount });
+    if (source && this.side(source) !== side) for (const hk of this.hooks(side)) hk.onHitBy?.(this, side, source, amount);
     for (const { s, g } of specsOf(t)) s.onDamaged?.(this, t, amount, g);
     if (source) {
       for (const f of this.alive(this.side(source))) {
@@ -390,6 +391,12 @@ export class CombatSim implements Combat {
       this.resolveDeaths();
       return;
     }
+    for (const hk of this.hooks((1 - s) as 0 | 1)) hk.onAttacked?.(this, (1 - s) as 0 | 1, target, att);
+    if (att.dead || target.dead) {
+      this.frame(att.uid, target.uid);
+      this.resolveDeaths();
+      return;
+    }
     att.stealth = false;
     const ad = att.atk;
     const td = target.atk;
@@ -401,7 +408,7 @@ export class CombatSim implements Combat {
     const excess = this.damage(target, ad, att);
     for (const m of near) this.damage(m, ad, att);
     // 無敵（黑暗贈禮）：攻擊時免疫
-    const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990';
+    const immune = hasGift(att, 60) || att.id === 'BG34_Treasure_990' || att.id === 'BG31_HERO_811t8';
     if (!immune) this.damage(att, td, target);
     if (att.venom && !tShield && ad > 0 && !target.dead) {
       target.hp = 0;

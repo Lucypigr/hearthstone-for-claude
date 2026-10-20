@@ -147,6 +147,20 @@ async function main() {
     if (!c) throw new Error(`找不到 ${id}`);
     if (!out[id]) add(c);
   }
+  // 英雄專屬的卡：雷諾的戰巡艦與升級、亞坦尼斯的神族、凱莉根的蟲族、飆翼的航線、凱瑞爾的強化、
+  // 普崔希德的造物、阿卡贊札拉克的奧秘（與奧秘召喚的眼鏡蛇、蛇）
+  const HERO_CARDS = [
+    /^BG31_HERO_801pt[a-z]?\d?$/,
+    /^BG31_HERO_802pt\d?t?$/,
+    /^BG31_HERO_811(t\d*|p\d?)$/,
+    /^BG20_HERO_283p_t\d$/,
+    /^BG21_HERO_000(p_t1|_Buddyt3|_Buddyt4)$/,
+    /^BG25_HERO_100pt$/,
+    /^TB_Bacon_Secrets_\d+$/,
+    /^BG_EX1_170$/,
+    /^BG_EX1_554t$/,
+  ];
+  for (const c of zh) if (HERO_CARDS.some((re) => re.test(c.id)) && !out[c.id]) add(c);
   // 聚合體擁有所有種族
   (out['TB_BaconShop_HP_033t'] as { races?: string[] }).races = ['ALL'];
   // 飾品與任務獎勵：只收錄 src/bg/relics.ts 有實作的；異象與任務全部收錄

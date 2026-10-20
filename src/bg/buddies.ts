@@ -359,6 +359,8 @@ export const BUDDIES: MinionSpec[] = [
     battlecry: (r, _s, _g, t) => void (t && r.goldenize(t)),
     val: 5,
   },
+  // 飛行教練：你的航線觸發兩次（在飆翼的英雄能力處理）
+  { id: B('BG20_HERO_283'), val: 4 },
   // 雷義‧焰掌：回合開始時，拿到你英雄能力的夥伴
   {
     id: B('BG20_HERO_202'),
