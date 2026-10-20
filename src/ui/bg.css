@@ -653,7 +653,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* 選項太多（手機直式）時可以捲動，不會被切掉 */
+  justify-content: safe center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   gap: 14px;
   padding: 16px;
 }
@@ -1272,4 +1275,16 @@
 .bg-chronum {
   color: #9fe3ff;
   font-size: 0.85em;
+}
+
+/* 手機：發現的選項排成兩欄，比較短 */
+@media (max-width: 640px) {
+  .bg-discover {
+    gap: 8px;
+  }
+  .bg-discover-opt {
+    width: calc(50% - 8px);
+    min-width: 140px;
+    padding: 8px;
+  }
 }

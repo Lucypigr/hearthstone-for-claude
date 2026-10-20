@@ -21,6 +21,7 @@ import '../bg.css';
 const PLACE_NAMES = ['', '第 1 名', '第 2 名', '第 3 名', '第 4 名', '第 5 名', '第 6 名', '第 7 名', '第 8 名'];
 const NAME_KEY = 'hearthstone-for-claude/bg-name';
 const OPT_KEY = 'hearthstone-for-claude/bg-options';
+const TIMER_KEY = 'hearthstone-for-claude/bg-timer';
 
 export interface BgOptions {
   trinkets: boolean;
@@ -61,7 +62,21 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
   const p = useProfile();
   const bg = p.bg ?? newBgStats();
   const [mode, setMode] = useState<'rated' | BgDifficulty | 'mixed'>('rated');
-  const [timer, setTimer] = useState(true);
+  const [timer, setTimerState] = useState(() => {
+    try {
+      return localStorage.getItem(TIMER_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const setTimer = (v: boolean) => {
+    setTimerState(v);
+    try {
+      localStorage.setItem(TIMER_KEY, v ? '1' : '0');
+    } catch {
+      /* 私密瀏覽無法儲存 */
+    }
+  };
   const [opts, setOpts] = useState<BgOptions>(loadOptions);
   const [name, setName] = useState(() => {
     try {
@@ -149,7 +164,7 @@ export function BgLobby({ onStart }: { onStart: () => void }) {
               : `7 位對手都是「${BG_DIFFICULTY_NAMES[mode]}」程度（每個人還是有些差異），不影響積分。`}
         </p>
         <label className="bg-opt">
-          <input type="checkbox" checked={timer} onChange={(e) => setTimer(e.target.checked)} /> 回合計時（和真正的英雄戰場一樣，時間到自動結束招募）
+          <input type="checkbox" checked={timer} onChange={(e) => setTimer(e.target.checked)} /> ⏱ 回合計時（取消勾選 = 沒有時間限制，你按「結束回合」才開始戰鬥）
         </label>
         <div className="bg-opts">
           {OPTION_NAMES.map(([k, label, desc]) => (
