@@ -1,18 +1,36 @@
 // 英雄夥伴（每位英雄的專屬手下；開啟「英雄夥伴」時才會出現夥伴按鈕）
 // 只收錄效果能完整執行的夥伴；沒有實作的英雄不會有夥伴按鈕
-import type { MinionSpec } from './api';
-import { isRace, racesOf, tierOf } from './data';
-import { hasBattlecry } from './rules';
-import { BOUNTIES, isTavernSpell, spellCostOf, STAT_SPELLS } from './spells';
+import type { MinionSpec, Recruit } from './api';
+import { hasBgCard, isRace, racesOf, tierOf } from './data';
+import { upgradeFor, ZERG } from './herocards';
+import { TW_MINIONS, wheel } from './timewarp';
+import { hasBattlecry, isTavernSpell, LATE, mostCommonType, spellCostOf } from './late';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type Tribe } from './types';
 
 const B = (hero: string) => `${hero}_Buddy`;
-const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
+const COIN = 'BG28_810';
+const GEM = 'BG20_GEM';
+const times = (g: number, f: () => void) => {
+  for (let k = 0; k < g; k++) f();
+};
+/** 時光扭曲手下的效果（有些夥伴和時光扭曲的手下一樣） */
+const TW = (n: string) => TW_MINIONS.find((x) => x.id === `BG34_Giant_${n}`)!;
+/** 「有用的卡」：幸運幣、酒館法術或你的等級的手下 */
+function helpful(r: Recruit) {
+  const roll = r.rand();
+  if (roll < 0.4) return r.getSpell(COIN);
+  if (roll < 0.8) {
+    const id = r.drawSpell((x) => tierOf(x) <= r.p.tier);
+    if (id) return r.getSpell(id);
+  }
+  r.getRandom((id) => tierOf(id) === r.p.tier);
+}
+const race = (m: BMinion, t: Tribe) => isRace(m, t);
 function distinctTypes(b: BMinion[]): number {
   const set = new Set<Tribe>();
   let wild = 0;
   for (const m of b) {
-    const r = racesOf(m.id);
+    const r = racesOf(m);
     if (r.length === TRIBES.length) wild++;
     else r.forEach((t) => set.add(t));
   }
@@ -206,7 +224,7 @@ export const BUDDIES: MinionSpec[] = [
     id: B('TB_BaconShop_HERO_75'),
     endTurn: (r, _s, g) => {
       for (let k = 0; k < 2 * g; k++) {
-        const id = r.pick(STAT_SPELLS.filter((x) => r.spellInLobby(x) && tierOf(x) <= r.p.tier));
+        const id = r.pick(LATE.stats.filter((x) => r.spellInLobby(x) && tierOf(x) <= r.p.tier));
         if (id) r.getSpell(id);
       }
     },
@@ -308,9 +326,9 @@ export const BUDDIES: MinionSpec[] = [
   // 巨牙海民劫掠者：戰吼、亡語、奮戰：拿到一張隨機的懸賞
   {
     id: B('TB_BaconShop_HERO_18'),
-    battlecry: (r, _s, g) => [...Array(g)].forEach(() => r.getSpell(r.pick(BOUNTIES.filter((x) => r.spellInLobby(x)))!)),
-    deathrattle: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(BOUNTIES.filter((x) => c.inLobbySpell(x)))!)),
-    rally: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(BOUNTIES.filter((x) => c.inLobbySpell(x)))!)),
+    battlecry: (r, _s, g) => [...Array(g)].forEach(() => r.getSpell(r.pick(LATE.bounties.filter((x) => r.spellInLobby(x)))!)),
+    deathrattle: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(LATE.bounties.filter((x) => c.inLobbySpell(x)))!)),
+    rally: (c, s, g) => [...Array(g)].forEach(() => c.give(c.side(s), c.pick(LATE.bounties.filter((x) => c.inLobbySpell(x)))!)),
     syn: 'PIRATE',
     val: 5,
   },
@@ -359,6 +377,8 @@ export const BUDDIES: MinionSpec[] = [
     battlecry: (r, _s, _g, t) => void (t && r.goldenize(t)),
     val: 5,
   },
+  // 飛行教練：你的航線觸發兩次（在飆翼的英雄能力處理）
+  { id: B('BG20_HERO_283'), val: 4 },
   // 雷義‧焰掌：回合開始時，拿到你英雄能力的夥伴
   {
     id: B('BG20_HERO_202'),
@@ -394,6 +414,324 @@ export const BUDDIES: MinionSpec[] = [
     syn: 'NAGA',
     val: 4,
   },
+
+  // ———— 第二批夥伴 ————
+  // 強大的冰哮：友方手下擊殺敵人後，永久 +3 生命值
+  { id: B('BG20_HERO_100'), onSideKill: (c, s, _k, _v, g) => c.perm(s, 0, 3 * g), val: 4 },
+  // 亡首賢者：拿到鮮血寶石時多拿一顆
+  {
+    id: B('BG20_HERO_103'),
+    onGetCard: (r, _s, g, card) => {
+      if (card.kind !== 'spell' || card.id !== GEM || r.p.c['~sage']) return;
+      r.p.c['~sage'] = 1;
+      try {
+        r.getGems(g);
+      } finally {
+        r.p.c['~sage'] = 0;
+      }
+    },
+    syn: 'QUILBOAR',
+    val: 4,
+  },
+  // 夢魘軟漿怪：被吞噬時多吐給一個手下（在 heroes.ts 處理）
+  { id: B('BG20_HERO_301'), val: 3 },
+  // 法莫斯隊長：回合結束時隨機強化「信念」
+  {
+    id: B('BG21_HERO_000'),
+    endTurn: (r, _s, g) => {
+      for (let k = 0; k < g; k++) {
+        const roll = Math.floor(r.rand() * 3);
+        if (roll === 0) r.counter('carN', 1);
+        else r.counter(roll === 1 ? 'carA' : 'carH', 2);
+      }
+    },
+    scale: 4,
+  },
+  // 典獄官塞爾沃特：回合開始時拿到下一個對手的夥伴
+  {
+    id: B('BG21_HERO_010'),
+    startTurn: (r, _s, g) => {
+      const o = r.G.opponentOf(r.p.idx);
+      const id = o !== null && o >= 0 ? B(r.G.player(o).heroId) : null;
+      if (id && BUDDY_IDS.has(id)) for (let k = 0; k < g; k++) r.give(r.make(id));
+    },
+    val: 6,
+  },
+  // 有駕駛的迴旋機器人：複製最左邊兩個亡語
+  { ...TW('599'), id: B('BG21_HERO_030') },
+  // 阿蟹：用「上膛」移除手下後拿到分身（在 heroes.ts 處理）
+  { id: B('BG22_HERO_000'), val: 4 },
+  // 幽靈迅猛龍：記住叫過的元素，亡語時一起叫出來
+  {
+    id: B('BG22_HERO_001'),
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < 4; k++) if (s.n & (1 << k)) for (let t = 0; t < g; t++) LATE.brukan(c, c.side(s), k + 1);
+    },
+    text: (m) => {
+      const names = ['大地', '火焰', '流水', '雷電'].filter((_x, k) => m.n & (1 << k));
+      return `在你叫出新的元素後，記住它。亡語：叫出這些元素${names.length ? `（${names.join('、')}）` : ''}`;
+    },
+    val: 4,
+  },
+  // 瓦登的水靈戰士（在 heroes.ts 處理）
+  { id: B('BG22_HERO_004'), scale: 4 },
+  // 蛙生（在 game.ts 處理）
+  { id: B('BG23_HERO_303'), val: 4 },
+  // 盤牙精英：造法手下出現在酒館時，拿到它的法術
+  {
+    id: B('BG23_HERO_304'),
+    onRefresh: (r, _s, g) => {
+      for (const m of r.p.shop) {
+        const sc = LATE.spec.get(m.id)?.spellcraft;
+        if (sc) for (let k = 0; k < g; k++) r.getSpell(sc, 1, true);
+      }
+    },
+    syn: 'NAGA',
+    val: 4,
+  },
+  // 『蠟滴』瓦蠟雷德：戰吼：酒館換成每個對手戰隊裡最高等級的手下
+  {
+    id: B('BG23_HERO_305'),
+    battlecry: (r) => {
+      const ids = r.G.alive()
+        .filter((q) => q !== r.p && q.board.length)
+        .map((q) => q.board.reduce((a, b) => (tierOf(b.id) > tierOf(a.id) ? b : a)).id)
+        .filter((id) => LATE.pool.includes(id));
+      if (!ids.length) return;
+      for (const m of r.p.shop) r.G.returnToPool(m);
+      r.p.shop = ids.slice(0, 7).map((id) => r.G.shopMinion(r.p, id));
+    },
+    val: 6,
+  },
+  // 納薩諾斯‧凋零者：戰吼：賣掉一個友方手下，身材平分給兩旁
+  {
+    id: B('BG23_HERO_306'),
+    target: (s, t) => t !== s,
+    battlecry: (r, _s, g, t) => {
+      if (!t) return;
+      const i = r.p.board.indexOf(t);
+      const ns = [r.p.board[i - 1], r.p.board[i + 1]].filter((m): m is BMinion => !!m);
+      const { atk, hp } = t;
+      r.G.sellRaw(r.p, t);
+      for (const m of ns) r.buff(m, Math.floor((atk * g) / ns.length), Math.floor((hp * g) / ns.length));
+    },
+    val: 5,
+  },
+  // 陰險貴族：賣掉時發現一個任務，完成拿到 8 枚金幣
+  { id: B('BG24_HERO_100'), onSell: (r) => r.G.offerQuests(r.p, 2, B('BG24_HERO_100')), val: 5 },
+  // 膿腸：召喚並拿到一個不死族造物
+  { ...TW('590'), id: B('BG25_HERO_100') },
+  // 星探：戰吼：讓一個夥伴變成金卡
+  { id: B('BG25_HERO_105'), target: (s, t) => t !== s && t.id.endsWith('_Buddy') && !t.golden, battlecry: (r, _s, _g, t) => void (t && r.goldenize(t)), val: 5 },
+  // 莊嚴詠唱者：英雄能力對手下使用後，它獲得這個手下一半的攻擊力（每回合換成生命值）
+  {
+    id: B('BG26_HERO_102'),
+    startTurn: (_r, s) => void (s.n = s.n ? 0 : 1),
+    onPowerUse: (r, s, t, g) => {
+      if (!t) return;
+      const n = Math.floor(s.atk / 2) * g;
+      if (s.n) r.buff(t, 0, n);
+      else r.buff(t, n, 0);
+    },
+    val: 4,
+  },
+  // 驚奇行李員：回合結束時拿到一張有用的卡
+  { id: B('BG30_HERO_304'), endTurn: (r, _s, g) => times(g, () => helpful(r)), val: 6 },
+  // 迷你澤瑞克：戰吼：選酒館裡的一個手下，變成它的複製
+  {
+    id: B('BG31_HERO_005'),
+    battlecry: (r, s) => {
+      const ids = [...new Set(r.p.shop.map((m) => m.id))].slice(0, 3);
+      r.offer(ids, '迷你澤瑞克：選擇要變成的手下', { transform: s.uid, golden: s.golden });
+    },
+    val: 5,
+  },
+  // 泰科斯‧芬利：施放兩張酒館法術後拿到隨機的戰巡艦升級
+  {
+    id: B('BG31_HERO_801'),
+    onSpell: (r, s, _t, g, id) => {
+      if (!isTavernSpell(id) || ++s.n % 2) return;
+      for (let k = 0; k < g; k++) {
+        const up = upgradeFor(r.p.tier, () => r.rand());
+        if (up) r.getSpell(up);
+      }
+    },
+    val: 5,
+  },
+  // 普羅比斯：吸附到機械上讓它變成金卡（在 game.ts 處理）
+  { id: B('BG31_HERO_802'), magnetic: true, syn: 'MECHANICAL', val: 6 },
+  // 碎角異化蟲：賣掉時發現一個 6/6 的蟲族
+  {
+    id: B('BG31_HERO_811'),
+    onSell: (r, _s, g) => {
+      for (let k = 0; k < g; k++) {
+        const bag = ZERG.flat().filter((id) => hasBgCard(id));
+        const opts: string[] = [];
+        while (opts.length < 3 && bag.length) opts.push(bag.splice(Math.floor(r.rand() * bag.length), 1)[0]);
+        r.offer(opts, '碎角異化蟲：發現一個 6/6 的蟲族', { stats: [6, 6] });
+      }
+    },
+    val: 6,
+  },
+  // 拉鍊仔：亡語：拿到一張有用的卡
+  { id: B('BG32_HERO_002'), deathrattle: (c, s, g) => times(g, () => c.give(c.side(s), c.rand() < 0.5 ? COIN : c.pick(LATE.tavern.filter((id) => c.inLobbySpell(id) && tierOf(id) <= c.heroTier(c.side(s)))) ?? COIN)), val: 5 },
+  // 石殼守護者：每回合第一個三合一獎勵發現金卡（在 game.ts 處理）
+  { id: B('BG33_HERO_000'), val: 6 },
+  // 伊克利普森伊利達瑞：第一個攻擊的手下這次攻擊免疫（在 combat.ts 處理）
+  { id: B('TB_BaconShop_HERO_08'), val: 4 },
+  // 鴿子領主（在 game.ts 處理）
+  { id: B('TB_BaconShop_HERO_12'), val: 4 },
+  // 迷路的卡爾：使用英雄能力後，聖盾手下 +2 攻擊力
+  { id: B('TB_BaconShop_HERO_15'), onPowerUse: (r, _s, _t, g) => r.p.board.forEach((m) => m.shield && r.buff(m, 2 * g, 0)), scale: 4 },
+  // 源質松鼠炸彈：亡語：本場戰鬥每死一個機械，對隨機敵人造成 4 點傷害
+  {
+    id: B('TB_BaconShop_HERO_17'),
+    onFriendDeath: (_c, s, d) => void (race(d, 'MECHANICAL') && (s.uses = (s.uses ?? 0) + 1)),
+    deathrattle: (c, s, g) => {
+      for (let k = 0; k < (s.uses ?? 0) * g; k++) {
+        const t = c.pick(c.enemies(s));
+        if (t) c.damage(t, 4, s);
+      }
+    },
+    syn: 'MECHANICAL',
+    val: 5,
+  },
+  // 街頭魔術師：變戲法改成進階奧秘（在 heroes.ts 處理）
+  { id: B('TB_BaconShop_HERO_21'), val: 4 },
+  // 出土嘍囉：英雄受到傷害時倒轉回去，獲得等量的身材（在 game.ts 處理）
+  { id: B('TB_BaconShop_HERO_25'), scale: 5 },
+  // 解凍勇士：回合結束時讓酒館裡一個凍結的手下變成金卡
+  {
+    id: B('TB_BaconShop_HERO_27'),
+    endTurn: (r, _s, g) => {
+      for (let k = 0; k < g; k++) {
+        const m = r.pick(r.p.shop.filter((x) => (r.p.frozen || x.iced) && !x.golden));
+        if (m) r.goldenize(m);
+      }
+    },
+    val: 6,
+  },
+  // 克蘇恩的觸手：另一個友方手下獲得身材後，+1/+1 直到下一回合
+  { id: B('TB_BaconShop_HERO_29'), onStatGain: (r, s, m, _a, _h, g) => void (m !== s && r.tmpBuff(s, g, g)), scale: 5 },
+  // 混聚體：你的聚合體獲得身材時，這個也獲得
+  { id: B('TB_BaconShop_HERO_33'), onStatGain: (_r, s, m, a, h, g) => void (m.id === 'TB_BaconShop_HP_033t' && ((s.atk += a * g), (s.hp += h * g))), scale: 5 },
+  // 尤格薩倫侍僧：回合開始時轉動尤格薩輪
+  { id: B('TB_BaconShop_HERO_35'), startTurn: (r, _s, g) => times(g, () => wheel(r)), val: 6 },
+  // 『男裝商人』艾許：賣掉手下後獲得兩頂 +1/+1 的帽子
+  {
+    id: B('TB_BaconShop_HERO_36'),
+    onSellOther: (_r, s, _m, g) => {
+      s.atk += 2 * g;
+      s.hp += 2 * g;
+      s.hat = (s.hat ?? 0) + 2 * g;
+    },
+    scale: 5,
+  },
+  // 瘋狂的猴子：賣掉時餵你的手下香蕉；施放 2 張法術後強化
+  {
+    id: B('TB_BaconShop_HERO_38'),
+    onSell: (r, s, g) => {
+      const n = (1 + Math.floor(s.n / 2)) * g;
+      for (const m of r.p.board) if (m !== s) r.buff(m, n, n);
+    },
+    onSpell: (_r, s) => void s.n++,
+    text: (m) => `當你賣掉此手下時，餵你的手下${1 + Math.floor(m.n / 2)}根香蕉（+1/+1）。施放2張法術後強化（還差${2 - (m.n % 2)}張！）`,
+    syn: 'BEAST',
+    val: 4,
+  },
+  // 泰坦守護者：手牌或戰場上的另一個手下獲得生命值時，這個也獲得
+  { id: B('TB_BaconShop_HERO_39'), onStatGain: (_r, s, m, _a, h, g) => void (m !== s && h > 0 && (s.hp += h * g)), inHandStatGain: (_r, s, m, _a, h, g) => void (m !== s && h > 0 && (s.hp += h * g)), scale: 6 },
+  // 資深探墓者：亡語：讓你最右邊的手下變成金卡
+  {
+    id: B('TB_BaconShop_HERO_41'),
+    deathrattle: (c, s, g) => {
+      const b = c.friends(s).filter((m) => m !== s && !m.golden);
+      for (const m of b.slice(-g)) c.goldenPerm(m);
+    },
+    val: 5,
+  },
+  // 見習領路者：戰吼：「探險者領袖」便宜 (2)
+  { id: B('TB_BaconShop_HERO_42'), battlecry: (r, _s, g) => r.counter('eliseDisc', 2 * g), val: 3 },
+  // 忠誠的嘍囉：每場戰鬥擊殺第二個手下後拿到分身
+  { ...TW('593'), id: B('TB_BaconShop_HERO_45') },
+  // 賽絲特拉：友方手下在戰鬥中獲得攻擊力時，永久 +1 生命值
+  { id: B('TB_BaconShop_HERO_52'), onCombatGain: (c, _s, m, a, _h, g) => void (a > 0 && c.perm(m, 0, g)), val: 5 },
+  // 克羅米：每回合第一次刷新是有用的（給你場上最多的種族）
+  {
+    id: B('TB_BaconShop_HERO_57'),
+    onRefresh: (r, _s, g) => {
+      if ((r.p.c['t:chromie'] ?? 0) >= g) return;
+      r.counter('t:chromie', 1);
+      const t = mostCommonType(r.p.board);
+      if (t) r.restock(Array.from({ length: r.p.shop.length }, () => (id: string) => isRace(id, t) && tierOf(id) <= r.p.tier));
+    },
+    val: 5,
+  },
+  // 奧核領主（在 heroes.ts 處理）
+  { id: B('TB_BaconShop_HERO_58'), val: 4 },
+  // 紅手百夫長（在 heroes.ts 處理）
+  { id: B('TB_BaconShop_HERO_60'), scale: 6 },
+  // 暗影看守者：戰吼：下一次英雄能力讓目標變成金卡
+  { id: B('TB_BaconShop_HERO_62'), battlecry: (r) => r.counter('powerGold', 1), val: 5 },
+  // 狂怒的參賽者（在 heroes.ts 處理）
+  { id: B('TB_BaconShop_HERO_67'), val: 5 },
+  // 小小科：回合開始時從生命值最低的對手戰隊拿到一個手下
+  {
+    id: B('TB_BaconShop_HERO_70'),
+    startTurn: (r, _s, g) => {
+      const opp = r.G.alive()
+        .filter((q) => q !== r.p && q.board.length)
+        .sort((a, b) => a.hp - b.hp)[0];
+      if (!opp) return;
+      for (let k = 0; k < g; k++) {
+        const m = r.pick(opp.board);
+        if (m) r.give(r.make(m.id));
+      }
+    },
+    val: 6,
+  },
+  // 詹迪斯的學徒：打出這回合已經打出過的手下後，你的手下獲得等同旅店等級的身材
+  {
+    id: B('TB_BaconShop_HERO_71'),
+    onPlay: (r, _s, m, g) => {
+      const k = `t:pl:${m.id}`;
+      r.counter(k, 1);
+      if ((r.p.c[k] ?? 0) >= 2) for (const x of r.p.board) r.buff(x, r.p.tier * g, r.p.tier * g);
+    },
+    val: 5,
+  },
+  // 巴羅夫領主的學徒：使用幸運幣後獲得 1 枚金幣
+  { id: B('TB_BaconShop_HERO_72'), onSpell: (r, _s, _t, g, id) => void (id === COIN && r.gainGold(g)), val: 4 },
+  // 冰雪元素：刷新時多一個凍結的元素
+  { ...TW('586'), id: B('TB_BaconShop_HERO_78') },
+  // 伯斯：發現一個手下後，給它 +2/+2 並強化
+  {
+    id: B('TB_BaconShop_HERO_90'),
+    afterDiscoverMinion: (_r, s, m, g) => {
+      const n = (2 + s.n) * g;
+      m.atk += n;
+      m.hp += n;
+      s.n++;
+    },
+    text: (m) => `在你發現一個手下後，賦予它+${2 + m.n}/+${2 + m.n}並強化此手下`,
+    val: 5,
+  },
+  // 法爾斯：賣掉時發現一個你剛好只有一個的手下的分身
+  {
+    id: B('TB_BaconShop_HERO_91'),
+    onSell: (r, s) => {
+      const all = [...r.p.board, ...r.p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))].filter((m) => m !== s && !m.id.endsWith('_Buddy'));
+      const ids = [...new Set(all.map((m) => m.id))].filter((id) => all.filter((m) => m.id === id).length === 1);
+      const opts: string[] = [];
+      while (opts.length < 3 && ids.length) opts.push(ids.splice(Math.floor(r.rand() * ids.length), 1)[0]);
+      r.offer(opts, '法爾斯：發現一個手下的分身');
+    },
+    val: 5,
+  },
+  // 獎品券收集者：賣掉時發現一個下一階的暗月獎品
+  { id: B('TB_BaconShop_HERO_94'), onSell: (r) => r.G.discoverPrize(r.p, Math.min(4, 1 + Math.floor(r.G.round / 4))), val: 6 },
+  // 遊蕩樹人：友方嘲諷手下被攻擊時，你的手下永久 +1/+1
+  { id: B('TB_BaconShop_HERO_95'), onFriendAttacked: (c, s, t, _a, g) => void (t.taunt && c.friends(s).forEach((m) => c.perm(m, g, g))), val: 6 },
 ];
 
 export const BUDDY_IDS = new Set(BUDDIES.map((b) => b.id));
@@ -403,21 +741,11 @@ let battlecryPool: string[] | null = null;
 let undeadPool: string[] | null = null;
 let drPool: string[] | null = null;
 function BATTLECRY_POOL(): string[] {
-  return (battlecryPool ??= POOL().filter((id) => hasBattlecry(id)));
+  return (battlecryPool ??= LATE.pool.filter((id) => hasBattlecry(id)));
 }
 function UNDEAD_POOL(): string[] {
-  return (undeadPool ??= POOL().filter((id) => isRace(id, 'UNDEAD')));
+  return (undeadPool ??= LATE.pool.filter((id) => isRace(id, 'UNDEAD')));
 }
 function DR_POOL(): string[] {
-  return (drPool ??= POOL().filter((id) => !!SPEC_REF?.get(id)?.deathrattle));
-}
-let POOL_REF: string[] | null = null;
-let SPEC_REF: Map<string, MinionSpec> | null = null;
-function POOL(): string[] {
-  return POOL_REF ?? [];
-}
-/** cards.ts 初始化完之後呼叫 */
-export function linkBuddyPools(pool: string[], spec: Map<string, MinionSpec>) {
-  POOL_REF = pool;
-  SPEC_REF = spec;
+  return (drPool ??= LATE.pool.filter((id) => !!LATE.spec.get(id)?.deathrattle));
 }

@@ -34,6 +34,22 @@ interface HsjCard {
 /** 戰場上會出現、但不在酒館卡池裡的卡（衍生物、法術） */
 const EXTRA_IDS = [
   'BG28_603t', // 甲蟲
+  'BG33_899', // 劇烈雪崩（雪崩貼紙）
+  'BG34_Giant_035t', // 時光扭曲亮鱗、指揮官、弓箭手、召喚師的造法
+  'BG34_Giant_210t',
+  'BG34_Giant_212t',
+  'BG34_Giant_324t',
+  'BG_CFM_315t', // 虎斑貓
+  'BG_BRM_006t', // 小鬼
+  'BG26_537', // 繁盛霜冰（罐裝小霜冰）
+  'BGS_061t', // 天空海盜（火藥桶）
+  'BG23_353t', // 金猴子（寶藏追尋者之路）
+  'BGS_029', // 變換者澤魯斯（澤魯斯的精華）
+  'BG31_Anomaly_102t', // 進化卷軸（繼續教育）
+  'BG24_Reward_715t', // 強化零件
+  'BG24_Reward_715t2',
+  'BG24_Reward_715t3',
+  'BG24_Reward_715t4',
   'BG_BOT_312t', // 微型機器人
   'BG_ICC_026t', // 骷髏
   'BGS_115t', // 涓滴效應
@@ -85,6 +101,14 @@ const EXTRA_IDS = [
   'BG23_HERO_303pt', // 沒有手下
   'TB_BaconShop_HP_038t', // 野生香蕉
   'BG_TTN_401', // 先祖自動機（自動機頭像）
+  'BG30_MagicItem_442t', // 鮮血魔像（魔像術）
+  'BG34_Giant_610t', // 衛星（時光扭曲的電子）
+  // 飾品、異象會給的手下（不在目前的酒館卡池裡）
+  'BG28_585', 'BG26_888', 'BG29_801', 'BG29_801t', 'BG30_104', 'BG_BOT_606', 'BG29_873', 'BG29_877', 'BG_EX1_564', 'BG21_014',
+  'BG28_551', 'BG21_005', 'BG26_157', 'BG26_350', 'BG_OG_221', 'BG21_006', 'BG29_140', 'BG25_041', 'BG27_513', 'BG31_822',
+  'BGS_066', 'BG31_826', 'BG31_360', 'BG35_151', 'BG24_707', 'BG33_840', 'BG34_639', 'BG35_140', 'BG35_141', 'BG31_817', 'BG32_172',
+  // 飾品、獎勵、異象給的法術
+  'BG35_MagicItem_817t', 'BG35_MagicItem_812t', 'BG27_Reward_504t', 'BG31_Anomaly_124t4', 'BG26_502t', 'BG27_Anomaly_302t', 'BG28_883', 'BG31_891',
 ];
 
 async function load(locale: string): Promise<HsjCard[]> {
@@ -145,6 +169,20 @@ async function main() {
     if (!c) throw new Error(`找不到 ${id}`);
     if (!out[id]) add(c);
   }
+  // 英雄專屬的卡：雷諾的戰巡艦與升級、亞坦尼斯的神族、凱莉根的蟲族、飆翼的航線、凱瑞爾的強化、
+  // 普崔希德的造物、阿卡贊札拉克的奧秘（與奧秘召喚的眼鏡蛇、蛇）
+  const HERO_CARDS = [
+    /^BG31_HERO_801pt[a-z]?\d?$/,
+    /^BG31_HERO_802pt\d?t?$/,
+    /^BG31_HERO_811(t\d*|p\d?)$/,
+    /^BG20_HERO_283p_t\d$/,
+    /^BG21_HERO_000(p_t1|_Buddyt3|_Buddyt4)$/,
+    /^BG25_HERO_100pt$/,
+    /^TB_Bacon_Secrets_\d+b?$/,
+    /^BG_EX1_170$/,
+    /^BG_EX1_554t$/,
+  ];
+  for (const c of zh) if (HERO_CARDS.some((re) => re.test(c.id)) && !out[c.id]) add(c);
   // 聚合體擁有所有種族
   (out['TB_BaconShop_HP_033t'] as { races?: string[] }).races = ['ALL'];
   // 飾品與任務獎勵：只收錄 src/bg/relics.ts 有實作的；異象與任務全部收錄
@@ -158,6 +196,12 @@ async function main() {
     else if (c.type === 'BATTLEGROUND_ANOMALY') add(c, { kind: 'anomaly' });
     else if (/^BG2[478]_Quest_\d+$/.test(c.id)) add(c, { kind: 'quest' });
     else if (c.isBattlegroundsBuddy && c.type === 'MINION' && c.id.endsWith('_Buddy')) add(c);
+    // 時光扭曲的卡（費用 = 時光晶幣）
+    else if ((c as { battlegroundsTimewarpCard?: number }).battlegroundsTimewarpCard && !/_G$/.test(c.id)) add(c, { cost: c.cost ?? 1 });
+    // 暗月馬戲團獎品
+    else if ((c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn) add(c, { prize: (c as { battlegroundsDarkmoonPrizeTurn?: number }).battlegroundsDarkmoonPrizeTurn });
+    // 黑暗贈禮（「(0)」是官方用來顯示計數的位置，拿掉）
+    else if ((c as { isBattlegroundsDarkGift?: boolean }).isBattlegroundsDarkGift) add(c, { kind: 'gift', text: clean(c.text).replace(/\s*<i>\(0\)<\/i>|\s*\(0\)/g, '') });
   }
   // 英雄與英雄能力
   for (const c of zh) {

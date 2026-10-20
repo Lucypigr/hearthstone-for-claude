@@ -46,8 +46,10 @@ export interface BgCardData {
   races?: string[];
   mech?: string[];
   cost?: number;
+  /** 暗月馬戲團獎品的等級 */
+  prize?: number;
   /** 飾品、任務、任務獎勵、異象 */
-  kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest';
+  kind?: 'lesser' | 'greater' | 'reward' | 'anomaly' | 'quest' | 'gift';
   armor?: number;
   power?: string;
   /** 酒館裡會賣的法術 */
@@ -107,6 +109,8 @@ export interface BMinion {
   temp?: boolean;
   /** 戰鬥中：殺死它的手下 */
   killer?: number;
+  /** 戰鬥中：殺死這個手下的敵方手下（電台明星用） */
+  killedBy?: BMinion;
   /** 三連做出來的金卡：打出時拿到三合一獎勵 */
   reward?: boolean;
   /** 身上有幾顆鮮血寶石（寶石沒收用） */
@@ -125,20 +129,40 @@ export interface BMinion {
   iced?: boolean;
   /** 額外的亡語（布魯坎的大地祈願、塔姆辛、恩若司之魚） */
   extraDr?: { id: string; g: number }[];
+  /** 額外的奮戰（時光扭曲石殼守護者） */
+  extraRally?: { id: string; g: number }[];
   /** 跳舞的戴瑞：帽子 */
   hat?: number;
+  /** 黑暗贈禮（也用來放暗月獎品給的效果） */
+  gifts?: string[];
+  /** 戰鬥中：這次攻擊免疫 */
+  immuneAtk?: boolean;
+  /** 變換者澤魯斯：在手牌裡每回合變形 */
+  shifter?: boolean;
+  /** 黃金錘：暫時的金卡（下一回合變回來時要扣掉的身材） */
+  tmpGold?: [number, number];
+  /** 額外的種族（銅鬚頭像、德拉克瑞頭像） */
+  xr?: Tribe[];
+  /** 酒館中：身上有暗月彩票（希拉斯） */
+  ticket?: boolean;
+  /** 黑暗贈禮的計時（孵育：在這個回合身材加倍） */
+  gt?: number;
+  /** 戰鬥中：聖盾已經被打了幾次（托瑞斯的祝福） */
+  shieldHits?: number;
 }
 
 export type HandCard =
   /** locked = 這個回合還不能打出（時光尋跡） */
   | { kind: 'minion'; uid: number; m: BMinion; locked?: number; pair?: number }
   /** 法術：酒館法術、鮮血寶石、旅店幸運幣、三合一獎勵、造法法術 */
-  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number; pair?: number; turns?: number };
+  | { kind: 'spell'; uid: number; id: string; g: number; temp?: boolean; tier?: number; locked?: number; pair?: number; turns?: number; evo?: number };
 
 /** 酒館裡賣的法術 */
 export interface ShopSpell {
   uid: number;
   id: string;
+  /** 法術彩票（魔法商店異象） */
+  ticket?: boolean;
 }
 
 /** 之後才會發生的效果（贏家的麵包） */
@@ -184,8 +208,37 @@ export interface Discover {
   rewards?: string[];
   /** 拿到時把身材設成這樣（旅店老闆的爐火） */
   stats?: [number, number];
+  /** 拿到時多給的身材 */
+  bonus?: [number, number];
+  /** 選到的手下取代戰場上的這個手下（古神的印記、加速器） */
+  transform?: number;
+  /** 飾品：免費拿到並取代這個飾品（神秘立方體、旅遊兌換券） */
+  freeRelic?: string;
+  /** 記住選到的卡（可攜式工廠） */
+  remember?: string;
+  /** 取代飾品時要付錢 */
+  payRelic?: boolean;
+  /** 選到的法術教給 1/1 魚人（魔術魚文物） */
+  teach?: boolean;
   /** 拿到時鎖定幾回合 */
   lockTurns?: number;
+  /** 基里的雙蝕：選到的飾品拿兩個 */
+  twice?: boolean;
+  /** 每個選項帶的黑暗贈禮 */
+  gifts?: string[];
+  /** 選到的英雄能力變成第二個英雄能力 */
+  slot2?: boolean;
+  /** 巴羅夫：選項是玩家（索引） */
+  bet?: number[];
+  /** 選項是英雄專屬的選擇（凱瑞爾的強化、飆翼的航線、亞坦尼斯的神族、阿卡贊札拉克的奧秘） */
+  pick?: 'cariel' | 'flight' | 'protoss' | 'secret';
+  /** 凱莉根：選項是這個蟲族要變形成的樣子 */
+  morph?: number;
+  /** 拿到時多給的關鍵字 */
+  kw?: Keyword[];
+  /** 時光扭曲商店：次級 / 高級、剩下的時光晶幣 */
+  timewarp?: 'minor' | 'major';
+  chronum?: number;
 }
 
 export interface Seen {
@@ -222,6 +275,18 @@ export interface BPlayer {
   powerUses: number;
   /** 英雄能力已經不能再用（一局一次的能力） */
   powerSpent: boolean;
+  /** 第二個英雄能力（吉恩、雙重宇宙……）：哪位英雄的能力、這回合用了幾次、一局一次的用過了沒 */
+  power2?: string;
+  power2Uses?: number;
+  power2Spent?: boolean;
+  /** 巴羅夫：押注哪位玩家會贏下一場戰鬥 */
+  wager?: number | null;
+  /** 魔術大師阿卡贊札拉克：場上的奧秘 */
+  secrets?: string[];
+  /** 亞坦尼斯：買滿 14 張卡後拿到的神族 */
+  protoss?: string;
+  /** 飾品記住的卡（可攜式工廠） */
+  rmemo?: Record<string, string>;
   freeRefreshes: number;
   /** 各種「本賽局」的計數（鮮血寶石加成、甲蟲加成、死亡的永恆騎士……） */
   c: Record<string, number>;
@@ -249,6 +314,8 @@ export interface BPlayer {
   lastBoardIds?: string[];
   /** 上一場戰鬥死掉的手下（希瓦娜斯） */
   lastDied?: string[];
+  /** 上一場戰鬥中死掉的手下（招募階段的 uid） */
+  lastDiedUids?: number[];
   /** 費林大使：升到某等級才拿到的手下 */
   reserve?: { id: string; tier: number }[];
   /** 飾品與任務獎勵 */
@@ -292,6 +359,8 @@ export interface CombatFrame {
   /** 受到傷害的手下（顯示數字） */
   hits?: { uid: number; amount: number }[];
   note?: string;
+  /** 雙人模式：現在在場上的是哪位玩家 */
+  who?: [number, number];
 }
 
 export interface CombatResult {
@@ -305,4 +374,8 @@ export interface CombatResult {
   first: 0 | 1;
   /** 雙方死掉的手下 */
   died: [string[], string[]];
+  /** 死掉的手下在招募階段的 uid */
+  diedSrc: [number[], number[]];
+  /** 雙人模式：每位玩家死掉的手下 */
+  byPlayer?: Record<number, { died: string[]; diedSrc: number[] }>;
 }

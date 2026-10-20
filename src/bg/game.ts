@@ -1,15 +1,21 @@
 // 英雄戰場的一局：8 位玩家（你 + 7 個電腦）、共用的酒館卡池、招募階段、配對與戰鬥
-import type { Recruit } from './api';
+import type { GiveOpts, Recruit } from './api';
 import { COIN, GEM, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TOKENS, TRIPLE_REWARD } from './cards';
 
 const SURPRISE = 'BG26_175';
+/** 時光扭曲的戴奧斯：戰吼、亡語、奮戰觸發兩次 */
+const DEIOS = 'BG34_Giant_376';
 const LOCKBOX = 'BG36_520t';
 const FODDER = 'BG35_150t';
 import { BOUNTIES, isTavernSpell, mostCommonType, SPELL_SPEC, spellCostOf, TAVERN_SPELLS, type SpellCtx } from './spells';
 import { BUDDY_IDS } from './buddies';
 import { CombatSim, runCombat, type SideInput } from './combat';
-import { bgCard, isRace, racesOf, tierOf } from './data';
+import { bgCard, isRace, racesOf, raceRules, setParadox, tierOf } from './data';
+import { attachGift, GIFT_IDS, hasGift, PARADOX } from './gifts';
 import { heroOf, HERO_SPEC, heroAvailable, HEROES, SWAPPABLE_POWERS, type HeroSpec } from './heroes';
+import { PRIZE_IDS, prizeTier } from './prizes';
+import { TW_IDS, TW_SPELL_SPEC, twCost, twKind } from './timewarp';
+import { SECRET_SPEC } from './secrets';
 import { ANOMALIES, anomalyFits, QUEST_SPEC, QUESTS, questProgress, relicCost, RELIC_SPEC, RELICS, REWARDS, type RelicSpec } from './relics';
 import { nextRandom } from '../engine/rng';
 import {
@@ -44,6 +50,9 @@ export interface CombatRecord {
   /** 戰鬥開始時的雙方戰隊 */
   boards: [BMinion[], BMinion[]];
   frames?: CombatFrame[];
+  /** 雙人模式：兩隊的隊員 */
+  teamA?: number[];
+  teamB?: number[];
 }
 
 export interface BgState {
@@ -64,6 +73,20 @@ export interface BgState {
   trinkets?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  /** 這局有時光扭曲 */
+  timewarp?: boolean;
+  /** 這局的計數（不屬於任何玩家） */
+  c?: Record<string, number>;
+  /** 所有人共用的選項（勇士召喚） */
+  shared?: string[];
+  /** 黑暗悖論這局的樣子 */
+  paradox?: { tier: number; atk: number; hp: number; gift: string };
+  /** 雙人模式：兩人一隊（0+1、2+3、4+5、6+7），共用生命值與護甲 */
+  duos?: boolean;
+  /** 雙人模式：上次同步時的隊伍生命值與護甲 */
+  teamHp?: Record<number, { hp: number; armor: number }>;
+  /** 雙人模式：每隊上一場先上場的隊員與連續次數 */
+  teamFirst?: Record<number, { idx: number; streak: number }>;
 }
 
 export interface NewGameOptions {
@@ -76,8 +99,11 @@ export interface NewGameOptions {
   /** 異象：true = 隨機一個、字串 = 指定、false = 沒有 */
   anomaly?: boolean | string;
   trinkets?: boolean;
+  timewarp?: boolean;
   quests?: boolean;
   buddies?: boolean;
+  /** 雙人模式 */
+  duos?: boolean;
 }
 
 export class BgError extends Error {}
@@ -126,6 +152,10 @@ export class BgGame {
 
   constructor(s: BgState) {
     this.s = s;
+    setParadox(s.paradox);
+    // 孵育異變、多彩情誼：種族規則
+    raceRules.untypedAll = s.anomaly === 'BG31_Anomaly_112';
+    raceRules.buddiesAll = s.anomaly === 'BG33_Anomaly_005';
   }
 
   static create(o: NewGameOptions): BgGame {
@@ -136,13 +166,22 @@ export class BgGame {
     let anomaly: string | null = null;
     if (typeof o.anomaly === 'string') anomaly = o.anomaly;
     else if (o.anomaly) {
-      const fits = ANOMALIES.filter((a) => anomalyFits(a, tribes, { buddies: !!o.buddies }));
+      const fits = ANOMALIES.filter((a) => anomalyFits(a, tribes, { buddies: !!o.buddies, timewarp: !!o.timewarp }));
       anomaly = fits[Math.floor(r() * fits.length)]?.id ?? null;
     }
     const an = anomaly ? RELIC_SPEC.get(anomaly) : undefined;
     if (an?.tribes) tribes = an.tribes(tribes, [...TRIBES]);
     const players = [newPlayer(0, o.humanName, true), ...o.ais.map((a, i) => newPlayer(i + 1, a.name, false, a.persona))];
+    // 黑暗悖論：每局隨機的等級、身材與黑暗贈禮
+    const ptier = 1 + Math.floor(r() * 6);
+    const paradox = {
+      tier: ptier,
+      atk: 2 * ptier + Math.floor(r() * 3),
+      hp: 2 * ptier + 1 + Math.floor(r() * 3),
+      gift: GIFT_IDS.filter((x) => !x.endsWith('t11'))[Math.floor(r() * (GIFT_IDS.length - 1))],
+    };
     const g = new BgGame({
+      paradox,
       rng: rngState.rng,
       uid: 1,
       round: 0,
@@ -155,8 +194,10 @@ export class BgGame {
       combats: [],
       anomaly,
       trinkets: o.trinkets ?? false,
+      timewarp: !!o.timewarp,
       quests: !!o.quests || anomaly === 'BG27_Anomaly_Quests',
       buddies: !!o.buddies || anomaly === 'BG27_Anomaly_Buddies',
+      duos: !!o.duos,
     });
     for (const id of POOL_IDS) if (g.idInLobby(id)) g.s.pool[id] = COPIES[tierOf(id)] ?? 7;
     // 英雄：每個人拿到不重複的選擇
@@ -171,6 +212,10 @@ export class BgGame {
       g.s.heroOffers[p.idx] = heroes.slice(k, k + n);
       k += n;
     }
+    // 阮大師的變身盤：所有人都是同一位英雄；叫夥伴來：夥伴也在酒館卡池裡
+    const all = an?.allHeroes;
+    if (all) for (const p of players) g.s.heroOffers[p.idx] = [all];
+    if (an?.buddyPool) for (const id of BUDDY_IDS) if (g.idInLobby(id)) g.s.pool[id] = 3;
     return g;
   }
 
@@ -245,6 +290,8 @@ export class BgGame {
     const out: HeroSpec[] = [];
     const h = heroOf(p);
     if (h) out.push(h);
+    const h2 = p.power2 ? HERO_SPEC.get(p.power2) : undefined;
+    if (h2 && h2 !== h) out.push(h2);
     for (const id of p.relics ?? []) {
       const r = RELIC_SPEC.get(id);
       if (r) out.push(r as HeroSpec);
@@ -252,6 +299,10 @@ export class BgGame {
     if (this.s.anomaly) {
       const a = RELIC_SPEC.get(this.s.anomaly);
       if (a) out.push(a as HeroSpec);
+    }
+    for (const id of p.secrets ?? []) {
+      const sc = SECRET_SPEC.get(id);
+      if (sc) out.push(sc as HeroSpec);
     }
     return out;
   }
@@ -263,6 +314,8 @@ export class BgGame {
       const c = hk.minionCost?.(p, m);
       if (c !== undefined) cost = Math.min(cost, c);
     }
+    // 親友折扣（暗月獎品）：手下只要 2 金幣
+    if (p.c.prizeCost2) cost = Math.min(cost, 2);
     return cost === Infinity ? MINION_COST : cost;
   }
   refreshCost(p: BPlayer): number {
@@ -271,6 +324,11 @@ export class BgGame {
     // 瑪格努斯‧曼納斯頓（夥伴）：每回合 2 次刷新免費
     if ((p.c['t:magnus'] ?? 0) < 2 * this.count(p, 'TB_BaconShop_HERO_49_Buddy')) return 0;
     if ((p.c.malch ?? 0) < p.board.filter((m) => m.id === 'BG26_524').length * 2) return 0;
+    // 鴿子領主（夥伴）：酒館裡沒有這回合老鼠王的種族時，刷新免費
+    if (this.count(p, 'TB_BaconShop_HERO_12_Buddy')) {
+      const t = this.s.tribes[this.s.round % this.s.tribes.length];
+      if (!p.shop.some((m) => isRace(m, t))) return 0;
+    }
     return this.hooks(p).find((hk) => hk.refreshCost !== undefined)?.refreshCost ?? REFRESH_COST;
   }
   upgradeCost(p: BPlayer): number {
@@ -295,6 +353,8 @@ export class BgGame {
   private shopTierOk(p: BPlayer, id: string): boolean {
     const t = tierOf(id);
     if (t > p.tier) return false;
+    const set = this.hooks(p).find((hk) => hk.tierSet)?.tierSet;
+    if (set && !set.includes(t)) return false;
     if (this.hooks(p).some((hk) => hk.onlyTier)) return t === p.tier;
     return t >= Math.min(p.tier, this.minTier(p));
   }
@@ -319,14 +379,29 @@ export class BgGame {
   // —— 飾品、任務、夥伴 ——
   relicAvailable(p: BPlayer, r: RelicSpec): boolean {
     if ((p.relics ?? []).includes(r.id)) return false;
+    if (r.needBuddyHero && !BUDDY_IDS.has(`${p.powerHero ?? p.heroId}_Buddy`)) return false;
     if (r.needTribe && !this.s.tribes.includes(r.needTribe)) return false;
     const assoc = bgCard(r.id).assoc;
     if (assoc?.length && !assoc.some((t) => this.s.tribes.includes(t as Tribe))) return false;
     return true;
   }
   gainRelic(p: BPlayer, id: string) {
+    // 紀念品支架：買到強效飾品時，變成它的複製
+    if (RELIC_SPEC.get(id)?.kind === 'greater' && p.relics?.includes('BG30_MagicItem_888')) {
+      p.relics = p.relics.filter((x) => x !== 'BG30_MagicItem_888');
+      (p.relics ??= []).push(id);
+      RELIC_SPEC.get(id)?.onGain?.(this, p);
+    }
     (p.relics ??= []).push(id);
     RELIC_SPEC.get(id)?.onGain?.(this, p);
+    // 次級／強效占卜：第一個買到的飾品，英雄能力（水晶球）也變成它
+    const kind = RELIC_SPEC.get(id)?.kind;
+    const ball = (kind === 'lesser' && this.s.anomaly === 'BG35_Anomaly_007') || (kind === 'greater' && this.s.anomaly === 'BG35_Anomaly_008');
+    if (ball && !p.c.crystal) {
+      p.c.crystal = 1;
+      p.relics.push(id);
+      RELIC_SPEC.get(id)?.onGain?.(this, p);
+    }
   }
   /** 飾品商店：4 個選項，至少一個買得起 */
   offerTrinkets(p: BPlayer, kind: 'lesser' | 'greater') {
@@ -348,20 +423,21 @@ export class BgGame {
   }
   /** 飾品的價格（全都買不起的話，用剩下的金幣買） */
   relicPrice(p: BPlayer, d: Discover, id: string): number {
-    if (d.relics === 'reward') return 0;
+    if (d.relics === 'reward' || (d.freeRelic && !d.payRelic)) return 0;
     const cost = relicCost(id);
     if (cost <= p.gold) return cost;
     return d.options.some((x) => relicCost(x) <= p.gold) ? Infinity : p.gold;
   }
-  /** 第 4 回合：從 3 個任務中選一個（每個任務有不同的獎勵） */
-  offerQuests(p: BPlayer) {
+  /** 第 4 回合：從 3 個任務中選一個（每個任務有不同的獎勵）；戴納瑟斯王開局從 2 個選 */
+  offerQuests(p: BPlayer, n = 3, reward?: string) {
+    p.c.questOffered = 1;
     const qs = [...QUESTS];
     const rs = REWARDS.filter((id) => this.relicAvailable(p, RELIC_SPEC.get(id)!));
     const options: string[] = [];
     const rewards: string[] = [];
-    while (options.length < 3 && qs.length && rs.length) {
+    while (options.length < n && qs.length && rs.length) {
       options.push(qs.splice(Math.floor(this.rand() * qs.length), 1)[0].id);
-      rewards.push(rs.splice(Math.floor(this.rand() * rs.length), 1)[0]);
+      rewards.push(reward ?? rs.splice(Math.floor(this.rand() * rs.length), 1)[0]);
     }
     if (!options.length) return;
     const d: Discover = { options, rewards, title: '選擇一個任務' };
@@ -375,6 +451,11 @@ export class BgGame {
     const reward = p.quest.reward;
     p.quest = null;
     p.c.questsDone = (p.c.questsDone ?? 0) + 1;
+    // 共犯：任務的獎勵是金卡夥伴
+    const buddy = this.buddyId(p);
+    if (reward === 'BG33_Anomaly_008') return void (buddy && this.addMinion(p, this.make(buddy, true)));
+    // 陰險貴族（夥伴）：8 枚金幣的錢袋
+    if (reward === 'BG24_HERO_100_Buddy') return void (p.gold += 8);
     this.gainRelic(p, reward);
   }
   /** 這位英雄的夥伴（沒開啟或沒有實作 = null） */
@@ -383,14 +464,16 @@ export class BgGame {
     const id = `${p.heroId}_Buddy`;
     return BUDDY_IDS.has(id) ? id : null;
   }
-  private buddyBase(id: string): number {
-    return 4 + 2 * tierOf(id);
+  private buddyBase(id: string, p?: BPlayer): number {
+    const mult = p ? this.hooks(p).find((hk) => hk.buddyCostMult)?.buddyCostMult ?? 1 : 1;
+    return Math.round((4 + 2 * tierOf(id)) * mult);
   }
   buddyState(p: BPlayer): { id: string; cost: number; usable: boolean; reason: string | null } | null {
     const id = this.buddyId(p);
-    if (!id || !p.buddy) return null;
+    if (!id || !p.buddy || this.s.anomaly === 'BG33_Anomaly_008') return null;
     const cost = p.buddy.cost;
-    if (p.buddy.presses >= 2) return { id, cost, usable: false, reason: '已經拿過 2 次了' };
+    const max = this.hooks(p).some((hk) => hk.buddyThird) ? 3 : 2;
+    if (p.buddy.presses >= max) return { id, cost, usable: false, reason: `已經拿過 ${max} 次了` };
     if (p.gold < cost) return { id, cost, usable: false, reason: '金幣不夠' };
     if (p.hand.length >= HAND_MAX) return { id, cost, usable: false, reason: '手牌已滿' };
     return { id, cost, usable: true, reason: null };
@@ -403,8 +486,11 @@ export class BgGame {
     if (!st?.usable || !p.buddy) throw new BgError(st?.reason ?? '沒有夥伴');
     this.spend(p, st.cost);
     p.buddy.presses++;
-    p.buddy.cost = this.buddyBase(st.id);
-    this.addMinion(p, this.make(st.id));
+    p.buddy.cost = this.buddyBase(st.id, p);
+    // 自然共存：第 3 次是金色夥伴，而且半價
+    if (p.buddy.presses === 2 && this.hooks(p).some((hk) => hk.buddyThird)) p.buddy.cost = Math.ceil(p.buddy.cost / 2);
+    this.addMinion(p, this.make(st.id, p.buddy.presses === 3));
+    for (const hk of this.hooks(p)) hk.onBuddy?.(this, p);
   }
   /** 畢勾沃斯式的發現：選項是現成的手下 */
   offerObjs(p: BPlayer, objs: BMinion[], title: string) {
@@ -437,7 +523,61 @@ export class BgGame {
 
   private startGame() {
     for (const p of this.s.players) for (const hk of this.hooks(p)) hk.startGame?.(this, p);
+    // 雙人模式：隊伍共用生命值（30）與護甲（兩位英雄比較高的那個）
+    if (this.s.duos) {
+      this.s.teamHp = {};
+      for (let t = 0; t < this.s.players.length / 2; t++) {
+        const [a, b] = this.teamMembers(t);
+        const hp = Math.max(a.hp, b.hp);
+        const armor = Math.max(a.armor, b.armor);
+        for (const x of [a, b]) (x.hp = hp), (x.armor = armor);
+        this.s.teamHp[t] = { hp, armor };
+      }
+    }
     this.startRound();
+  }
+
+  // —— 雙人模式 ——
+  teamOf(p: BPlayer | number): number {
+    return Math.floor((typeof p === 'number' ? p : p.idx) / 2);
+  }
+  teamMembers(t: number): [BPlayer, BPlayer] {
+    return [this.player(2 * t), this.player(2 * t + 1)];
+  }
+  /** 隊友（不是雙人模式 = null） */
+  partner(p: BPlayer): BPlayer | null {
+    return this.s.duos ? this.player(p.idx ^ 1) : null;
+  }
+  /** 把兩位隊員各自的生命值、護甲變化合在一起（共用生命值） */
+  syncTeam(t: number, min = -Infinity) {
+    const last = this.s.teamHp?.[t];
+    if (!last) return;
+    const [a, b] = this.teamMembers(t);
+    const hp = Math.max(min, last.hp + (a.hp - last.hp) + (b.hp - last.hp));
+    const armor = Math.max(0, last.armor + (a.armor - last.armor) + (b.armor - last.armor));
+    for (const x of [a, b]) (x.hp = hp), (x.armor = armor);
+    this.s.teamHp![t] = { hp, armor };
+  }
+  syncTeams() {
+    if (!this.s.duos) return;
+    for (let t = 0; t < this.s.players.length / 2; t++) this.syncTeam(t);
+  }
+  /** 傳給隊友（1 枚金幣） */
+  pass(pi: number, uid: number) {
+    const p = this.player(pi);
+    this.ensure(p);
+    const mate = this.partner(p);
+    if (!mate) throw new BgError('只有雙人模式可以傳卡');
+    if (!mate.alive) throw new BgError('隊友已經被淘汰了');
+    const card = p.hand.find((h) => h.uid === uid);
+    if (!card) throw new BgError('手牌裡沒有這張卡');
+    if (card.kind === 'spell' && (card.temp || card.id === LOCKBOX)) throw new BgError('這張卡不能傳');
+    if (mate.hand.length >= HAND_MAX) throw new BgError('隊友的手牌已滿');
+    if (p.gold < 1) throw new BgError('金幣不夠');
+    this.spend(p, 1);
+    p.hand = p.hand.filter((h) => h !== card);
+    this.addHand(mate, { ...card, locked: undefined, pair: undefined });
+    mate.notes.push(`${p.name} 傳給你：${bgCard(card.kind === 'minion' ? card.m.id : card.id).name}`);
   }
 
   // —— 回合 ——
@@ -456,11 +596,23 @@ export class BgGame {
     p.c.elemTurn = 0;
     p.c.trail = 0;
     for (const k of Object.keys(p.c)) if (k.startsWith('t:')) delete p.c[k];
+    // 黃金錘：暫時的金卡變回來
+    for (const m of [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))]) {
+      if (!m.tmpGold) continue;
+      m.golden = false;
+      m.atk = Math.max(0, m.atk - m.tmpGold[0]);
+      m.hp = Math.max(1, m.hp - m.tmpGold[1]);
+      m.tmpGold = undefined;
+    }
     const base = this.hooks(p).find((hk) => hk.goldBase)?.goldBase?.(this.s.round) ?? goldForTurn(this.s.round);
     p.gold = base + p.maxGoldBonus + p.nextGold + (p.c.nextGoldC ?? 0) + (p.c.carry ?? 0);
     p.c.nextGoldC = 0;
     p.c.carry = 0;
-    p.freeRefreshes += p.c.freeRefC ?? 0;
+    p.freeRefreshes += (p.c.freeRefC ?? 0) + (p.c.prizeRef1 ?? 0) + 5 * (p.c.prizeRef5 ?? 0);
+    // 戰鬥中增加的金幣上限（回收者、劫掠者）
+    p.maxGoldBonus += p.c.maxGoldC ?? 0;
+    p.gold += p.c.maxGoldC ?? 0;
+    p.c.maxGoldC = 0;
     p.c.freeRefC = 0;
     // 費林大使、詹莉‧伊夏：跳過前幾回合
     if (this.s.round <= (p.c.skip ?? 0)) p.gold = 0;
@@ -472,6 +624,7 @@ export class BgGame {
       m.tmpKw = [];
     }
     p.powerUses = 0;
+    p.power2Uses = 0;
     // 戰鬥中加的惡魔食料（陷阱拍手者）
     for (let k = 0; k < (p.c.fodder3 ?? 0); k++) (p.fodder ??= []).push(3);
     p.c.fodder3 = 0;
@@ -504,16 +657,28 @@ export class BgGame {
       if (this.s.round === (p.c.lesserAt || 6)) this.offerTrinkets(p, 'lesser');
       if (this.s.round === (p.c.greaterAt || 9)) this.offerTrinkets(p, 'greater');
     }
-    if (this.s.quests && this.s.round === 4) this.offerQuests(p);
+    if (this.s.quests && this.s.round === 4 && !p.c.questOffered) this.offerQuests(p);
+    if (this.s.timewarp) {
+      const both = this.hooks(p).some((hk) => hk.majorTwice);
+      if (!both && this.s.round === (p.c.minorAt || 6)) this.offerTimewarp(p, 'minor');
+      if (this.s.round === (p.c.majorAt || 9) || (both && this.s.round === 8)) this.offerTimewarp(p, 'major');
+    }
+    // 時光扭曲買到的：每回合的刺眼戒指、魔法套索；大贏家每 3 回合
+    for (let k = 0; k < (p.c.twRing ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BG28_168', g: 1 });
+    for (let k = 0; k < (p.c.twLasso ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BG28_512', g: 1 });
+    for (let k = 0; k < (p.c.twEvolve ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BGS_Treasures_006', g: 1 });
+    if (p.c.bigWinner && this.s.round > p.c.bigWinner && (this.s.round - p.c.bigWinner) % 3 === 0) this.discoverPrize(p, 3);
     const bud = this.buddyId(p);
     if (bud) {
-      if (!p.buddy) p.buddy = { cost: this.buddyBase(bud), presses: 0 };
+      if (!p.buddy) p.buddy = { cost: this.buddyBase(bud, p), presses: 0 };
       else if (this.s.round > 1) p.buddy.cost = Math.max(tierOf(bud), p.buddy.cost - 1);
     }
     for (const hk of this.hooks(p)) hk.startTurn?.(this, p);
     // 阮大師：每回合從 2 個新的英雄能力中挑選一個
     if (p.heroId === 'BG20_HERO_202') this.offerPowers(p, 2, '阮大師：選擇這回合的英雄能力');
     for (const m of p.board) this.giveSpellcraft(p, m);
+    // 時間流轉（黑暗贈禮）：回合結束效果在回合開始時也觸發
+    for (const m of [...p.board]) if (hasGift(m, 21)) for (const { s, g } of specsOf(m)) s.endTurn?.(r, m, g);
   }
 
   private giveSpellcraft(p: BPlayer, m: BMinion) {
@@ -535,6 +700,8 @@ export class BgGame {
       for (const hk of this.hooks(p)) hk.endTurn?.(this, p);
     }
     p.hand = p.hand.filter((h) => !(h.kind === 'spell' && h.temp));
+    // 無限金幣（暗月獎品）：回合結束時回到手牌
+    for (let k = 0; k < (p.c['t:infGold'] ?? 0); k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: 'BGS_Treasures_014', g: 1 });
     // 轉墓術：這回合打出的不死族會死亡
     for (const m of p.board.filter((x) => x.doom === this.s.round)) p.board = p.board.filter((x) => x !== m);
     // 還沒選的發現：自動選（飾品選買得起的）
@@ -545,13 +712,91 @@ export class BgGame {
   /** 沒選的發現自動選哪一個 */
   autoChoice(p: BPlayer): number {
     const d = p.discover;
+    if (d?.timewarp) {
+      let best = -1;
+      let bv = -Infinity;
+      d.options.forEach((id, i) => {
+        if (!this.canBuyWarp(p, id)) return;
+        const v = tierOf(id) + twCost(id);
+        if (v > bv) (bv = v), (best = i);
+      });
+      return best;
+    }
     if (!d?.relics) return 0;
     const i = d.options.findIndex((id) => this.relicPrice(p, d, id) <= p.gold);
     return Math.max(0, i);
   }
 
+  // —— 時光扭曲 ——
+  /** 時光扭曲商店：4 個手下 + 2 張法術，用時光晶幣購買 */
+  offerTimewarp(p: BPlayer, kind: 'minor' | 'major') {
+    const ok = (id: string) => twKind(id) === kind && this.idInLobby(id);
+    const minions = TW_IDS().filter((id) => ok(id) && bgCard(id).type === 'MINION');
+    const spells = TW_IDS().filter((id) => ok(id) && bgCard(id).type !== 'MINION');
+    const pickN = (arr: string[], n: number) => {
+      const bag = [...arr];
+      const out: string[] = [];
+      while (out.length < n && bag.length) out.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+      return out;
+    };
+    const options = [...pickN(minions, 4), ...pickN(spells, 2)];
+    if (!options.length) return;
+    let chronum = 2 + (p.c.chronumNext ?? 0) + this.hooks(p).reduce((n, hk) => n + (hk.chronumExtra ?? 0), 0);
+    p.c.chronumNext = 0;
+    // 扭曲沙漏：4 枚時光晶幣都可以在次級時光扭曲用掉
+    if (kind === 'minor' && this.hooks(p).some((hk) => hk.chronumPool)) chronum += 2;
+    const golden = this.hooks(p).some((hk) => hk.goldenWarp === kind);
+    const d: Discover = { options, title: kind === 'minor' ? '次級時光扭曲：用時光晶幣購買' : '高級時光扭曲：用時光晶幣購買', timewarp: kind, chronum, golden, noPool: true };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+  /** 誓言石的召喚：第 7 回合次級、第 10 回合高級時光扭曲的手下進入卡池 */
+  timewarpPool() {
+    const kind = this.s.round === 7 ? 'minor' : this.s.round === 10 ? 'major' : null;
+    if (!kind || this.s.c?.[`warpPool${kind}`]) return;
+    (this.s.c ??= {})[`warpPool${kind}`] = 1;
+    for (const id of TW_IDS()) if (twKind(id) === kind && bgCard(id).type === 'MINION' && this.idInLobby(id)) this.s.pool[id] = 3;
+  }
+
+  /** 這張時光扭曲的卡現在買得起、拿得到嗎 */
+  canBuyWarp(p: BPlayer, id: string): boolean {
+    const d = p.discover;
+    return !!d?.timewarp && twCost(id) <= (d.chronum ?? 0) && (p.hand.length < HAND_MAX || !!TW_SPELL_SPEC.get(id)?.whenBought);
+  }
+  /** 在時光扭曲買一張卡（i = -1 離開） */
+  private buyTimewarp(p: BPlayer, i: number) {
+    const d = p.discover!;
+    const close = () => {
+      // 扭曲沙漏：沒用完的帶到高級時光扭曲
+      if (d.timewarp === 'minor' && this.hooks(p).some((hk) => hk.chronumPool)) p.c.chronumNext = (p.c.chronumNext ?? 0) + (d.chronum ?? 0);
+      p.discover = p.dq.shift() ?? null;
+    };
+    if (i < 0 || i >= d.options.length) return close();
+    const id = d.options[i];
+    const cost = twCost(id);
+    if (cost > (d.chronum ?? 0)) throw new BgError('時光晶幣不夠');
+    if (p.hand.length >= HAND_MAX && !TW_SPELL_SPEC.get(id)?.whenBought) throw new BgError('手牌已滿');
+    d.chronum = (d.chronum ?? 0) - cost;
+    d.options = d.options.filter((_, k) => k !== i);
+    if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id, !!d.golden));
+    else if (TW_SPELL_SPEC.get(id)?.whenBought) this.castSpec(p, id, null, 1, 0);
+    else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+    if (!d.options.some((x) => this.canBuyWarp(p, x))) close();
+  }
+  /** 從時光扭曲的卡裡發現（不用時光晶幣） */
+  offerTimewarpCards(p: BPlayer, filter: (id: string) => boolean, title: string, lock = false) {
+    const bag = TW_IDS().filter((id) => filter(id) && this.idInLobby(id));
+    const options: string[] = [];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const d: Discover = { options, title, noPool: true, lock };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+
   /** 配對：盡量不要連續遇到同一個人；人數是單數時，有人打殘影 */
   private pair() {
+    if (this.s.duos) return this.pairTeams();
     const alive = this.alive().map((p) => p.idx);
     let best: [number, number][] = [];
     let bestCost = Infinity;
@@ -566,6 +811,32 @@ export class BgGame {
         const pa = this.player(a);
         if (b >= 0 && pa.lastOpp === b) cost += 10;
         if (b >= 0 && pa.seen[b] && this.s.round - pa.seen[b].round <= 2) cost += 3;
+        if (b < 0 && pa.lastOpp === -1) cost += 5;
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = pairs;
+        if (!cost) break;
+      }
+    }
+    this.s.pairs = best;
+  }
+
+  /** 雙人模式的配對：隊伍對隊伍（兩位隊員各自對上對方的一位隊員） */
+  private pairTeams() {
+    const teams = [...new Set(this.alive().map((p) => this.teamOf(p)))];
+    let best: [number, number][] = [];
+    let bestCost = Infinity;
+    for (let t = 0; t < 40; t++) {
+      const order = shuffleWith([...teams], () => this.rand());
+      const pairs: [number, number][] = [];
+      let cost = 0;
+      for (let i = 0; i < order.length; i += 2) {
+        const a = order[i];
+        const b = i + 1 < order.length ? order[i + 1] : -1;
+        pairs.push([2 * a, b < 0 ? -1 : 2 * b], [2 * a + 1, b < 0 ? -1 : 2 * b + 1]);
+        const pa = this.player(2 * a);
+        if (b >= 0 && pa.lastOpp !== null && pa.lastOpp >= 0 && this.teamOf(pa.lastOpp) === b) cost += 10;
         if (b < 0 && pa.lastOpp === -1) cost += 5;
       }
       if (cost < bestCost) {
@@ -600,27 +871,40 @@ export class BgGame {
     for (const m of kept) m.iced = false;
     p.shop = kept;
     const hooks = this.hooks(p);
-    const full = hooks.some((hk) => hk.shopFull);
+    const full = hooks.some((hk) => hk.shopFull) || !!p.c.full7;
     const size = Math.max(1, (full ? 7 : SHOP_SIZE[p.tier] + hooks.reduce((n, hk) => n + (hk.shopExtra ?? 0), 0)) - kept.length);
     const only = hooks.find((hk) => hk.onlyTribe)?.onlyTribe;
     const tribe = opts.tribe ?? only;
+    const onlyTier = opts.hooks === false ? undefined : hooks.map((hk) => hk.refreshTier?.(p)).find((t) => t !== undefined);
     for (let i = 0; i < size; i++) {
-      const id = this.draw((x) => this.shopTierOk(p, x) && (!tribe || racesOf(x).includes(tribe)));
+      const id = this.draw((x) => (onlyTier ? tierOf(x) === onlyTier : this.shopTierOk(p, x)) && (!tribe || racesOf(x).includes(tribe)));
       if (id) p.shop.push(this.shopMinion(p, id));
     }
     // 酒館法術：每次刷新一張（有些飾品多一張）
     p.shopSpells = [];
-    const spells = 1 + hooks.reduce((n, hk) => n + (hk.shopSpellsExtra ?? 0), 0);
+    // 時光扭曲旱地水手：旅店多一張法術
+    const spells = 1 + hooks.reduce((n, hk) => n + (hk.shopSpellsExtra ?? 0), 0) + p.board.filter((m) => m.id === 'BG34_Giant_066').length;
     for (let k = 0; k < spells; k++) {
       const spell = this.randomSpell(p, (id) => tierOf(id) <= p.tier);
-      if (spell) p.shopSpells.push({ uid: this.nextUid(), id: spell });
+      if (spell) p.shopSpells.push({ uid: this.nextUid(), id: spell, ticket: hooks.some((hk) => hk.spellTickets) && this.rand() < 0.4 ? true : undefined });
     }
     const higher = (opts.higher ?? 0) + hooks.reduce((n, hk) => n + (hk.shopHigher ?? 0), 0);
     for (let i = 0; i < higher && p.tier < this.maxTier(p); i++) {
       const id = this.draw((x) => tierOf(x) === p.tier + 1);
       if (id) p.shop.push(this.shopMinion(p, id));
     }
+    // 招募新夥伴（暗月獎品）：多一個 +2/+2 的手下
+    for (let i = 0; i < (p.c.prizeShop ?? 0); i++) {
+      const id = this.draw((x) => this.shopTierOk(p, x));
+      if (!id) continue;
+      const m = this.shopMinion(p, id);
+      m.atk += 2;
+      m.hp += 2;
+      p.shop.push(m);
+    }
     for (const hk of this.hooks(p)) hk.onRefresh?.(this, p);
+    // 蘋果（時光扭曲）：刷新後施放蘋果大放送
+    for (let k = 0; k < (p.c.twApples ?? 0); k++) this.castRandom(p, 'BG28_966');
     // 精靈吹焰者、東來之風：刷新後隨機一個 +10/+10、+9/+9
     for (const [key, n] of [
       ['refreshBuff', 10],
@@ -643,7 +927,7 @@ export class BgGame {
     p.fodder = (p.fodder ?? []).map((n) => n - 1).filter((n) => n > 0);
     for (let k = 0; k < fodders; k++) {
       const f = this.shopMinion(p, FODDER);
-      const demon = this.pick(p.board.filter((m) => isRace(m.id, 'DEMON')));
+      const demon = this.pick(p.board.filter((m) => isRace(m, 'DEMON')));
       if (!demon) {
         p.shop.push(f);
         continue;
@@ -690,7 +974,7 @@ export class BgGame {
   }
 
   spellCost(p: BPlayer, id: string): number {
-    let cost = spellCostOf(id) - (p.c.spellDisc ?? 0);
+    let cost = spellCostOf(id) - (p.c.spellDisc ?? 0) - (p.c['t:spell1'] ?? 0);
     for (const hk of this.hooks(p)) if (hk.spellCost) cost = hk.spellCost(p, cost, id);
     return Math.max(0, cost);
   }
@@ -702,14 +986,16 @@ export class BgGame {
     if (!sp) throw new BgError('酒館裡沒有這張法術');
     if (p.hand.length >= HAND_MAX) throw new BgError('手牌已滿');
     const cost = this.spellCost(p, sp.id);
-    // 急忙挖掘：用生命值購買
-    const health = sp.id === 'BG28_571';
+    // 急忙挖掘、市集貼紙：用生命值購買
+    const health = sp.id === 'BG28_571' || this.hooks(p).some((hk) => hk.healthCost?.(p, 'spell', sp.id));
     if (!health && p.gold < cost) throw new BgError('金幣不夠');
     p.shopSpells = p.shopSpells.filter((x) => x !== sp);
     if (health) this.hurtHero(p, cost);
     else this.spend(p, cost);
     p.c.spellDisc = 0;
     p.c.cards = (p.c.cards ?? 0) + 1;
+    // 魔法商店：集滿 3 張法術彩票，發現一張你的等級的酒館法術
+    if (sp.ticket && ((p.c.spellTickets = (p.c.spellTickets ?? 0) + 1) % 3 === 0)) this.discoverSpell(p, (id) => tierOf(id) === p.tier, '法術彩票：發現一張你的等級的酒館法術');
     this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: sp.id, g: 1 });
     const r = this.recruit(p);
     for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onBuySpell?.(r, x, sp.id, g);
@@ -746,7 +1032,7 @@ export class BgGame {
   private tavernBonus(p: BPlayer, m: BMinion): [number, number] {
     let a = p.c.tavA ?? 0;
     let h = p.c.tavH ?? 0;
-    for (const t of racesOf(m.id)) {
+    for (const t of racesOf(m)) {
       a += p.c[`tav:${t}:A`] ?? 0;
       h += p.c[`tav:${t}:H`] ?? 0;
     }
@@ -768,7 +1054,7 @@ export class BgGame {
     if (this.s.phase === 'recruit' || this.s.phase === 'combat') {
       p.c['q:cards'] = (p.c['q:cards'] ?? 0) + 1;
       const r = this.recruit(p);
-      for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onGetCard?.(r, m, g);
+      for (const m of [...p.board]) for (const { s, g } of specsOf(m)) s.onGetCard?.(r, m, g, card);
       for (const hk of this.hooks(p)) hk.onGetCard?.(this, p, card);
     }
     return true;
@@ -784,7 +1070,7 @@ export class BgGame {
     // 驚奇元素可以和任何元素組成三連
     if (id === 'BG33_890t') return; // 魔術魚學徒不能三連
     if (id === SURPRISE) {
-      for (const x of new Set(all.filter((m) => m.id !== SURPRISE && isRace(m.id, 'ELEMENTAL')).map((m) => m.id))) this.checkTriple(p, x);
+      for (const x of new Set(all.filter((m) => m.id !== SURPRISE && isRace(m, 'ELEMENTAL')).map((m) => m.id))) this.checkTriple(p, x);
       return;
     }
     let copies = all.filter((m) => m.id === id);
@@ -820,6 +1106,71 @@ export class BgGame {
     else p.discover = d;
   }
 
+  /** 英雄專屬的選擇 */
+  private pickHeroChoice(p: BPlayer, kind: NonNullable<Discover['pick']>, id: string) {
+    if (kind === 'cariel') {
+      if (id.endsWith('p_t1')) p.c.carN = (p.c.carN ?? 0) + 1;
+      else if (id.endsWith('Buddyt3')) p.c.carA = (p.c.carA ?? 0) + 2;
+      else p.c.carH = (p.c.carH ?? 0) + 2;
+    } else if (kind === 'flight') {
+      const n = Number(id.slice(-1));
+      p.c.flight = n;
+      p.c.flightAt = this.s.round + n;
+    } else if (kind === 'protoss') p.protoss = id;
+    else if (kind === 'secret') (p.secrets ??= []).push(id);
+  }
+  /** 選項是英雄專屬的選擇 */
+  offerPick(p: BPlayer, kind: NonNullable<Discover['pick']>, options: string[], title: string) {
+    if (!options.length) return;
+    const d: Discover = { options, title, pick: kind };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+
+  /** 發現一個暗月馬戲團獎品 */
+  discoverPrize(p: BPlayer, tier: number) {
+    const bag = PRIZE_IDS.filter((id) => prizeTier(id) === tier && (bgCard(id).type === 'MINION' || this.spellInLobby(id)));
+    const options: string[] = [];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const d: Discover = { options, title: `發現一個等級 ${tier} 的暗月馬戲團獎品`, spells: true };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+
+  /** 發現一個有黑暗贈禮的手下（每個選項的贈禮都不同） */
+  discoverGift(p: BPlayer, filter: (id: string) => boolean, title: string, extra: Partial<Discover> = {}) {
+    const ids = this.poolIds((id) => filter(id) && id !== PARADOX && (this.s.pool[id] ?? 0) > 0);
+    const options: string[] = [];
+    const bag = [...ids];
+    while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
+    if (!options.length) return;
+    const gb = [...GIFT_IDS];
+    const gifts = options.map(() => gb.splice(Math.floor(this.rand() * gb.length), 1)[0]);
+    const d: Discover = { options, gifts, title, ...extra };
+    if (p.discover) p.dq.push(d);
+    else p.discover = d;
+  }
+  /** 「黑暗贈禮！」異象：第 3 回合起，花 3 金幣發現一個有黑暗贈禮的手下（一局 3 次） */
+  darkState(p: BPlayer): { cost: number; usable: boolean; reason: string | null; left: number } | null {
+    if (this.s.anomaly !== 'BG36_Anomaly_002') return null;
+    const left = 3 - (p.c.darkUses ?? 0);
+    if (left <= 0) return { cost: 3, usable: false, reason: '已經用完了', left };
+    if (this.s.round < 3) return { cost: 3, usable: false, reason: '第 3 回合起才能使用', left };
+    if (p.gold < 3) return { cost: 3, usable: false, reason: '金幣不夠', left };
+    return { cost: 3, usable: true, reason: null, left };
+  }
+  pressDark(pi: number) {
+    const p = this.player(pi);
+    this.ensure(p);
+    const st = this.darkState(p);
+    if (!st?.usable) throw new BgError(st?.reason ?? '不能使用');
+    this.spend(p, 3);
+    p.c.darkUses = (p.c.darkUses ?? 0) + 1;
+    const top = Math.min(this.maxTier(p), p.tier + 1);
+    this.discoverGift(p, (id) => tierOf(id) === p.tier || tierOf(id) === top, `黑暗發現：發現一個旅店等級 ${p.tier}${top > p.tier ? ` 或 ${top}` : ''} 有黑暗贈禮的手下`);
+  }
+
   discoverSpell(p: BPlayer, filter: (id: string) => boolean, title: string) {
     const bag = TAVERN_SPELLS.filter((id) => this.spellInLobby(id) && filter(id));
     const options: string[] = [];
@@ -834,7 +1185,23 @@ export class BgGame {
     const p = this.player(pi);
     const d = p.discover;
     if (!d) throw new BgError('沒有正在發現的卡');
+    if (d.timewarp) return this.buyTimewarp(p, i);
     const id = d.options[Math.max(0, Math.min(d.options.length - 1, i))];
+    // 免費拿到飾品並取代原本的飾品
+    if (d.freeRelic) {
+      const price = this.relicPrice(p, d, id);
+      if (price > p.gold) throw new BgError('金幣不夠');
+      this.spend(p, price);
+      p.discover = p.dq.shift() ?? null;
+      p.relics = (p.relics ?? []).filter((x) => x !== d.freeRelic);
+      this.gainRelic(p, id);
+      // 基里的雙蝕：英雄能力也變成這個飾品
+      if (d.twice) {
+        this.gainRelic(p, id);
+        p.c.noPower = 1;
+      }
+      return;
+    }
     // 飾品：付錢後拿到
     if (d.relics) {
       const price = this.relicPrice(p, d, id);
@@ -857,16 +1224,51 @@ export class BgGame {
     const rr = this.recruit(p);
     for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onDiscover?.(rr, x, g);
     if (!d.powers && !d.objs && d.guess === undefined && d.replace === undefined) for (const hk of this.hooks(p)) hk.onDiscover?.(this, p, id);
+    if (d.spells && d.teach) {
+      const m = this.make('BG33_890t');
+      m.memo = id;
+      this.addMinion(p, m);
+      return;
+    }
     if (d.spells) {
-      this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      // 暗月獎品裡有一張是手下（全知長者）
+      if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
+      else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      return;
+    }
+    // 巴羅夫：押注
+    if (d.bet) {
+      p.wager = d.bet[Math.max(0, Math.min(d.bet.length - 1, i))];
+      return;
+    }
+    // 凱莉根：蟲族變形（保留身材與附加效果）
+    if (d.morph !== undefined) {
+      const m = [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))].find((x) => x.uid === d.morph);
+      if (m) {
+        m.id = id;
+        const base = this.make(id);
+        for (const k of ['taunt', 'windfury', 'venom', 'stealth', 'shield', 'reborn'] as Keyword[]) if (base[k]) m[k] = true;
+      }
+      return;
+    }
+    if (d.pick) {
+      this.pickHeroChoice(p, d.pick, id);
       return;
     }
     // 魚爾摩斯：猜對拿到旅店幸運幣
     if (d.guess !== undefined) {
-      if (id === d.guess) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+      if (id === d.guess) {
+        this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+        // 蛙生（夥伴）：猜對時拿到那個手下的分身
+        for (let k = 0; k < this.count(p, 'BG23_HERO_303_Buddy'); k++) if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
+      }
       return;
     }
-    // 換英雄能力
+    // 換英雄能力（slot2 = 第二個英雄能力）
+    if (d.powers && d.slot2) {
+      this.setPower2(p, id);
+      return;
+    }
     if (d.powers) {
       p.powerHero = id;
       p.powerUses = 0;
@@ -898,11 +1300,47 @@ export class BgGame {
       } else p.shop.push(n);
       return;
     }
+    // 選項是法術（時光扭曲的卡可能是法術）
+    if (bgCard(id).type !== 'MINION') {
+      this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+      if (d.lock || d.lockTurns) p.hand[p.hand.length - 1].locked = this.s.round + (d.lockTurns ?? 1) - 1;
+      return;
+    }
     if (!d.noPool) this.takeFromPool(id);
     const m = this.make(id, !!d.golden);
+    for (const k of d.kw ?? []) m[k] = true;
+    // 黑暗贈禮（雙重幻象：多拿一張複製）
+    const gift = d.gifts?.[Math.max(0, Math.min(d.options.length - 1, i))];
+    if (gift) {
+      attachGift(m, gift, this.s.round);
+      if (gift.endsWith('t11')) {
+        const copy = this.make(id, !!d.golden);
+        attachGift(copy, gift, this.s.round);
+        this.addMinion(p, copy);
+      }
+    }
     if (d.doom) m.doom = this.s.round;
     if (d.both) m.both = true;
     if (d.stats) [m.atk, m.hp] = d.stats;
+    if (d.bonus) (m.atk += d.bonus[0]), (m.hp += d.bonus[1]);
+    if (d.remember) (p.rmemo ??= {})[d.remember] = id;
+    // 取代戰場上（或手牌裡）的手下
+    if (d.transform !== undefined) {
+      const k = p.board.findIndex((x) => x.uid === d.transform);
+      if (k >= 0) {
+        this.returnToPool(p.board[k]);
+        p.board[k] = m;
+        return;
+      }
+      const h = p.hand.find((x) => x.kind === 'minion' && x.m.uid === d.transform);
+      if (h && h.kind === 'minion') {
+        this.returnToPool(h.m);
+        h.m = m;
+        h.uid = m.uid;
+        return;
+      }
+    }
+    if (!d.objs && !d.reserve) this.afterDiscover(p, m);
     this.addMinion(p, m);
     if (d.lock || d.lockTurns) {
       const h = p.hand.find((x) => x.kind === 'minion' && x.m === m);
@@ -911,13 +1349,19 @@ export class BgGame {
     if (d.hurt) this.hurtHero(p, tierOf(id));
   }
 
+  /** 發現的手下拿到之前（伯斯） */
+  private afterDiscover(p: BPlayer, m: BMinion) {
+    const r = this.recruit(p);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.afterDiscoverMinion?.(r, x, m, g);
+  }
+
   /** 芬利、阮大師、揭露身分：發現一個英雄能力 */
-  offerPowers(p: BPlayer, n: number, title: string) {
-    const bag = SWAPPABLE_POWERS().filter((id) => id !== (p.powerHero ?? p.heroId) && heroAvailable(HERO_SPEC.get(id)!, this.s.tribes));
+  offerPowers(p: BPlayer, n: number, title: string, slot2 = false, exclude: string[] = []) {
+    const bag = SWAPPABLE_POWERS().filter((id) => id !== (p.powerHero ?? p.heroId) && id !== p.power2 && !exclude.includes(id) && heroAvailable(HERO_SPEC.get(id)!, this.s.tribes));
     const options: string[] = [];
     while (options.length < n && bag.length) options.push(bag.splice(Math.floor(this.rand() * bag.length), 1)[0]);
     if (!options.length) return;
-    const d: Discover = { options, title, powers: true };
+    const d: Discover = { options, title, powers: true, slot2 };
     if (p.discover) p.dq.push(d);
     else p.discover = d;
   }
@@ -962,13 +1406,18 @@ export class BgGame {
     const rewinder = p.board.find((m) => m.id === 'BG26_174' || m.id === 'BG32_873');
     if (rewinder) {
       const g = rewinder.golden ? 2 : 1;
-      if (rewinder.id === 'BG26_174') rewinder.hp += 2 * g;
+      if (rewinder.id === 'BG26_174') {
+        rewinder.hp += 2 * g;
+        // 倒帶手頭像：你的靈魂倒轉者也會獲得攻擊力
+        if (p.relics?.includes('BG30_MagicItem_868')) rewinder.atk += 2 * g;
+      }
       else for (const m of p.shop) (m.atk += 2 * g), (m.hp += 2 * g);
       return;
     }
     const fromArmor = Math.min(p.armor, n);
     p.armor -= fromArmor;
     p.hp = Math.max(1, p.hp - (n - fromArmor));
+    if (this.s.duos) this.syncTeam(this.teamOf(p), 1);
   }
 
   buy(pi: number, uid: number) {
@@ -977,10 +1426,13 @@ export class BgGame {
     const i = p.shop.findIndex((m) => m.uid === uid);
     if (i < 0) throw new BgError('酒館裡沒有這個手下');
     const cost = this.minionCost(p, p.shop[i]);
-    if (p.gold < cost) throw new BgError('金幣不夠');
+    // 朝聖小鬼貼紙、薩格拉斯之眼：用生命值購買
+    const byHealth = this.hooks(p).some((hk) => hk.healthCost?.(p, 'minion', p.shop[i].id));
+    if (!byHealth && p.gold < cost) throw new BgError('金幣不夠');
     if (p.hand.length >= HAND_MAX) throw new BgError('手牌已滿');
     const [m] = p.shop.splice(i, 1);
-    this.spend(p, cost);
+    if (byHealth) this.hurtHero(p, cost);
+    else this.spend(p, cost);
     this.addMinion(p, m);
     p.c.bought = (p.c.bought ?? 0) + 1;
     p.c['t:buy'] = (p.c['t:buy'] ?? 0) + 1;
@@ -1004,6 +1456,8 @@ export class BgGame {
     const price = this.sellPrice(p, m);
     p.board = p.board.filter((x) => x !== m);
     p.gold += price;
+    p.c['t:soldA'] = (p.c['t:soldA'] ?? 0) + m.atk;
+    p.c['t:soldH'] = (p.c['t:soldH'] ?? 0) + m.hp;
     const r = this.recruit(p);
     for (const { s, g } of specsOf(m)) s.onSell?.(r, m, g);
     // 跳舞的戴瑞：帽子傳給另一個友方手下
@@ -1014,6 +1468,7 @@ export class BgGame {
     // 扭曲的憤怒守衛：賣掉手下後，下次刷新多一個惡魔食料
     for (const x of p.board) if (x.id === 'BG35_155') for (let k = 0; k < (x.golden ? 2 : 1); k++) (p.fodder ??= []).push(1);
     for (const hk of this.hooks(p)) hk.onSell?.(this, p, m);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onSellOther?.(r, x, m, g);
     this.returnToPool(m);
     p.c['q:sell'] = (p.c['q:sell'] ?? 0) + 1;
     this.checkQuest(p);
@@ -1054,7 +1509,9 @@ export class BgGame {
     p.frozen = false;
     p.c['t:rr'] = (p.c['t:rr'] ?? 0) + 1;
     p.c['q:refresh'] = (p.c['q:refresh'] ?? 0) + 1;
+    p.c['~rr'] = 1;
     this.refreshShop(p);
+    p.c['~rr'] = 0;
     for (const hk of this.hooks(p)) hk.onReroll?.(this, p);
     this.checkQuest(p);
   }
@@ -1067,8 +1524,11 @@ export class BgGame {
     const cost = this.upgradeCost(p);
     if (p.gold < cost) throw new BgError('金幣不夠');
     this.spend(p, cost);
-    p.tier++;
-    p.upgradeCost = UPGRADE_COST[p.tier + 1] ?? 0;
+    // 真是稀「奇」！／「偶」然如此！：只有部分酒館等級
+    const set = this.hooks(p).find((hk) => hk.tierSet)?.tierSet;
+    p.tier = set ? set.find((t) => t > p.tier) ?? p.tier + 1 : p.tier + 1;
+    const next = set ? set.find((t) => t > p.tier) : p.tier + 1;
+    p.upgradeCost = next ? UPGRADE_COST[next] ?? 0 : 0;
     this.giveReserved(p);
     for (const hk of this.hooks(p)) hk.onUpgrade?.(this, p);
   }
@@ -1106,7 +1566,7 @@ export class BgGame {
     }
     p.hand = p.hand.filter((h) => h !== card);
     p.board.splice(pos === undefined ? p.board.length : Math.max(0, Math.min(p.board.length, pos)), 0, m);
-    if (isRace(m.id, 'ELEMENTAL')) p.c.elemTurn = (p.c.elemTurn ?? 0) + 1;
+    if (isRace(m, 'ELEMENTAL')) (p.c.elemTurn = (p.c.elemTurn ?? 0) + 1), (p.c.elemGame = (p.c.elemGame ?? 0) + 1);
     p.c['q:summon'] = (p.c['q:summon'] ?? 0) + 1;
     if (spec?.battlecry) p.c['q:bc'] = (p.c['q:bc'] ?? 0) + 1;
     if (spec?.battlecry) this.triggerBattlecry(p, m, bcTarget, r, spec.choices ? (m.both ? -1 : this.chooseOne(p, choice)) : 0);
@@ -1131,6 +1591,9 @@ export class BgGame {
       }
     }
     if (host.id === 'BG36_506') host.n = 0;
+    // 時光扭曲普羅比斯：吸附的機械變成金卡；時光扭曲戰爭機兵：目標身材加倍
+    if ((m.id === 'BG34_Giant_121' || m.id === 'BG31_HERO_802_Buddy') && isRace(host, 'MECHANICAL')) this.goldenize(p, host);
+    if (m.id === 'BG34_Giant_677') for (let k = 0; k < (m.golden ? 2 : 1); k++) (host.atk *= 2), (host.hp *= 2);
     this.volumize(p, m.id, m.golden ? 2 : 1);
     for (const t of targets) for (const hk of this.hooks(p)) hk.onMagnetize?.(this, p, t);
   }
@@ -1190,6 +1653,8 @@ export class BgGame {
     m.act = this.s.round;
     if (h !== null) this.discard(p, h);
     act.use(this.recruit(p), m, m.golden ? 2 : 1, t, h);
+    // 效率（黑暗贈禮）：啟動技能觸發兩次
+    if (hasGift(m, 78) && p.board.includes(m)) act.use(this.recruit(p), m, m.golden ? 2 : 1, t && (p.board.includes(t) || p.shop.includes(t)) ? t : null, null);
   }
 
   /** 荊棘開路者：每回合有一張二選一卡兩個效果都會發動（回傳 -1） */
@@ -1207,11 +1672,13 @@ export class BgGame {
     const spec = SPEC.get(m.id);
     if (!spec?.battlecry) return;
     const brann = p.board.reduce((n, x) => n + (x.id === 'BG_LOE_077' ? (x.golden ? 2 : 1) : 0), 0);
-    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0);
+    // 布萊恩的傑出一手（暗月獎品）：這回合戰吼多觸發一次
+    const extra = this.hooks(p).reduce((n, hk) => n + (hk.bcExtra?.(this, p, m) ?? 0), 0) + (p.c['t:bcx'] ?? 0) + this.count(p, DEIOS);
     for (let t = 0; t <= Math.min(2, brann) + extra; t++) {
       if (target && !p.board.includes(target)) target = null;
       spec.battlecry(r, m, m.golden ? 2 : 1, target, choice);
       p.c['t:bc'] = (p.c['t:bc'] ?? 0) + 1;
+      p.c.bcTotal = (p.c.bcTotal ?? 0) + 1;
       for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.afterBattlecry?.(r, x, m, g);
       for (const hk of this.hooks(p)) hk.onBattlecry?.(this, p, m);
     }
@@ -1248,8 +1715,21 @@ export class BgGame {
   private cast(p: BPlayer, card: HandCard & { kind: 'spell' }, target?: number, choice = 0) {
     if (card.id === TRIPLE_REWARD) {
       p.hand = p.hand.filter((h) => h !== card);
-      const t = card.tier ?? Math.min(this.maxTier(p), p.tier + 1);
-      this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的手下`);
+      // 馬戲團獎賞（異象）：三合一獎勵改成發現暗月獎品
+      if (this.hooks(p).some((hk) => hk.prizeTriple3)) {
+        this.discoverPrize(p, 3);
+        return;
+      }
+      if (this.hooks(p).some((hk) => hk.prizeTriples)) {
+        this.discoverPrize(p, Math.min(4, 1 + Math.floor((this.s.round - 1) / 4)));
+        return;
+      }
+      const set = this.hooks(p).find((hk) => hk.tierSet)?.tierSet;
+      const t = set ? p.tier : card.tier ?? Math.min(this.maxTier(p), p.tier + 1);
+      // 石殼守護者（夥伴）：每回合第一個三合一獎勵發現金卡
+      const gold = (p.c['t:stoneshell'] ?? 0) < this.count(p, 'BG33_HERO_000_Buddy');
+      if (gold) p.c['t:stoneshell'] = (p.c['t:stoneshell'] ?? 0) + 1;
+      this.discoverFor(p, (id) => tierOf(id) === t, `三合一獎勵：發現一個旅店等級 ${t} 的${gold ? '金卡' : ''}手下`, { golden: gold });
       return;
     }
     if (card.id === LOCKBOX) throw new BgError('帶鎖箱不能使用，過幾回合會自己打開');
@@ -1265,9 +1745,56 @@ export class BgGame {
     this.discardPair(p, card);
   }
 
+  /** 換掉第二個英雄能力（用英雄的 ID 表示） */
+  setPower2(p: BPlayer, heroId: string) {
+    p.power2 = heroId;
+    p.power2Uses = 0;
+    p.power2Spent = false;
+    HERO_SPEC.get(heroId)?.startGame?.(this, p);
+  }
+
+  /** 元素給的身材額外 +X/+Y */
+  elemExtra(p: BPlayer): [number, number] {
+    let a = 0;
+    let h = 0;
+    for (const m of p.board) if (m.id === 'BG34_Giant_686') (a += 3 * (m.golden ? 2 : 1)), (h += 3 * (m.golden ? 2 : 1));
+    for (const hk of this.hooks(p)) {
+      const e = hk.elemExtra?.(p);
+      if (e) (a += e[0]), (h += e[1]);
+    }
+    return [a, h];
+  }
+
+  /** 戰鬥中拿到的卡（手下或法術） */
+  giveFromCombat(p: BPlayer, id: string, o: GiveOpts = {}) {
+    if (bgCard(id).type !== 'MINION') return this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
+    const m = this.make(id, o.golden);
+    if (o.copy) {
+      const c = o.copy;
+      Object.assign(m, { atk: c.atk, hp: o.full ? (c.maxHp ?? c.hp) : c.hp, taunt: c.taunt, shield: c.shield, windfury: c.windfury, venom: c.venom, reborn: c.reborn, golden: c.golden || !!o.golden, gifts: c.gifts?.slice() });
+      m.hp = Math.max(1, m.hp);
+    }
+    this.addMinion(p, m);
+  }
+
+  /** 招募階段：手下透過效果獲得身材（觸發「獲得身材後」的效果） */
+  statGain(p: BPlayer, m: BMinion, atk: number, hp: number) {
+    if (!atk && !hp) return;
+    if ((p.c['~statDepth'] ?? 0) > 2) return;
+    p.c['~statDepth'] = (p.c['~statDepth'] ?? 0) + 1;
+    const r = this.recruit(p);
+    try {
+      for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onStatGain?.(r, x, m, atk, hp, g);
+      for (const h of [...p.hand]) if (h.kind === 'minion') for (const { s, g } of specsOf(h.m)) s.inHandStatGain?.(r, h.m, m, atk, hp, g);
+      for (const hk of this.hooks(p)) hk.onStatGain?.(this, p, m, atk, hp);
+    } finally {
+      p.c['~statDepth']--;
+    }
+  }
+
   /** 空育逃亡者：在招募階段觸發奮戰，戰鬥中得到的身材永久保留 */
-  rallyOutside(p: BPlayer, m: BMinion) {
-    const spec = specsOf(m).filter(({ s }) => s.rally);
+  rallyOutside(p: BPlayer, m: BMinion, kind: 'rally' | 'dr' = 'rally') {
+    const spec = kind === 'dr' ? [...specsOf(m), ...(m.extraDr ?? []).map((x) => ({ s: SPEC.get(x.id)!, g: x.g }))].filter(({ s }) => s?.deathrattle) : specsOf(m).filter(({ s }) => s.rally);
     if (!spec.length) return;
     const dummy = newPlayer(-1, '', false);
     const target = this.make('BG19_010t');
@@ -1279,16 +1806,25 @@ export class BgGame {
       nextUid: () => this.nextUid(),
       inLobby: (id) => id in this.s.pool,
       inLobbySpell: (id) => this.spellInLobby(id),
-      give: (pl, id) => {
-        if (bgCard(id).type === 'MINION') this.addMinion(pl, this.make(id));
-        else this.addHand(pl, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
-      },
+      give: (pl, id, o) => this.giveFromCombat(pl, id, o),
+      goldenize: (pl, m) => this.goldenize(pl, m),
       giveRandom: (pl, f) => {
         const id = this.draw(f);
         if (id) this.addMinion(pl, this.make(id));
       },
     });
-    sim.rallyOutside(m.uid);
+    const born = sim.rallyOutside(m.uid, kind);
+    for (const x of born) {
+      if (p.board.length >= BOARD_MAX) break;
+      const n = this.make(x.id, x.golden);
+      Object.assign(n, { atk: x.atk, hp: x.hp, taunt: x.taunt, shield: x.shield, windfury: x.windfury, venom: x.venom, reborn: x.reborn });
+      p.board.splice(Math.min(p.board.length, p.board.indexOf(m) + 1), 0, n);
+    }
+  }
+
+  /** 在招募階段觸發亡語 */
+  deathrattleOutside(p: BPlayer, m: BMinion) {
+    this.rallyOutside(p, m, 'dr');
   }
 
   /** 尤格薩倫：施放一張隨機法術（隨機目標、隨機選項） */
@@ -1321,11 +1857,14 @@ export class BgGame {
     if (BOUNTIES.includes(id)) times += p.board.reduce((n, x) => n + (x.id === 'BG33_825' ? (x.golden ? 2 : 1) : 0), 0);
     for (const hk of this.hooks(p)) times += hk.spellTimes?.(this, p, id, t) ?? 0;
     // 熔岩潛伏者：每回合第一個對它施放的造法法術永久有效
-    const lurker = t && t.id === 'BG23_009' && SPELLCRAFT_SPELLS.has(id) && t.act !== this.s.round ? t : null;
+    // 時光扭曲熔岩潛伏者、奇術師頭像、疲憊頭像：造法法術永久有效
+    const lavaFirst = !!t && t.id === 'BG23_009' && SPELLCRAFT_SPELLS.has(id) && t.act !== this.s.round;
+    const permCraft = !!t && SPELLCRAFT_SPELLS.has(id) && ((p.c['~permCraft'] ?? 0) > 0 || this.hooks(p).some((hk) => hk.permCraft?.(p, id)));
+    const lurker = lavaFirst || permCraft ? t : null;
     const before = lurker ? { a: lurker.tmpAtk, h: lurker.tmpHp, kw: [...lurker.tmpKw] } : null;
     for (let k = 0; k < times; k++) spec.cast(ctx, t, g, choice);
     if (lurker && before) {
-      lurker.act = this.s.round;
+      if (lavaFirst) lurker.act = this.s.round;
       lurker.atk += lurker.tmpAtk - before.a;
       lurker.hp += lurker.tmpHp - before.h;
       for (const kw of lurker.tmpKw) if (!before.kw.includes(kw)) lurker[kw] = true;
@@ -1336,6 +1875,7 @@ export class BgGame {
     p.c.spells = (p.c.spells ?? 0) + 1;
     if (tavern) {
       p.c.tspells = (p.c.tspells ?? 0) + 1;
+      p.c['t:tsp'] = (p.c['t:tsp'] ?? 0) + 1;
       p.lastSpell = id;
     }
     for (const x of [...p.board]) for (const { s, g: gg } of specsOf(x)) s.onSpell?.(r, x, t, gg, id);
@@ -1344,9 +1884,29 @@ export class BgGame {
   }
 
   // —— 英雄能力 ——
-  powerState(p: BPlayer): { cost: number; usable: boolean; reason: string | null } {
+  /** 第二個英雄能力：暫時把它換到主要的位置來計算 / 使用 */
+  private withSlot<T>(p: BPlayer, slot: number, fn: () => T): T {
+    if (!slot) return fn();
+    if (!p.power2) throw new BgError('沒有第二個英雄能力');
+    const keep = { hero: p.powerHero, uses: p.powerUses, spent: p.powerSpent };
+    p.powerHero = p.power2;
+    p.powerUses = p.power2Uses ?? 0;
+    p.powerSpent = !!p.power2Spent;
+    try {
+      return fn();
+    } finally {
+      p.power2Uses = p.powerUses;
+      p.power2Spent = p.powerSpent;
+      p.powerHero = keep.hero;
+      p.powerUses = keep.uses;
+      p.powerSpent = keep.spent;
+    }
+  }
+  powerState(p: BPlayer, slot = 0): { cost: number; usable: boolean; reason: string | null } {
+    if (slot) return p.power2 ? this.withSlot(p, slot, () => this.powerState(p)) : { cost: 0, usable: false, reason: '沒有第二個英雄能力' };
     const h = heroOf(p);
     if (!h || h.passive) return { cost: 0, usable: false, reason: '被動能力' };
+    if (p.c.noPower) return { cost: 0, usable: false, reason: '英雄能力已經變成飾品了' };
     const cost = h.cost ? h.cost(p, this) : 0;
     const lock = h.locked?.(p, this) ?? null;
     if (lock) return { cost, usable: false, reason: lock };
@@ -1358,8 +1918,9 @@ export class BgGame {
   }
 
   /** 使用英雄能力；target2 = 第二個目標（沃金）；手牌目標（卓雷阿葛斯）用 target 傳手牌的 uid */
-  usePower(pi: number, target?: number, target2?: number, choice = 0) {
+  usePower(pi: number, target?: number, target2?: number, choice = 0, slot = 0): void {
     const p = this.player(pi);
+    if (slot) return this.withSlot(p, slot, () => this.usePower(pi, target, target2, choice));
     this.ensure(p);
     const h = heroOf(p);
     const st = this.powerState(p);
@@ -1381,6 +1942,13 @@ export class BgGame {
     p.powerUses++;
     if (h.once) p.powerSpent = true;
     h.use(this, p, t, t2, h.target === 'hand' ? target ?? null : null, choice);
+    // 暗影看守者（夥伴）：下一次英雄能力讓目標變成金卡
+    if (t && p.c.powerGold) {
+      p.c.powerGold = 0;
+      this.goldenize(p, t);
+    }
+    const rp = this.recruit(p);
+    for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onPowerUse?.(rp, x, t, g);
     // 遠古許願骨：英雄能力觸發兩次（目標還在的話）
     if (this.hooks(p).some((hk) => hk.powerTwice) && h.target !== 'hand') {
       const still = (m: BMinion | null) => !m || p.board.includes(m) || p.shop.includes(m);
@@ -1396,56 +1964,11 @@ export class BgGame {
     for (const p of this.alive()) this.endTurn(p);
     this.s.phase = 'combat';
     const damage = new Map<number, number>();
-    for (const [a, b] of this.s.pairs) {
-      const pa = this.player(a);
-      const ghost = b < 0 ? this.ghost() : null;
-      const pb = b < 0 ? ghost : this.player(b);
-      const boards: [BMinion[], BMinion[]] = [pa.board.map((m) => ({ ...m })), pb ? (b < 0 ? pb.deathBoard ?? [] : pb.board).map((m) => ({ ...m })) : []];
-      const record = pa.isHuman || (b >= 0 && this.player(b).isHuman);
-      const sideA = this.sideInput(pa, true);
-      const sideB: SideInput = pb
-        ? b < 0
-          ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.powerHero ?? pb.heroId, hooks: this.hooks(pb), hand: [], persist: false }
-          : this.sideInput(pb, true)
-        : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
-      const res = runCombat([sideA, sideB], {
-        rng: this.s,
-        turn: this.s.round,
-        record,
-        nextUid: () => this.nextUid(),
-        inLobby: (id) => id in this.s.pool,
-        inLobbySpell: (id) => this.spellInLobby(id),
-        give: (p, id) => {
-          if (bgCard(id).type === 'MINION') this.addMinion(p, this.make(id));
-          else this.addHand(p, { kind: 'spell', uid: this.nextUid(), id, g: 1 });
-        },
-        giveRandom: (p, f) => {
-          const id = this.draw(f);
-          if (id) this.addMinion(p, this.make(id));
-        },
-      });
-      const cap = damageCap(this.s.round, this.alive().length);
-      const dmg = Math.min(cap, res.damage);
-      const winner = res.winner === null ? null : res.winner === 0 ? a : b;
-      this.s.combats.push({ round: this.s.round, a, b, ghostOf: ghost?.idx ?? null, winner, damage: dmg, boards, frames: res.frames });
-      pa.results.push(res.winner === null ? 'draw' : res.winner === 0 ? 'win' : 'loss');
-      pa.lastDied = res.died[0];
-      pa.lastBoardIds = boards[0].map((m) => m.id);
-      for (const hk of this.hooks(pa)) hk.afterCombat?.(this, pa, pa.results[pa.results.length - 1]);
-      pa.lastOpp = b;
-      if (b >= 0) {
-        const pbb = this.player(b);
-        pbb.results.push(res.winner === null ? 'draw' : res.winner === 1 ? 'win' : 'loss');
-        pbb.lastDied = res.died[1];
-        pbb.lastBoardIds = boards[1].map((m) => m.id);
-        for (const hk of this.hooks(pbb)) hk.afterCombat?.(this, pbb, pbb.results[pbb.results.length - 1]);
-        pbb.lastOpp = a;
-        pa.seen[b] = { round: this.s.round, board: boards[1], tier: pbb.tier, heroId: pbb.heroId };
-        pbb.seen[a] = { round: this.s.round, board: boards[0], tier: pa.tier, heroId: pa.heroId };
-      }
-      if (res.winner === 1) damage.set(a, (damage.get(a) ?? 0) + dmg);
-      if (res.winner === 0 && b >= 0) damage.set(b, (damage.get(b) ?? 0) + dmg);
-    }
+    this.syncTeams();
+    if (this.s.duos) {
+      // 雙人模式：一場隊伍戰鬥（兩組配對的第一組代表這場）
+      for (const [a, b] of this.s.pairs) if (a % 2 === 0) this.teamCombat(this.teamOf(a), b < 0 ? -1 : this.teamOf(b), damage);
+    } else for (const [a, b] of this.s.pairs) this.soloCombat(a, b, damage);
     for (const [i, d0] of damage) {
       const p = this.player(i);
       let d = d0;
@@ -1454,6 +1977,7 @@ export class BgGame {
       p.armor -= fromArmor;
       p.hp -= d - fromArmor;
     }
+    this.syncTeams();
     // 戰鬥後才結算的酒館法術：過度自信、贏家的麵包；起始戰鬥的法術用完了
     for (const p of this.alive()) {
       const res = p.results[p.results.length - 1];
@@ -1465,13 +1989,29 @@ export class BgGame {
       for (const x of p.after) if (x.won === undefined) x.won = res === 'win';
       p.c.upperHand = 0;
       p.c.brood = 0;
+      p.c.peace = 0;
       if (res !== 'win') p.c['q:lose'] = (p.c['q:lose'] ?? 0) + 1;
+      const atks = p.board.map((m) => m.atk);
+      if (atks.length > 1 && atks.every((a, i) => i === 0 || atks[i - 1] <= a)) p.c['q:order'] = (p.c['q:order'] ?? 0) + 1;
       this.checkQuest(p);
+    }
+    // 巴羅夫：押對了拿到 3 枚旅店幸運幣；觸發過的奧秘從場上移除
+    for (const p of this.alive()) {
+      if (p.wager !== undefined && p.wager !== null) {
+        const rec = this.s.combats.find((c) => c.a === p.wager || c.b === p.wager);
+        if (rec && rec.winner === p.wager) for (let k = 0; k < 3; k++) this.addHand(p, { kind: 'spell', uid: this.nextUid(), id: COIN, g: 1 });
+        p.wager = null;
+      }
+      if (p.secrets?.length) {
+        p.secrets = p.secrets.filter((id) => !p.c[`secret:${id}`]);
+        for (const k of Object.keys(p.c)) if (k.startsWith('secret:')) delete p.c[k];
+      }
     }
     // 淘汰：同一回合死掉的，血量比較低的名次比較後面
     const dying = this.alive()
       .filter((p) => p.hp <= 0)
       .sort((x, y) => x.hp - y.hp);
+    if (this.s.duos) return this.eliminateTeams(dying);
     let place = this.alive().length;
     for (const p of dying) {
       p.alive = false;
@@ -1483,6 +2023,148 @@ export class BgGame {
     const left = this.alive();
     if (left.length <= 1) {
       for (const p of left) p.place = 1;
+      this.s.phase = 'over';
+    }
+  }
+
+  private combatOpts(record: boolean) {
+    return {
+      rng: this.s,
+      turn: this.s.round,
+      record,
+      nextUid: () => this.nextUid(),
+      inLobby: (id: string) => id in this.s.pool,
+      inLobbySpell: (id: string) => this.spellInLobby(id),
+      give: (p: BPlayer, id: string, o?: GiveOpts) => this.giveFromCombat(p, id, o),
+      goldenize: (p: BPlayer, m: BMinion) => this.goldenize(p, m),
+      giveRandom: (p: BPlayer, f: (id: string) => boolean) => {
+        const id = this.draw(f);
+        if (id) this.addMinion(p, this.make(id));
+      },
+    };
+  }
+
+  private soloCombat(a: number, b: number, damage: Map<number, number>) {
+    const pa = this.player(a);
+    const ghost = b < 0 ? this.ghost() : null;
+    const pb = b < 0 ? ghost : this.player(b);
+    const boards: [BMinion[], BMinion[]] = [pa.board.map((m) => ({ ...m })), pb ? (b < 0 ? pb.deathBoard ?? [] : pb.board).map((m) => ({ ...m })) : []];
+    const record = pa.isHuman || (b >= 0 && this.player(b).isHuman);
+    const sideA = this.sideInput(pa, true);
+    const sideB: SideInput = pb
+      ? b < 0
+        ? { player: pb, board: pb.deathBoard ?? [], tier: pb.tier, heroId: pb.powerHero ?? pb.heroId, hooks: this.hooks(pb), hand: [], persist: false }
+        : this.sideInput(pb, true)
+      : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
+    const res = runCombat([sideA, sideB], this.combatOpts(record));
+    const cap = damageCap(this.s.round, this.alive().length);
+    const dmg = Math.min(cap, res.damage);
+    const winner = res.winner === null ? null : res.winner === 0 ? a : b;
+    this.s.combats.push({ round: this.s.round, a, b, ghostOf: ghost?.idx ?? null, winner, damage: dmg, boards, frames: res.frames });
+    pa.results.push(res.winner === null ? 'draw' : res.winner === 0 ? 'win' : 'loss');
+    pa.lastDied = res.died[0];
+    pa.lastDiedUids = res.diedSrc[0];
+    pa.lastBoardIds = boards[0].map((m) => m.id);
+    for (const hk of this.hooks(pa)) hk.afterCombat?.(this, pa, pa.results[pa.results.length - 1]);
+    pa.lastOpp = b;
+    if (b >= 0) {
+      const pbb = this.player(b);
+      pbb.results.push(res.winner === null ? 'draw' : res.winner === 1 ? 'win' : 'loss');
+      pbb.lastDied = res.died[1];
+      pbb.lastDiedUids = res.diedSrc[1];
+      pbb.lastBoardIds = boards[1].map((m) => m.id);
+      for (const hk of this.hooks(pbb)) hk.afterCombat?.(this, pbb, pbb.results[pbb.results.length - 1]);
+      pbb.lastOpp = a;
+      pa.seen[b] = { round: this.s.round, board: boards[1], tier: pbb.tier, heroId: pbb.heroId };
+      pbb.seen[a] = { round: this.s.round, board: boards[0], tier: pa.tier, heroId: pa.heroId };
+    }
+    if (res.winner === 1) damage.set(a, (damage.get(a) ?? 0) + dmg);
+    if (res.winner === 0 && b >= 0) damage.set(b, (damage.get(b) ?? 0) + dmg);
+  }
+
+  /** 雙人模式：隊伍對隊伍的戰鬥（先上場的隊員被打光後換隊友） */
+  private teamCombat(ta: number, tb: number, damage: Map<number, number>) {
+    const order = (t: number): [BPlayer, BPlayer] => {
+      const [x, y] = this.teamMembers(t);
+      const tf = (this.s.teamFirst ??= {});
+      const last = tf[t];
+      // 先上場的隊員：75% 會換人，同一個人最多連續 3 次
+      let first = x;
+      if (last) {
+        const same = this.player(last.idx);
+        const swap = last.streak >= 3 || this.rand() < 0.75;
+        first = swap ? (same === x ? y : x) : same;
+      } else first = this.rand() < 0.5 ? x : y;
+      tf[t] = { idx: first.idx, streak: last && last.idx === first.idx ? last.streak + 1 : 1 };
+      return first === x ? [x, y] : [y, x];
+    };
+    const [a1, a2] = order(ta);
+    const side = (p: BPlayer): SideInput => this.sideInput(p, true);
+    const sideA: SideInput = { ...side(a1), next: side(a2) };
+    let sideB: SideInput;
+    let ghostOf: number | null = null;
+    let teamB: BPlayer[] = [];
+    if (tb >= 0) {
+      const [b1, b2] = order(tb);
+      teamB = [b1, b2];
+      sideB = { ...side(b1), next: side(b2) };
+    } else {
+      // 殘影：最近被淘汰的隊伍
+      const g = this.ghost();
+      const gs = g ? [g, this.player(g.idx ^ 1)] : [];
+      ghostOf = g?.idx ?? null;
+      const gi = (p: BPlayer): SideInput => ({ player: p, board: p.deathBoard ?? [], tier: p.tier, heroId: p.powerHero ?? p.heroId, hooks: this.hooks(p), hand: [], persist: false });
+      sideB = gs.length ? { ...gi(gs[0]), next: gi(gs[1]) } : { player: newPlayer(-1, '', false), board: [], tier: 1, heroId: '', hand: [], persist: false };
+    }
+    const teamA = [a1, a2];
+    const record = [...teamA, ...teamB].some((p) => p.isHuman);
+    const boards: [BMinion[], BMinion[]] = [a1.board.map((m) => ({ ...m })), sideB.board.map((m) => ({ ...m }))];
+    const startBoards = new Map([...teamA, ...teamB].map((p) => [p.idx, p.board.map((m) => ({ ...m }))]));
+    const res = runCombat([sideA, sideB], this.combatOpts(record));
+    const cap = damageCap(this.s.round, this.alive().length);
+    const dmg = Math.min(cap, res.damage);
+    const winner = res.winner === null ? null : res.winner === 0 ? a1.idx : tb >= 0 ? teamB[0].idx : -1;
+    this.s.combats.push({ round: this.s.round, a: a1.idx, b: tb >= 0 ? teamB[0].idx : -1, ghostOf, winner, damage: dmg, boards, frames: res.frames, teamA: teamA.map((p) => p.idx), teamB: teamB.map((p) => p.idx) });
+    const finish = (team: BPlayer[], won: 0 | 1, opp: BPlayer[]) => {
+      const r = res.winner === null ? 'draw' : res.winner === won ? 'win' : 'loss';
+      team.forEach((p, k) => {
+        p.results.push(r);
+        p.lastDied = res.byPlayer?.[p.idx]?.died ?? [];
+        p.lastDiedUids = res.byPlayer?.[p.idx]?.diedSrc ?? [];
+        p.lastBoardIds = (startBoards.get(p.idx) ?? []).map((m) => m.id);
+        for (const hk of this.hooks(p)) hk.afterCombat?.(this, p, r);
+        const o = opp[k];
+        p.lastOpp = o ? o.idx : -1;
+        for (const q of opp) p.seen[q.idx] = { round: this.s.round, board: startBoards.get(q.idx) ?? [], tier: q.tier, heroId: q.heroId };
+      });
+    };
+    finish(teamA, 0, teamB);
+    if (teamB.length) finish(teamB, 1, teamA);
+    // 共用生命值：傷害只算在一位隊員身上，之後再同步
+    if (res.winner === 1) damage.set(a1.idx, (damage.get(a1.idx) ?? 0) + dmg);
+    if (res.winner === 0 && teamB.length) damage.set(teamB[0].idx, (damage.get(teamB[0].idx) ?? 0) + dmg);
+  }
+
+  /** 雙人模式的淘汰：整隊一起出局，名次是隊伍的名次 */
+  private eliminateTeams(dying: BPlayer[]) {
+    const teamsAlive = () => new Set(this.alive().map((p) => this.teamOf(p))).size;
+    let place = teamsAlive();
+    const done = new Set<number>();
+    for (const p of dying) {
+      const t = this.teamOf(p);
+      if (done.has(t)) continue;
+      done.add(t);
+      for (const x of this.teamMembers(t)) {
+        x.alive = false;
+        x.place = place;
+        x.diedRound = this.s.round;
+        x.deathBoard = x.board.map((m) => ({ ...m }));
+      }
+      place--;
+      for (const x of this.teamMembers(t)) for (const q of this.alive()) for (const hk of this.hooks(q)) hk.onHeroDeath?.(this, q, x);
+    }
+    if (teamsAlive() <= 1) {
+      for (const p of this.alive()) p.place = 1;
       this.s.phase = 'over';
     }
   }
@@ -1502,13 +2184,21 @@ export class BgGame {
     const G = this;
     return {
       p,
+      G,
       turn: G.s.round,
       tribes: G.s.tribes,
       rand: () => G.rand(),
       pick: (arr) => G.pick(arr),
       buff(m, atk, hp) {
+        // 元素給的身材額外加成（捲沙者、泉湧之筆、增幅精華）
+        if ((p.c['~elem'] ?? 0) > 0 && (atk > 0 || hp > 0)) {
+          const [ea, eh] = G.elemExtra(p);
+          atk += atk > 0 ? ea : 0;
+          hp += hp > 0 ? eh : 0;
+        }
         m.atk = Math.max(0, m.atk + atk);
         m.hp += hp;
+        G.statGain(p, m, atk, hp);
       },
       spellBuff(m, atk, hp) {
         const [a, h] = G.spellExtra(p);
@@ -1565,13 +2255,18 @@ export class BgGame {
       make: (id, golden) => G.make(id, golden),
       destroy(m) {
         p.board = p.board.filter((x) => x !== m);
+        p.hand = p.hand.filter((h) => !(h.kind === 'minion' && h.m === m));
         G.returnToPool(m);
+        for (const hk of G.hooks(p)) hk.onDestroy?.(G, p, m);
       },
       consume(eater, food) {
         p.shop = p.shop.filter((x) => x !== food);
         eater.atk += food.atk;
         eater.hp += food.hp;
         G.returnToPool(food);
+        for (const hk of G.hooks(p)) hk.onConsume?.(G, p, eater, food);
+        for (const x of [...p.board]) for (const { s, g } of specsOf(x)) s.onConsumeAny?.(this, x, eater, food, g);
+        G.statGain(p, eater, food.atk, food.hp);
       },
       battlecry(m) {
         const spec = SPEC.get(m.id);
@@ -1638,12 +2333,17 @@ export class BgGame {
       },
       spellInLobby: (id) => G.spellInLobby(id),
       tavernBuff(atk, hp, tribe) {
+        if ((p.c['~elem'] ?? 0) > 0) {
+          const [ea, eh] = G.elemExtra(p);
+          atk += ea;
+          hp += eh;
+        }
         const ka = tribe ? `tav:${tribe}:A` : 'tavA';
         const kh = tribe ? `tav:${tribe}:H` : 'tavH';
         p.c[ka] = (p.c[ka] ?? 0) + atk;
         p.c[kh] = (p.c[kh] ?? 0) + hp;
         for (const m of p.shop) {
-          if (tribe && !racesOf(m.id).includes(tribe)) continue;
+          if (tribe && !racesOf(m).includes(tribe)) continue;
           m.atk += atk;
           m.hp += hp;
         }
@@ -1660,6 +2360,18 @@ export class BgGame {
         }
       },
       drawSpell: (filter) => G.randomSpell(p, filter),
+      discoverBonus(filter, title, atk, hp) {
+        G.discoverFor(p, filter, title, { bonus: [atk, hp] });
+      },
+      discoverOpts(filter, title, extra) {
+        G.discoverFor(p, filter, title, extra);
+      },
+      offer(options, title, extra = {}) {
+        if (!options.length) return;
+        const d: Discover = { options, title, noPool: true, ...extra };
+        if (p.discover) p.dq.push(d);
+        else p.discover = d;
+      },
       goldenize(m) {
         G.goldenize(p, m);
       },

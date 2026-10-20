@@ -12,10 +12,12 @@ import { mostCommonType, SPELL_SPEC } from './spells';
 import { runCombat } from './combat';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
-import { heroOf, HERO_SPEC, type HeroSpec } from './heroes';
+import { heroOf, heroOf2, HERO_SPEC, type HeroSpec } from './heroes';
 import { nextRandom } from '../engine/rng';
 import { BOARD_MAX, canMagnetize, HAND_MAX, MINION_COST, specsOf } from './rules';
 import { relicCost, RELIC_SPEC } from './relics';
+import { twCost } from './timewarp';
+import { SECRET_SPEC } from './secrets';
 import { TRIBE_NAMES, TRIBES, type BgPersona, type BgStyle, type BMinion, type BPlayer, type HandCard, type Tribe } from './types';
 
 export type BgDifficulty = 'novice' | 'normal' | 'expert' | 'master';
@@ -114,7 +116,7 @@ function decideFocus(G: BgGame, p: BPlayer, persona: BgPersona): Tribe | null {
   const score = new Map<Tribe, number>();
   const minions = [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))];
   for (const m of minions) {
-    const races = racesOf(m.id);
+    const races = racesOf(m);
     if (races.length === TRIBES.length) continue;
     for (const t of races) score.set(t, (score.get(t) ?? 0) + 1 + (m.golden ? 1 : 0) + (SPEC.get(m.id)?.syn === t ? 0.5 : 0));
   }
@@ -147,12 +149,12 @@ export function minionValue(G: BgGame, p: BPlayer, m: BMinion, focus: Tribe | nu
     if (s.scale) v += s.scale * g * Math.max(0.5, Math.min(4, (14 - round) / 3)) * (0.4 + skill * 0.8);
     // 搭配：場上有幾個同種族
     if (s.syn) {
-      const n = p.board.filter((x) => x !== m && isRace(x.id, s.syn!)).length;
+      const n = p.board.filter((x) => x !== m && isRace(x, s.syn!)).length;
       v += n * 1.4 * g * skill;
       if (focus === s.syn) v += 3 * skill;
     }
   }
-  const races = racesOf(m.id);
+  const races = racesOf(m);
   if (focus && races.includes(focus) && races.length < TRIBES.length) v += 2 + 3 * skill;
   // 隨著回合推進，低等級的白板手下越來越不值錢
   v -= Math.max(0, round - 4 - tierOf(m.id) * 1.5) * 0.6 * skill;
@@ -170,7 +172,9 @@ function copiesOwned(p: BPlayer, id: string): number {
 function buyValue(M: Mind, m: BMinion): number {
   const { G, p, persona } = M;
   let v = minionValue(G, p, m, M.focus, persona.skill);
-  const need = heroOf(p)?.tripleNeed ?? 3;
+  // 暗月彩票（希拉斯）：集滿 3 張可以發現
+  if (m.ticket) v += 3 + persona.skill * 3;
+  const need = Math.min(3, ...G.hooks(p).map((hk) => hk.tripleNeed ?? hk.tripleNeedFor?.(m.id) ?? 3), m.id.endsWith('_Buddy') ? 2 : 3);
   const owned = copiesOwned(p, m.id);
   // 三連：新手常常沒發現
   const noticesTriple = M.r() < 0.35 + persona.skill * 0.65;
@@ -250,12 +254,20 @@ function step(M: Mind): boolean {
       return true;
     }
   }
+  // 雙人模式：把隊友湊得到三連的手下傳過去
+  if (passToMate(M)) return true;
   // 4. 打出手牌
   if (playFromHand(M)) return true;
   // 5. 英雄能力
   if (usePower(M)) return true;
-  // 6. 夥伴按鈕
+  // 6. 夥伴按鈕、黑暗發現
   if (pressBuddy(M)) return true;
+  const dark = G.darkState(p);
+  if (dark?.usable && (p.gold >= 3 + G.minionCost(p) || G.round >= 6) && p.hand.length < HAND_MAX - 1 && M.r() < 0.4 + persona.skill * 0.6) {
+    G.pressDark(p.idx);
+    M.bought.push('黑暗發現');
+    return true;
+  }
   // 7. 買手下
   if (buySomething(M)) return true;
   // 7. 啟動技能
@@ -294,6 +306,31 @@ function wantsLevel(M: Mind, look = 0): boolean {
   return p.tier < target;
 }
 
+/** 黑暗贈禮大概值多少（身材、強力的起始戰鬥效果比較值錢） */
+function GIFT_VALUE(id: string): number {
+  const n = Number(id.split('t').pop());
+  if ([72, 81, 90, 13, 12].includes(n)) return 8;
+  if ([0, 2, 4, 7, 71, 15, 60, 73, 28, 29, 30, 88].includes(n)) return 5;
+  return 3;
+}
+
+/** 雙人模式：手上的手下隊友已經有兩張（自己沒有別張）就傳給隊友 */
+function passToMate(M: Mind): boolean {
+  const { G, p, persona } = M;
+  const mate = G.partner(p);
+  if (!mate?.alive || p.gold < 1 || mate.hand.length >= HAND_MAX || (p.c['t:passes'] ?? 0) >= 2) return false;
+  // 新手比較不會想到要傳卡
+  if (persona.skill < 0.35 && M.r() < 0.6) return false;
+  const all = (q: BPlayer) => [...q.board, ...q.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))];
+  const count = (q: BPlayer, id: string) => all(q).filter((m) => m.id === id && !m.golden).length;
+  const card = p.hand.find((h) => h.kind === 'minion' && !h.m.golden && count(mate, h.m.id) >= 2 && count(p, h.m.id) === 1);
+  if (!card) return false;
+  G.pass(p.idx, card.uid);
+  p.c['t:passes'] = (p.c['t:passes'] ?? 0) + 1;
+  M.notes.push(`把${bgCard(card.kind === 'minion' ? card.m.id : card.id).name}傳給${mate.name}`);
+  return true;
+}
+
 /** 夥伴按鈕：買得起、又不會影響這回合的發展就按 */
 function pressBuddy(M: Mind): boolean {
   const { G, p, persona } = M;
@@ -316,7 +353,7 @@ function relicValue(M: Mind, id: string): number {
   let v = r?.v ?? 4;
   const tribe = r?.needTribe ?? (bgCard(id).assoc?.[0] as Tribe | undefined);
   if (tribe) {
-    const n = p.board.filter((m) => isRace(m.id, tribe)).length;
+    const n = p.board.filter((m) => isRace(m, tribe)).length;
     v += M.focus === tribe ? 3 : n >= 3 ? 2 : n === 0 ? -2 : 0;
   }
   // 花的錢越多越要值得（高手比較會算）
@@ -327,7 +364,7 @@ function relicValue(M: Mind, id: string): number {
 /** 任務：大概要多久才完成（越適合現在的戰隊越快） */
 function questValue(M: Mind, qid: string, reward: string): number {
   const { p } = M;
-  const has = (t: Tribe) => p.board.filter((m) => isRace(m.id, t)).length;
+  const has = (t: Tribe) => p.board.filter((m) => isRace(m, t)).length;
   const fit: Record<string, number> = {
     BG24_Quest_124: has('UNDEAD') + has('BEAST'),
     BG24_Quest_320: has('UNDEAD') + has('BEAST') + has('MECHANICAL'),
@@ -350,6 +387,41 @@ function chooseDiscover(M: Mind) {
   if (!d) return;
   let best = 0;
   let bestV = -Infinity;
+  // 巴羅夫：押血量和酒館等級比較高的那位
+  if (d.bet) {
+    const score = (i: number) => G.player(i).hp + G.player(i).armor + G.player(i).tier * 4 + gauss(M) * (1 - M.persona.skill) * 10;
+    return G.choose(p.idx, score(d.bet[0]) >= score(d.bet[1]) ? 0 : 1);
+  }
+  // 凱莉根：變成等級最高的蟲族
+  if (d.morph !== undefined) {
+    d.options.forEach((id, i) => {
+      const v = tierOf(id) * 3 + M.r() * 2;
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    return G.choose(p.idx, best);
+  }
+  // 英雄專屬的選擇
+  if (d.pick) {
+    d.options.forEach((id, i) => {
+      let v = M.r();
+      if (d.pick === 'cariel') v += id.endsWith('p_t1') ? (G.round < 8 ? 3 : 1) : id.endsWith('t3') ? 2 : 1.5;
+      if (d.pick === 'flight') v += id.endsWith('t3') ? (G.round < 9 ? 3 : 1) : id.endsWith('t2') ? 2 : 1;
+      if (d.pick === 'secret') v += SECRET_SPEC.get(id)?.v ?? 3;
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    return G.choose(p.idx, best);
+  }
+  // 時光扭曲：用時光晶幣買最值得的（每枚晶幣的價值），買不起就離開
+  if (d.timewarp) {
+    d.options.forEach((id, i) => {
+      if (!G.canBuyWarp(p, id)) return;
+      const v = (bgCard(id).type === 'MINION' ? buyValue(M, G.make(id, !!d.golden)) : spellValue(M, id) + 2) / twCost(id);
+      if (v > bestV) (bestV = v), (best = i);
+    });
+    if (bestV === -Infinity) return G.choose(p.idx, -1);
+    M.notes.push(`時光扭曲買了${bgCard(d.options[best]).name}`);
+    return G.choose(p.idx, best);
+  }
   if (d.relics) {
     d.options.forEach((id, i) => {
       const v = G.relicPrice(p, d, id) > p.gold ? -Infinity : relicValue(M, id);
@@ -379,7 +451,7 @@ function chooseDiscover(M: Mind) {
     if (d.powers) v = (HERO_SPEC.get(id)?.rank ?? 2) * 3 + gauss(M) * (1 - M.persona.skill) * 4;
     else if (d.spells) v = spellValue(M, id);
     else if (d.objs) v = minionValue(G, p, d.objs[i], M.focus, M.persona.skill);
-    else v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0);
+    else v = buyValue(M, G.make(id, !!d.golden)) + (d.hurt ? -tierOf(id) * (M.danger ? 1.5 : 0.4) : 0) + (d.gifts ? GIFT_VALUE(d.gifts[i]) : 0);
     if (v > bestV) {
       bestV = v;
       best = i;
@@ -472,10 +544,14 @@ function playFromHand(M: Mind): boolean {
 }
 
 function usePower(M: Mind): boolean {
+  return usePowerSlot(M, 0) || usePowerSlot(M, 1);
+}
+
+function usePowerSlot(M: Mind, slot: number): boolean {
   const { G, p, persona } = M;
-  const h: HeroSpec | undefined = heroOf(p);
+  const h: HeroSpec | undefined = slot ? heroOf2(p) : heroOf(p);
   if (!h?.ai) return false;
-  const st = G.powerState(p);
+  const st = G.powerState(p, slot);
   if (!st.usable) return false;
   // 先確保有錢買東西（技術好的會算好）
   if (st.cost > 0 && persona.skill > 0.5 && p.gold - st.cost < G.minionCost(p) && p.gold - st.cost > 0 && G.round > 2 && h.id !== 'BG32_HERO_001') return false;
@@ -483,7 +559,7 @@ function usePower(M: Mind): boolean {
   const t = h.ai(G, p);
   if (t === undefined) return false;
   try {
-    G.usePower(p.idx, t === 'none' ? undefined : t.uid, undefined, h.aiChoice?.(G, p) ?? 0);
+    G.usePower(p.idx, t === 'none' ? undefined : t.uid, undefined, h.aiChoice?.(G, p) ?? 0, slot);
   } catch {
     return false;
   }
@@ -614,11 +690,11 @@ function minionChoice(M: Mind, id: string): number {
   const { G, p } = M;
   switch (id) {
     case 'BG27_084': // 活潑聖甲蟲：攻擊力高的給風怒
-      return p.board.some((m) => isRace(m.id, 'BEAST') && m.atk >= 6) ? 1 : 0;
+      return p.board.some((m) => isRace(m, 'BEAST') && m.atk >= 6) ? 1 : 0;
     case 'BG30_123': // 無畏饕客：前期拿加成，後期拿寶石
       return G.round <= 8 ? 0 : 1;
     case 'BG36_330': // 狡猾的滲透者
-      return p.board.some((m) => isRace(m.id, 'QUILBOAR')) ? 1 : 0;
+      return p.board.some((m) => isRace(m, 'QUILBOAR')) ? 1 : 0;
     case 'BG36_332': // 陷阱獵手：前期拿金幣上限
       return G.round <= 7 ? 1 : 0;
     default:
@@ -637,7 +713,7 @@ function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefin
     case 'BG28_503':
       return pickFriendlyTarget(M, (m) => friends.includes(m) && !m.taunt) ?? friends[0];
     case GEM:
-      return pickFriendlyTarget(M, (m) => friends.includes(m) && isRace(m.id, 'QUILBOAR')) ?? pickFriendlyTarget(M, (m) => friends.includes(m));
+      return pickFriendlyTarget(M, (m) => friends.includes(m) && isRace(m, 'QUILBOAR')) ?? pickFriendlyTarget(M, (m) => friends.includes(m));
     case 'BG28_604': // 屠殺：犧牲最弱的不死族
     case 'EBG_Spell_032': // 引導吞噬者
     case 'BG28_838': // 完美幻象：最弱的那個加最多
@@ -651,7 +727,7 @@ function spellTarget(M: Mind, id: string, targets: BMinion[]): BMinion | undefin
     case 'EBG_Spell_038': {
       // 「選一個手下」：選自己最多的種族
       const t = mostCommonType(p.board);
-      return targets.find((m) => p.board.includes(m) && t && isRace(m.id, t)) ?? friends[0] ?? targets[0];
+      return targets.find((m) => p.board.includes(m) && t && isRace(m, t)) ?? friends[0] ?? targets[0];
     }
     default:
       return pickFriendlyTarget(M, (m) => friends.includes(m)) ?? targets[0];

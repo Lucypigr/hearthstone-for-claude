@@ -6,6 +6,10 @@ import { SPELLCRAFT_SPELLS } from './cards';
 import { bgCard, hasBgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry } from './rules';
+import { PRIZES } from './prizes';
+import { TW_CRAFT, TW_SPELLS } from './timewarp';
+import { LATE } from './late';
+import { RAYNOR_SPELLS } from './herocards';
 import { BONUS_KEYWORDS, TRIBES, type BMinion, type BPlayer, type Keyword, type Tribe } from './types';
 
 export interface SpellCtx {
@@ -39,13 +43,13 @@ const ABSORB = 'BG35_911';
 const GEM_DAY = 'BG31_893';
 export const BOUNTIES = ['BG33_811', 'BG33_812', 'BG33_813', 'BG33_814', 'BG33_815'];
 
-const race = (m: BMinion, t: Tribe) => isRace(m.id, t);
+const race = (m: BMinion, t: Tribe) => isRace(m, t);
 const board = (ctx: SpellCtx) => ctx.p.board;
 /** 最多的種族 */
 export function mostCommonType(ms: BMinion[]): Tribe | null {
   const n = new Map<Tribe, number>();
   for (const m of ms) {
-    const r = racesOf(m.id);
+    const r = racesOf(m);
     if (r.length === TRIBES.length) continue;
     for (const t of r) n.set(t, (n.get(t) ?? 0) + 1);
   }
@@ -201,10 +205,10 @@ export const SPELLS: SpellSpec[] = [
   {
     id: 'BG28_518', // 主廚精選
     target: 'any',
-    filter: (m) => racesOf(m.id).length > 0,
+    filter: (m) => racesOf(m).length > 0,
     cast: ({ r }, t) => {
       if (!t) return;
-      const types = racesOf(t.id);
+      const types = racesOf(t);
       r.getRandom((id) => id !== t.id && racesOf(id).some((x) => types.includes(x)));
     },
     v: (G, p) => 3 + p.tier * 2 + G.round * 0.2,
@@ -401,14 +405,14 @@ export const SPELLS: SpellSpec[] = [
   {
     id: 'BG28_845', // 自然祝福
     target: 'any',
-    filter: (m) => racesOf(m.id).length > 0,
+    filter: (m) => racesOf(m).length > 0,
     stats: true,
     cast: (ctx, t) => {
       if (!t) return;
-      const types = racesOf(t.id);
-      allBuff(ctx, 2, 1, (m) => racesOf(m.id).some((x) => types.includes(x)));
+      const types = racesOf(t);
+      allBuff(ctx, 2, 1, (m) => racesOf(m).some((x) => types.includes(x)));
     },
-    v: (_G, p) => 3 * p.board.filter((m) => racesOf(m.id).length).length * 0.7,
+    v: (_G, p) => 3 * p.board.filter((m) => racesOf(m).length).length * 0.7,
   },
   {
     id: 'BG28_888', // 放錯的茶具組
@@ -423,7 +427,7 @@ export const SPELLS: SpellSpec[] = [
         ctx.r.spellBuff(m, 4, 4);
       }
     },
-    v: (_G, p) => 8 * Math.min(p.board.length, new Set(p.board.flatMap((m) => racesOf(m.id))).size),
+    v: (_G, p) => 8 * Math.min(p.board.length, new Set(p.board.flatMap((m) => racesOf(m))).size),
   },
   {
     id: 'BG31_819', // 溫度轉變
@@ -466,9 +470,9 @@ export const SPELLS: SpellSpec[] = [
   {
     id: 'BG35_912', // 伊歐娜的眷顧
     target: 'any',
-    filter: (m) => racesOf(m.id).length > 0 && racesOf(m.id).length < TRIBES.length,
+    filter: (m) => racesOf(m).length > 0 && racesOf(m).length < TRIBES.length,
     cast: ({ r }, t) => {
-      if (t) r.tavernBuff(3, 3, racesOf(t.id)[0]);
+      if (t) r.tavernBuff(3, 3, racesOf(t)[0]);
     },
     v: (G) => Math.max(3, 14 - G.round),
   },
@@ -656,9 +660,9 @@ export const SPELLS: SpellSpec[] = [
   {
     id: 'EBG_Spell_038', // 哈繆爾丟失的法杖
     target: 'any',
-    filter: (m) => racesOf(m.id).length > 0 && racesOf(m.id).length < TRIBES.length,
+    filter: (m) => racesOf(m).length > 0 && racesOf(m).length < TRIBES.length,
     cast: ({ G, p }, t) => {
-      if (t) G.refreshShop(p, { tribe: racesOf(t.id)[0] });
+      if (t) G.refreshShop(p, { tribe: racesOf(t)[0] });
     },
     v: fixedV(6),
   },
@@ -668,13 +672,17 @@ export const SPELLS: SpellSpec[] = [
 export const COMBAT_SPELLS = new Set(['BG28_168', 'BG36_246']);
 
 export const SPELL_SPEC = new Map<string, SpellSpec>();
-for (const s of SPELLS) if (!SPELL_SPEC.has(s.id)) SPELL_SPEC.set(s.id, s);
+for (const s of [...SPELLS, ...PRIZES, ...TW_SPELLS, ...TW_CRAFT, ...RAYNOR_SPELLS]) if (!SPELL_SPEC.has(s.id)) SPELL_SPEC.set(s.id, s);
 
 /** 會給身材的酒館法術 */
 export const STAT_SPELLS = SPELLS.filter((s) => s.stats && hasBgCard(s.id) && bgCard(s.id).pool).map((s) => s.id);
 
 /** 酒館裡會賣的法術（有實作、不含 7 本） */
-export const TAVERN_SPELLS = [...SPELL_SPEC.keys()].filter((id) => hasBgCard(id) && bgCard(id).pool && (bgCard(id).tier ?? 1) <= 6);
+export const TAVERN_SPELLS = [...SPELL_SPEC.keys()].filter((id) => hasBgCard(id) && bgCard(id).pool && (bgCard(id).tier ?? 1) <= 7);
+
+LATE.tavern = TAVERN_SPELLS;
+LATE.bounties = BOUNTIES;
+LATE.stats = STAT_SPELLS;
 
 export function isTavernSpell(id: string): boolean {
   return hasBgCard(id) && (!!bgCard(id).pool || id === POINTY || id === CONFLAG || id === ABSORB);

@@ -1,6 +1,12 @@
 // 英雄戰場的英雄與英雄能力（依官方敘述實作；只收錄能完整執行的英雄）
 import type { Combat } from './api';
+// cards.ts 要先載入（夥伴、黑暗贈禮、英雄專屬的卡都由它初始化）
 import { COIN, POOL_IDS, SPEC, SPELLCRAFT_SPELLS, TRIPLE_REWARD } from './cards';
+import { BUDDY_IDS } from './buddies';
+import { GIFT_IDS } from './gifts';
+import { ALL_ZERG, CREATION, CRUISER, LARVA, PROTOSS, RAYNOR_IDS, upgradeFor, ZERG } from './herocards';
+import { SECRET_SPEC, SECRETS } from './secrets';
+import { LATE } from './late';
 import { bgCard, isRace, racesOf, tierOf } from './data';
 import type { BgGame } from './game';
 import { hasBattlecry, isMagnetic } from './rules';
@@ -111,6 +117,34 @@ export interface HeroSpec {
   combatDamage?: (p: BPlayer, dmg: number) => number;
   // 戰鬥中
   onShieldLost?(c: Combat, side: 0 | 1, m: BMinion): void;
+  /** 友方手下受到傷害後、失去烈毒後、攻擊之後 */
+  onFriendDamaged?(c: Combat, side: 0 | 1, m: BMinion): void;
+  onVenomLost?(c: Combat, side: 0 | 1, m: BMinion): void;
+  afterAttack?(c: Combat, side: 0 | 1, m: BMinion): void;
+  /** 最左與最右的龍保留戰鬥中的身材 */
+  keepEnds?: boolean;
+  /** 奮戰多觸發幾次 */
+  rallyExtra?: number;
+  /** 神祇：金卡 / 甦醒後有復生 */
+  deityGolden?: boolean;
+  deityReborn?: boolean;
+  /** 這次購買改用生命值支付 */
+  healthCost?: (p: BPlayer, kind: 'minion' | 'spell', id: string) => boolean;
+  /** 這次刷新只有這個等級的手下 */
+  refreshTier?: (p: BPlayer) => number | undefined;
+  /** 在戰鬥外摧毀手下後、手下吃掉酒館的手下後 */
+  onDestroy?(G: BgGame, p: BPlayer, m: BMinion): void;
+  onConsume?(G: BgGame, p: BPlayer, eater: BMinion, food: BMinion): void;
+  /** 造法法術永久有效（奇術師頭像、疲憊頭像） */
+  permCraft?: (p: BPlayer, id: string) => boolean;
+  /** 元素給的身材額外 +X/+Y */
+  elemExtra?: (p: BPlayer) => [number, number];
+  /** 招募階段：手下透過效果獲得身材後 */
+  onStatGain?(G: BgGame, p: BPlayer, m: BMinion, atk: number, hp: number): void;
+  /** 友方手下被攻擊時（傷害前） */
+  onAttacked?(c: Combat, side: 0 | 1, target: BMinion, attacker: BMinion): void;
+  /** 敵方手下對你的手下造成傷害後 */
+  onHitBy?(c: Combat, side: 0 | 1, source: BMinion, amount: number): void;
   onFriendReborn?(c: Combat, side: 0 | 1, m: BMinion): void;
   onDeathrattle?(c: Combat, side: 0 | 1, m: BMinion): void;
   /** 起始戰鬥效果多觸發幾次 */
@@ -119,6 +153,30 @@ export interface HeroSpec {
   drExtra?: number;
   /** 每場戰鬥第一個亡語多觸發一次 */
   firstDrExtra?: boolean;
+  /** 三合一獎勵改成發現暗月獎品（等級越來越高 / 固定等級 3） */
+  prizeTriples?: boolean;
+  prizeTriple3?: boolean;
+  /** 只有這些酒館等級（真是稀「奇」！） */
+  tierSet?: number[];
+  /** 酒館法術有法術彩票（魔法商店） */
+  spellTickets?: boolean;
+  /** 戰鬥中每場第一個起始戰鬥效果多觸發一次 */
+  firstSocExtra?: boolean;
+  /** 戰鬥中召喚的手下放不下時 */
+  onOverflow?(c: Combat, side: 0 | 1): void;
+  /** 夥伴按鈕：按下後、可以按第 3 次、價格倍率 */
+  onBuddy?(G: BgGame, p: BPlayer): void;
+  buddyThird?: boolean;
+  buddyCostMult?: number;
+  /** 夥伴會出現在酒館裡 */
+  buddyPool?: boolean;
+  /** 所有人都是這位英雄 */
+  allHeroes?: string;
+  /** 時光扭曲：多幾枚時光晶幣、時光晶幣可以帶到下一次、第 8 和 9 回合都去高級、這個時光扭曲都是金卡 */
+  chronumExtra?: number;
+  chronumPool?: boolean;
+  majorTwice?: boolean;
+  goldenWarp?: 'minor' | 'major';
   /** 酒館法術的費用 */
   spellCost?: (p: BPlayer, cost: number, id?: string) => number;
   // 戰鬥中
@@ -139,6 +197,13 @@ const strongest = (b: BMinion[]) => (b.length ? b.reduce((a, x) => (x.atk + x.hp
 const weakest = (b: BMinion[]) => (b.length ? b.reduce((a, x) => (x.atk + x.hp < a.atk + a.hp ? x : a)) : undefined);
 const cnt = (p: BPlayer, k: string) => p.c[k] ?? 0;
 const add = (p: BPlayer, k: string, n = 1) => (p.c[k] = cnt(p, k) + n);
+
+/** 亞坦尼斯：買滿 14 張卡後拿到神族 */
+function giveProtoss(G: BgGame, p: BPlayer) {
+  if (!p.protoss || cnt(p, 'protossGiven') || cnt(p, 'cards') < 14) return;
+  p.c.protossGiven = 1;
+  G.addMinion(p, G.make(p.protoss));
+}
 
 function giveCoin(G: BgGame, p: BPlayer) {
   G.addHand(p, { kind: 'spell', uid: G.nextUid(), id: COIN, g: 1 });
@@ -225,7 +290,7 @@ export const HEROES: HeroSpec[] = [
   {
     id: 'TB_BaconShop_HERO_42', // 伊莉絲‧尋星者
     target: 'none',
-    cost: (p) => 1 + cnt(p, 'elise'),
+    cost: (p) => Math.max(0, 1 + cnt(p, 'elise') - cnt(p, 'eliseDisc')),
     use: (G, p) => {
       add(p, 'elise');
       G.discoverFor(p, (id) => tierOf(id) === p.tier, `發現一個旅店等級 ${p.tier} 的手下`);
@@ -267,7 +332,8 @@ export const HEROES: HeroSpec[] = [
     canTarget: (_p, t) => !t.golden,
     use: (G, p, t) => {
       if (!t) return;
-      const tier = tierOf(t.id);
+      // 奧核領主（夥伴）：換成高一本的卡
+      const tier = Math.min(G.maxTier(p), tierOf(t.id) + (G.count(p, 'TB_BaconShop_HERO_58_Buddy') ? 1 : 0));
       const id = G.draw((x) => tierOf(x) === tier && x !== t.id);
       if (!id) return;
       G.returnToPool(t);
@@ -284,9 +350,12 @@ export const HEROES: HeroSpec[] = [
     id: 'TB_BaconShop_HERO_60', // 凱爾薩斯
     passive: true,
     status: (p) => `還差 ${3 - (cnt(p, 'kael') % 3)} 個`,
-    onBuy: (G, p) => {
+    onBuy: (G, p, m) => {
       add(p, 'kael');
-      if (cnt(p, 'kael') % 3 === 0) giveCoin(G, p);
+      if (cnt(p, 'kael') % 3) return;
+      giveCoin(G, p);
+      // 紅手百夫長（夥伴）：獲得最後買的手下的身材
+      for (const b of p.board) if (b.id === 'TB_BaconShop_HERO_60_Buddy') for (let k = 0; k < (b.golden ? 2 : 1); k++) (b.atk += m.atk), (b.hp += m.hp);
     },
     rank: 3,
   },
@@ -357,7 +426,7 @@ export const HEROES: HeroSpec[] = [
     passive: true,
     needTribe: 'PIRATE',
     onBuy: (_G, p, m) => {
-      if (isRace(m.id, 'PIRATE')) p.gold++;
+      if (isRace(m, 'PIRATE')) p.gold++;
     },
     rank: 3,
   },
@@ -559,7 +628,7 @@ export const HEROES: HeroSpec[] = [
     locked: (p) => (p.tier < 4 ? '旅店等級 4 解鎖' : null),
     use: (G, p) => G.discoverFor(p, (id) => isMagnetic(id), '發現一個磁力機械'),
     rank: 3,
-    ai: (_G, p) => (p.hand.length < 8 && p.board.some((m) => isRace(m.id, 'MECHANICAL')) ? 'none' : undefined),
+    ai: (_G, p) => (p.hand.length < 8 && p.board.some((m) => isRace(m, 'MECHANICAL')) ? 'none' : undefined),
   },
   {
     id: 'TB_BaconShop_HERO_67', // 鉤牙船長
@@ -568,6 +637,8 @@ export const HEROES: HeroSpec[] = [
     use: (G, p, t) => {
       if (!t) return;
       const tier = Math.max(1, tierOf(t.id) - 1);
+      // 狂怒的參賽者（夥伴）：獲得等同移除手下等級的金幣
+      p.gold += G.count(p, 'TB_BaconShop_HERO_67_Buddy') * tierOf(t.id);
       p.board = p.board.filter((m) => m !== t);
       G.returnToPool(t);
       G.discoverFor(p, (id) => tierOf(id) === tier, `發現一個旅店等級 ${tier} 的手下`);
@@ -605,10 +676,16 @@ export const HEROES: HeroSpec[] = [
     use: (G, p, t) => {
       if (!t) return;
       const others = p.board.filter((m) => m !== t);
-      const to = G.pick(others);
+      // 夢魘軟漿怪（夥伴）：吞噬它時多吐給一個手下
+      const n = t.id === 'BG20_HERO_301_Buddy' ? 1 + (t.golden ? 2 : 1) : 1;
+      const tos: BMinion[] = [];
+      for (let k = 0; k < n; k++) {
+        const to = G.pick(others.filter((m) => !tos.includes(m)));
+        if (to) tos.push(to);
+      }
       const { atk, hp } = t;
       G.sell(p.idx, t.uid);
-      if (to) (to.atk += atk), (to.hp += hp);
+      for (const to of tos) (to.atk += atk), (to.hp += hp);
     },
     rank: 3,
     ai: (G, p) => (p.board.length >= 6 && G.round >= 4 ? weakest(p.board) : undefined),
@@ -643,9 +720,9 @@ export const HEROES: HeroSpec[] = [
       const n = 1 + Math.floor(c.cnt(side, 'spentTotal') / 10);
       const done = new Set<BMinion>();
       const tribes = new Set<Tribe>();
-      for (const m of c.board(side)) for (const t of racesOf(m.id)) tribes.add(t);
+      for (const m of c.board(side)) for (const t of racesOf(m)) tribes.add(t);
       for (const t of tribes) {
-        const m = c.pick(c.board(side).filter((x) => !x.dead && !done.has(x) && isRace(x.id, t)));
+        const m = c.pick(c.board(side).filter((x) => !x.dead && !done.has(x) && isRace(x, t)));
         if (!m) continue;
         done.add(m);
         c.buff(m, n, n);
@@ -739,7 +816,7 @@ export const HEROES: HeroSpec[] = [
     needTribe: 'ELEMENTAL',
     status: (p) => `還差 ${3 - (cnt(p, 'chen') % 3)} 個元素`,
     onPlay: (_G, p, m) => {
-      if (!isRace(m.id, 'ELEMENTAL')) return;
+      if (!isRace(m, 'ELEMENTAL')) return;
       add(p, 'chen');
       if (cnt(p, 'chen') % 3 === 0) p.upgradeCost = Math.max(0, p.upgradeCost - 3);
     },
@@ -889,7 +966,7 @@ export const HEROES: HeroSpec[] = [
       if (!t) return;
       p.board = p.board.filter((m) => m !== t);
       G.returnToPool(t);
-      for (const r of racesOf(t.id)) add(p, `pot:${r}`);
+      for (const r of racesOf(t)) add(p, `pot:${r}`);
       add(p, 'pot');
       if (cnt(p, 'pot') < 3) return;
       const types = Object.keys(p.c).filter((k) => k.startsWith('pot:') && p.c[k] > 0).map((k) => k.slice(4));
@@ -910,6 +987,8 @@ export const HEROES: HeroSpec[] = [
       p.shop = p.shop.filter((m) => m !== t);
       G.returnToPool(t);
       p.c.tavish = (p.c.tavish ?? 0) + t.atk;
+      // 阿蟹（夥伴）：拿到移除的手下的分身
+      for (let k = 0; k < G.count(p, 'BG22_HERO_000_Buddy'); k++) G.addMinion(p, G.make(t.id));
     },
     soc: (c, side) => {
       const n = c.cnt(side, 'tavish');
@@ -927,30 +1006,12 @@ export const HEROES: HeroSpec[] = [
     cost: fixed(0),
     choices: ['大地祈願：4 個隨機友方手下獲得「亡語：召喚一個 1/1 元素」', '火焰祈願：你最左邊的手下攻擊力加倍', '流水祈願：你最右邊的手下獲得聖盾與嘲諷', '雷電祈願：對 5 個隨機敵方手下造成 1 點傷害'],
     powerId: (p) => (cnt(p, 'brukan') ? `BG22_HERO_001p_t${cnt(p, 'brukan')}` : 'BG22_HERO_001p'),
-    use: (_G, p, _t, _t2, _h, choice = 0) => void (p.c.brukan = choice + 1),
-    soc: (c, side) => {
-      const b = c.board(side).filter((m) => !m.dead);
-      switch (c.cnt(side, 'brukan')) {
-        case 1:
-          for (const m of [...b].sort(() => c.rand() - 0.5).slice(0, 4)) (m.extraDr ??= []).push({ id: 'BG22_HERO_001p_t1', g: 1 });
-          break;
-        case 2:
-          if (b[0]) c.buff(b[0], b[0].atk, 0);
-          break;
-        case 3:
-          if (b.length) {
-            c.giveKw(b[b.length - 1], 'shield');
-            c.giveKw(b[b.length - 1], 'taunt');
-          }
-          break;
-        case 4:
-          for (let k = 0; k < 5; k++) {
-            const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
-            if (t) c.damage(t, 1, null);
-          }
-          break;
-      }
+    use: (_G, p, _t, _t2, _h, choice = 0) => {
+      // 幽靈迅猛龍（夥伴）：記住叫過的元素
+      if (p.c.brukan !== choice + 1) for (const m of p.board) if (m.id === 'BG22_HERO_001_Buddy') m.n |= 1 << choice;
+      p.c.brukan = choice + 1;
     },
+    soc: (c, side) => brukanElement(c, side, c.cnt(side, 'brukan')),
     rank: 3,
     ai: (_G, p) => (cnt(p, 'brukan') ? undefined : 'none'),
     aiChoice: (_G, p) => {
@@ -968,6 +1029,9 @@ export const HEROES: HeroSpec[] = [
       const copy = G.shopMinion(p, best.id);
       best.iced = true;
       copy.iced = true;
+      // 瓦登的水靈戰士（夥伴）：兩個都獲得等同旅店等級的身材
+      const n = G.count(p, 'BG22_HERO_004_Buddy') * p.tier;
+      for (const m of [best, copy]) (m.atk += n), (m.hp += n);
       p.shop.push(copy);
     },
     rank: 3,
@@ -1225,7 +1289,7 @@ export const HEROES: HeroSpec[] = [
       if (id) G.addMinion(p, G.make(id));
     },
     onBuy: (_G, p, m) => {
-      if (isRace(m.id, 'PIRATE')) add(p, 'patches');
+      if (isRace(m, 'PIRATE')) add(p, 'patches');
     },
     rank: 3,
     ai: (G, p) => (G.powerState(p).cost <= 1 && p.hand.length < 8 ? 'none' : undefined),
@@ -1351,7 +1415,7 @@ export const HEROES: HeroSpec[] = [
     needTribe: 'UNDEAD',
     cost: fixed(1),
     locked: (p) => (p.tier < 2 ? '旅店等級 2 解鎖' : null),
-    canTarget: (_p, t) => isRace(t.id, 'UNDEAD'),
+    canTarget: (_p, t) => isRace(t, 'UNDEAD'),
     use: (G, p, t) => {
       if (!t) return;
       p.board = p.board.filter((m) => m !== t);
@@ -1360,7 +1424,7 @@ export const HEROES: HeroSpec[] = [
       if (id) G.addMinion(p, G.make(id));
     },
     rank: 3,
-    ai: (_G, p) => p.board.filter((m) => isRace(m.id, 'UNDEAD') && tierOf(m.id) < p.tier).sort((a, b) => a.atk + a.hp - b.atk - b.hp)[0],
+    ai: (_G, p) => p.board.filter((m) => isRace(m, 'UNDEAD') && tierOf(m.id) < p.tier).sort((a, b) => a.atk + a.hp - b.atk - b.hp)[0],
   },
   { id: 'TB_BaconShop_HERO_93', passive: true, startGame: (G, p) => void G.addMinion(p, G.make('TB_BaconShop_HP_105t')), rank: 3 }, // 恩若司
   {
@@ -1368,6 +1432,250 @@ export const HEROES: HeroSpec[] = [
     passive: true,
     status: () => '每回合開始時選擇新的英雄能力',
     rank: 4,
+  },
+  {
+    id: 'BG30_HERO_304', // 經理馬林：第 5 回合選一個次級飾品購買
+    passive: true,
+    startTurn: (G, p) => void (G.round === 5 && G.offerTrinkets(p, 'lesser')),
+    status: (_p, G) => (G.round < 5 ? `還有 ${5 - G.round} 回合` : '已經開過了'),
+    rank: 3,
+  },
+  {
+    id: 'BG32_HERO_002', // 扣仔：第 8 回合選一個強效飾品購買
+    passive: true,
+    startTurn: (G, p) => void (G.round === 8 && G.offerTrinkets(p, 'greater')),
+    status: (_p, G) => (G.round < 8 ? `還有 ${8 - G.round} 回合` : '已經開過了'),
+    rank: 3,
+  },
+  {
+    id: 'BG36_HERO_101', // 『靈魂寄生者』崔斯塔斯：開局發現一個有黑暗贈禮的 5 本手下，第 7 回合解鎖
+    passive: true,
+    startGame: (G, p) => G.discoverGift(p, (id) => tierOf(id) === 5, '虛無力量：發現一個有黑暗贈禮的旅店等級 5 手下（第 7 回合解鎖）', { lockTurns: 6 }),
+    rank: 3,
+  },
+  {
+    id: 'BG36_HERO_105', // 夢魘之王薩維斯：每 4 回合發現一個有黑暗贈禮的手下
+    passive: true,
+    startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverGift(p, (id) => tierOf(id) <= p.tier, '感受毀滅：發現一個有黑暗贈禮的手下')),
+    status: (_p, G) => `還有 ${4 - (G.round % 4) || 4} 回合`,
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_94', // 提卡特斯：每 4 回合發現一個暗月獎品（等級越來越高）
+    passive: true,
+    startTurn: (G, p) => void (G.round % 4 === 0 && G.discoverPrize(p, Math.min(4, G.round / 4))),
+    status: (_p, G) => `還有 ${4 - (G.round % 4) || 4} 回合`,
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_90', // 希拉斯‧暗月：酒館裡有暗月彩票，集滿 3 張發現一個你的等級的手下
+    passive: true,
+    onShopMinion: (G, _p, m) => void (G.rand() < 0.3 && (m.ticket = true)),
+    onBuy: (G, p, m) => {
+      if (!m.ticket) return;
+      m.ticket = false;
+      p.c.tickets = (p.c.tickets ?? 0) + 1;
+      if (p.c.tickets % 3 === 0) G.discoverFor(p, (id) => tierOf(id) === p.tier, '暗月彩票：發現一個你的等級的手下');
+    },
+    status: (p) => `彩票 ${(p.c.tickets ?? 0) % 3}/3`,
+    rank: 3,
+  },
+  {
+    id: 'BG34_HERO_000', // 『無縛者』姆多茲諾：第 8 回合去高級時光扭曲
+    passive: true,
+    startTurn: (G, p) => void (G.round === 8 && G.offerTimewarp(p, 'major')),
+    status: (_p, G) => (G.round < 8 ? `還有 ${8 - G.round} 回合` : '已經去過了'),
+    rank: 4,
+  },
+  {
+    id: 'BG34_HERO_004', // 米羅克：第 5 回合去次級時光扭曲
+    passive: true,
+    startTurn: (G, p) => void (G.round === 5 && G.offerTimewarp(p, 'minor')),
+    status: (_p, G) => (G.round < 5 ? `還有 ${5 - G.round} 回合` : '已經去過了'),
+    rank: 3,
+  },
+  {
+    id: 'TB_BaconShop_HERO_72', // 巴羅夫領主：猜猜哪位玩家會贏下一場戰鬥，猜對拿到 3 枚旅店幸運幣
+    target: 'none',
+    cost: fixed(1),
+    locked: (p) => (p.wager !== undefined && p.wager !== null ? '這回合已經押注了' : null),
+    use: (G, p) => {
+      const others = G.s.pairs.filter(([a, b]) => b >= 0 && a !== p.idx && b !== p.idx);
+      const pair = G.pick(others) ?? G.s.pairs.find(([a, b]) => b >= 0 && (a === p.idx || b === p.idx));
+      if (!pair) return;
+      const d = { options: pair.map((i) => G.player(i).heroId), bet: [...pair], title: '友好賭注：猜猜誰會贏下一場戰鬥' };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 2,
+    ai: (_G, p) => (p.gold >= 4 ? 'none' : undefined),
+  },
+  {
+    id: 'BG21_HERO_000', // 凱瑞爾‧羅姆：賦予隨機友方手下 +1/+1；每場戰鬥後選擇一項強化
+    target: 'none',
+    cost: fixed(0),
+    use: (G, p) => {
+      const n = 1 + cnt(p, 'carN');
+      const pool = [...p.board];
+      for (let k = 0; k < n && pool.length; k++) {
+        const m = pool.splice(Math.floor(G.rand() * pool.length), 1)[0];
+        m.atk += 1 + cnt(p, 'carA');
+        m.hp += 1 + cnt(p, 'carH');
+      }
+    },
+    afterCombat: (G, p) => G.offerPick(p, 'cariel', ['BG21_HERO_000p_t1', 'BG21_HERO_000_Buddyt3', 'BG21_HERO_000_Buddyt4'], '信念：選擇一項強化'),
+    status: (p) => `${1 + cnt(p, 'carN')} 個手下 +${1 + cnt(p, 'carA')}/+${1 + cnt(p, 'carH')}`,
+    rank: 3,
+    ai: (_G, p) => (p.board.length ? 'none' : undefined),
+  },
+  {
+    id: 'BG20_HERO_283', // 飆翼：選擇新的航線，抵達時拿到獎勵
+    target: 'none',
+    cost: fixed(0),
+    locked: (p, G) => (cnt(p, 'flight') ? `航線進行中（還有 ${cnt(p, 'flightAt') - G.round} 回合）` : null),
+    use: (G, p) => G.offerPick(p, 'flight', ['BG20_HERO_283p_t1', 'BG20_HERO_283p_t2', 'BG20_HERO_283p_t3'], '鄧加的獅鷲獸：選擇新的航線'),
+    startTurn: (G, p) => {
+      if (!cnt(p, 'flight') || G.round < cnt(p, 'flightAt')) return;
+      const n = cnt(p, 'flight');
+      p.c.flight = 0;
+      for (let k = 0; k <= G.count(p, 'BG20_HERO_283_Buddy'); k++) {
+        if (n === 1) {
+          const id = G.randomSpell(p, (x) => (bgCard(x).cost ?? 1) === 1 && tierOf(x) <= p.tier);
+          if (id) G.addHand(p, { kind: 'spell', uid: G.nextUid(), id, g: 1 });
+        } else if (n === 2) p.gold += 2;
+        else G.discoverFor(p, (id) => tierOf(id) === p.tier, '東瘟疫之地：發現一個你的等級的手下');
+      }
+    },
+    status: (p, G) => (cnt(p, 'flight') ? `抵達${['', '西部荒野', '鐵爐堡', '東瘟疫之地'][cnt(p, 'flight')]}還有 ${cnt(p, 'flightAt') - G.round} 回合` : '選擇新的航線'),
+    rank: 3,
+    ai: () => 'none',
+    aiChoice: () => 0,
+  },
+  {
+    id: 'BG25_HERO_100', // 普崔希德教授：打造自訂的不死族（3 次）
+    target: 'none',
+    cost: fixed(3),
+    locked: (p) => (cnt(p, 'creations') >= 3 ? '已經打造 3 個了' : null),
+    use: (G, p) => {
+      add(p, 'creations');
+      const bag = [...GIFT_IDS];
+      const gifts = [0, 1, 2].map(() => bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
+      const st = 2 * p.tier + 2;
+      const d = { options: [CREATION, CREATION, CREATION], gifts, noPool: true, stats: [st, st] as [number, number], title: '打造不死族：選擇它的能力' };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    status: (p) => `還能打造 ${3 - cnt(p, 'creations')} 個`,
+    rank: 3,
+    ai: (G, p) => (p.gold >= 3 + (G.round > 5 ? 0 : 3) && p.hand.length < 9 ? 'none' : undefined),
+  },
+  {
+    id: 'BG35_HERO_001', // 『狼人之王』吉恩：第 4 回合發現兩個英雄能力取代這個能力
+    passive: true,
+    startTurn: (G, p) => {
+      if (G.round !== 4) return;
+      G.offerPowers(p, 3, '雙重之王：選擇取代這個能力的英雄能力');
+      const first = p.discover?.powers ? p.discover.options : p.dq.find((d) => d.powers)?.options ?? [];
+      G.offerPowers(p, 3, '雙重之王：選擇第二個英雄能力', true, first);
+    },
+    status: (_p, G) => (G.round < 4 ? `還有 ${4 - G.round} 回合` : null),
+    rank: 4,
+  },
+  {
+    id: 'BG31_HERO_801', // 吉姆‧雷諾：開局有 2/2 戰巡艦；酒館每次刷新多一張戰巡艦升級
+    passive: true,
+    startGame: (G, p) => void G.addMinion(p, G.make(CRUISER)),
+    onRefresh: (G, p) => {
+      const id = upgradeFor(p.tier, () => G.rand());
+      if (id) p.shopSpells.push({ uid: G.nextUid(), id });
+    },
+    spellCost: (p, cost, id) => (id && RAYNOR_IDS.has(id) && p.c.bcFree && !p.c['t:bcFree'] ? 0 : cost),
+    onBuySpell: (_G, p, id) => void (RAYNOR_IDS.has(id) && p.c.bcFree && (p.c['t:bcFree'] = 1)),
+    rank: 4,
+  },
+  {
+    id: 'BG31_HERO_802', // 亞坦尼斯：開局選一個神族，買滿 14 張卡後拿到
+    passive: true,
+    startGame: (G, p) => {
+      const bag = [...PROTOSS];
+      const options = [0, 1].map(() => bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
+      G.offerPick(p, 'protoss', options, '傳送門：選擇買滿 14 張卡後拿到的神族手下');
+    },
+    onBuy: (G, p) => giveProtoss(G, p),
+    onBuySpell: (G, p) => giveProtoss(G, p),
+    status: (p) => (cnt(p, 'protossGiven') ? '已經拿到了' : `還要買 ${Math.max(0, 14 - cnt(p, 'cards'))} 張卡`),
+    rank: 3,
+  },
+  {
+    id: 'BG31_HERO_811', // 『刀鋒女皇』凱莉根：開局有幼蟲；解鎖更高階的蟲族（每回合便宜 1）
+    target: 'none',
+    cost: (p, G) => (cnt(p, 'zerg') === 0 ? Math.max(0, 6 - (G.round - 1)) : Math.max(0, 8 - (G.round - cnt(p, 'zergAt')))),
+    locked: (p) => (cnt(p, 'zerg') >= 2 ? '已經解鎖所有蟲族' : null),
+    use: (G, p) => {
+      add(p, 'zerg');
+      p.c.zergAt = G.round;
+    },
+    powerId: (p) => ['BG31_HERO_811p', 'BG31_HERO_811p2', 'BG31_HERO_811p3'][Math.min(2, cnt(p, 'zerg'))],
+    startGame: (G, p) => void G.addMinion(p, G.make(LARVA)),
+    startTurn: (G, p) => {
+      const unlocked = ZERG.slice(0, 1 + cnt(p, 'zerg')).flat();
+      for (const m of [...p.board, ...p.hand.flatMap((h) => (h.kind === 'minion' ? [h.m] : []))]) {
+        if (!ALL_ZERG.has(m.id)) continue;
+        const bag = unlocked.filter((id) => id !== m.id);
+        const options = [0, 1, 2].map(() => bag.splice(Math.floor(G.rand() * bag.length), 1)[0]).filter(Boolean);
+        const d = { options, morph: m.uid, noPool: true, title: `蟲族變形：選擇${bgCard(m.id).name}要變成什麼（保留身材）` };
+        if (p.discover) p.dq.push(d);
+        else p.discover = d;
+      }
+    },
+    onKill: (c, side) => {
+      for (const m of c.board(side)) if (!m.dead && m.id === 'BG31_HERO_811t6') c.perm(m, 3 * (m.golden ? 2 : 1), 0);
+    },
+    rank: 4,
+    ai: (G, p) => (G.powerState(p).cost <= Math.max(0, p.gold - 3) ? 'none' : undefined),
+  },
+  {
+    id: 'TB_BaconShop_HERO_21', // 魔術大師阿卡贊札拉克：選擇一個奧秘放到場上
+    target: 'none',
+    cost: fixed(0),
+    locked: (p) => ((p.secrets?.length ?? 0) >= 4 ? '場上的奧秘已滿' : null),
+    use: (G, p) => {
+      // 街頭魔術師（夥伴）：從進階奧秘中選
+      const better = G.count(p, 'TB_BaconShop_HERO_21_Buddy') > 0;
+      const bag = SECRETS.map((s) => s.id)
+        .filter((id) => !id.endsWith('b'))
+        .map((id) => (better && SECRET_SPEC.has(`${id}b`) ? `${id}b` : id))
+        .filter((id) => !(p.secrets ?? []).includes(id));
+      const options: string[] = [];
+      while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
+      G.offerPick(p, 'secret', options, '變戲法：選擇一個奧秘');
+    },
+    status: (p) => (p.secrets?.length ? `場上的奧秘：${p.secrets.map((id) => bgCard(id).name).join('、')}` : null),
+    rank: 3,
+    ai: () => 'none',
+  },
+  {
+    id: 'BG24_HERO_100', // 戴納瑟斯王：開局從 2 個任務中選一個
+    passive: true,
+    startGame: (G, p) => G.offerQuests(p, 2),
+    rank: 3,
+  },
+  {
+    id: 'BG25_HERO_105', // 『樂團經理』精英牛頭大佬：發現一個夥伴（2 本解鎖）
+    target: 'none',
+    cost: fixed(3),
+    locked: (p) => (p.tier < 2 ? '升到 2 本才能使用' : null),
+    use: (G, p) => {
+      const bag = [...BUDDY_IDS].filter((id) => tierOf(id) <= p.tier && id !== 'BG25_HERO_105_Buddy');
+      const options: string[] = [];
+      while (options.length < 3 && bag.length) options.push(bag.splice(Math.floor(G.rand() * bag.length), 1)[0]);
+      if (!options.length) return;
+      const d = { options, title: '精英牛頭大佬：發現一個夥伴', noPool: true };
+      if (p.discover) p.dq.push(d);
+      else p.discover = d;
+    },
+    rank: 3,
+    ai: (G, p) => (p.hand.length < 9 && p.gold >= 3 + (G.round > 6 ? 0 : 3) ? 'none' : undefined),
   },
 ];
 
@@ -1430,6 +1738,11 @@ export function heroOf(p: BPlayer): HeroSpec | undefined {
   return HERO_SPEC.get(p.powerHero ?? p.heroId);
 }
 
+/** 第二個英雄能力 */
+export function heroOf2(p: BPlayer): HeroSpec | undefined {
+  return p.power2 ? HERO_SPEC.get(p.power2) : undefined;
+}
+
 /** 英雄能力的卡（顯示用） */
 export function powerCardOf(p: BPlayer): string {
   const h = heroOf(p);
@@ -1439,3 +1752,29 @@ export function powerCardOf(p: BPlayer): string {
 export function heroAvailable(h: HeroSpec, tribes: Tribe[]): boolean {
   return !h.needTribe || tribes.includes(h.needTribe);
 }
+
+/** 布魯坎的元素祈願（幽靈迅猛龍的亡語也會用到） */
+export function brukanElement(c: Combat, side: 0 | 1, n: number) {
+  const b = c.board(side).filter((m) => !m.dead);
+  switch (n) {
+    case 1:
+      for (const m of [...b].sort(() => c.rand() - 0.5).slice(0, 4)) (m.extraDr ??= []).push({ id: 'BG22_HERO_001p_t1', g: 1 });
+      break;
+    case 2:
+      if (b[0]) c.buff(b[0], b[0].atk, 0);
+      break;
+    case 3:
+      if (b.length) {
+        c.giveKw(b[b.length - 1], 'shield');
+        c.giveKw(b[b.length - 1], 'taunt');
+      }
+      break;
+    case 4:
+      for (let k = 0; k < 5; k++) {
+        const t = c.pick(c.board((1 - side) as 0 | 1).filter((m) => !m.dead));
+        if (t) c.damage(t, 1, null);
+      }
+      break;
+  }
+}
+LATE.brukan = brukanElement;
