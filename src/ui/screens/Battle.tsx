@@ -126,7 +126,17 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
   // ------------------------------------------------------------ 電腦回合
   // 只在遊戲狀態改變（version）時排程，滑鼠移動等重繪不會打斷電腦
   useEffect(() => {
-    if (!s || s.phase !== 'play' || s.current !== AI || s.pendingChoice) return;
+    if (!s || s.phase !== 'play' || s.pendingChoice) return;
+    // 主宰者尤格薩倫：你的額外回合由尤格薩倫（電腦）代為進行
+    if (s.yoggTurn === s.current && s.current === ME) {
+      const t = window.setTimeout(() => {
+        const a = chooseAction(g, 'normal');
+        if (!g.apply(a)) g.apply({ type: 'endTurn' });
+        refresh();
+      }, AI_DELAY[profile.settings.aiSpeed]);
+      return () => window.clearTimeout(t);
+    }
+    if (s.current !== AI) return;
     const wait = brain ? brain.thinkTime(g) * SPEED_FACTOR[profile.settings.aiSpeed] : AI_DELAY[profile.settings.aiSpeed];
     const t = window.setTimeout(() => {
       if (brain) {
@@ -293,7 +303,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const myTurn = !!s && s.phase === 'play' && s.current === ME && !s.pendingChoice;
+  const myTurn = !!s && s.phase === 'play' && s.current === ME && !s.pendingChoice && s.yoggTurn !== ME;
   // 諾茲多姆：玩家只有 15 秒可以進行回合
   const nozTurn = !!s && s.phase === 'play' && s.current === ME && g.flagOnBoard('nozdormu') ? s.turn : -1;
   useEffect(() => {
@@ -1226,7 +1236,7 @@ export function Battle({ config, onExit, onRematch }: { config: BattleConfig; on
             <h2>{s.pendingChoice.title}</h2>
             <div className="card-row">
               {s.pendingChoice.options.map((id, i) => (
-                <CardView key={id + i} cardId={id} width={170} playable onClick={() => act({ type: 'choose', index: i })} />
+                <CardView key={id + i} cardId={id} def={s.pendingChoice!.defs?.[i]} width={170} playable onClick={() => act({ type: 'choose', index: i })} />
               ))}
             </div>
           </div>

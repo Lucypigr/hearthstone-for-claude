@@ -239,6 +239,8 @@ async function main() {
       cost: r.tags.COST ?? 0,
       collectible,
     };
+    // 組裝卡池：卡面文字的上下半段（上半段通常是觸發條件，下半段是效果）
+    if (r.tags.CRAFTABLE_OUTPUT_POWER && r.halves?.zhTW) def.assembleText = [clean(r.halves.zhTW[0]), clean(r.halves.zhTW[1])];
     const flavor = clean(r.strs.FLAVORTEXT?.zhTW);
     if (flavor && collectible) def.flavor = flavor;
     if (type === 'MINION' || type === 'WEAPON') {

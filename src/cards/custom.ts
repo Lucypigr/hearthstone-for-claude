@@ -73,6 +73,9 @@ export const CUSTOM_CARDS: CardDef[] = [
     abilities: [{ on: { k: 'play' }, effects: [{ e: 'custom', fn: 'buildABeast' }, { e: 'costMod', amount: -3, scope: 'it' }] }],
   },
   token('BE_T_CONSTRUCT', '構造體', 'Construct', 10, 10, { set: 1994 }),
+  // 死亡綻放的肉食植物：召喚的 5/5 昆蟲；賽特胥：護甲值變成的魔像
+  token('BE_T_BUG', '昆蟲', 'Bug', 5, 5, { set: 1994, races: ['BEAST'], keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
+  token('BE_T_GOLEM', '魔像', 'Golem', 1, 1, { set: 1994, keywords: ['TAUNT'], text: '<b>嘲諷</b>' }),
   token('SC_T_ZERGLING', '跳蟲', 'Zergling', 1, 1, { set: 1935, zerg: true, races: [] }),
   token('DUN_SPORE', '劇毒孢子', 'Deadly Spore', 1, 1, { set: 1004, keywords: ['POISONOUS'], text: '<b>劇毒</b>' }),
   token('TLC_T_TENDRIL', '混沌觸手', 'Chaotic Tendril', 1, 1, { set: 1952 }),

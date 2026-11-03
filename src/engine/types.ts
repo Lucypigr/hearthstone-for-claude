@@ -228,6 +228,10 @@ export type DynAmount =
   | 'spellDamageDealtThisTurn'
   /** 你本場對戰中施放的邪能法術數 */
   | 'felSpellsCast'
+  /** 本場對戰中你召喚的亡語手下數 */
+  | 'deathrattleSummoned'
+  /** 本回合你打出的連擊卡數 */
+  | 'comboPlayedThisTurn'
   /** 場上（雙方）其他魚人的數量 */
   | 'otherMurlocs'
   /** 被凍結的敵人數 */
@@ -450,6 +454,20 @@ export type Condition =
   | { c: 'healedThisTurn' }
   /** 這張牌是本回合才抽到的 */
   | { c: 'thisDrawnThisTurn' }
+  /** 這張牌一開始在你的牌堆中 */
+  | { c: 'startedWith'; card: string }
+  /** 你本場對戰中打出過每一種符文（血魄、冰霜、穢邪）的牌 */
+  | { c: 'playedEachRune' }
+  /** 你本場對戰中完成過儀式 */
+  | { c: 'ritualDone' }
+  /** 現在是此卡擁有者的回合 */
+  | { c: 'myTurn' }
+  /** 這張牌在你手中時，你打出過 n 個不同派系的法術 */
+  | { c: 'handSchools'; n: number }
+  /** 你本回合獲得過護甲值 */
+  | { c: 'armorThisTurn' }
+  /** 全部條件都成立 */
+  | { c: 'all'; conds: Condition[] }
   /** 剛才的傷害榮譽擊殺了選擇的目標 */
   | { c: 'honorableKill' }
   /** 此手下被榮譽擊殺（亡語用） */
@@ -930,6 +948,14 @@ export interface PendingDiscount {
   chooseOne?: boolean;
 }
 
+/** 組裝：一張手下卡面的上下半段。上半段是觸發時機（與條件、關鍵字），下半段是效果 */
+export interface AssembleSplit {
+  /** 上半段：觸發時機與條件；keywords 是上半段帶有的關鍵字（例如「嘲諷」） */
+  top: { on: Trig; ons?: Trig[]; cond?: Condition; keywords?: Keyword[]; /** 上半段完整寫出的其他能力（例如「戰吼：召喚兩個分身。亡語：」的戰吼） */ extra?: Ability[] };
+  /** 下半段：效果與（戰吼時）需要選擇的目標 */
+  bottom: { effects: Effect[]; target?: TargetReq; keywords?: Keyword[] };
+}
+
 /** 出牌時需要選擇的目標 */
 export interface TargetReq {
   filter: Filter;
@@ -1054,6 +1080,16 @@ export interface CardDef {
   costAuras?: CostAura[];
   /** 等級法術：你的法力水晶達到 at 時，手牌中的這張牌升級成 into */
   rankUp?: { at: number; into: string };
+  /** 地點：條件成立之前無法啟用 */
+  locationLock?: Condition;
+  /** 古神：與泰坦一樣有四個技能，但每回合可以使用兩個 */
+  oldGod?: boolean;
+  /** 消耗護甲值而非法力 */
+  costsArmor?: boolean;
+  /** 組裝卡池：卡面文字的上下半段（卡牌資料中以「&」分界） */
+  assembleText?: [string, string];
+  /** 組裝：手動指定這張卡的上下半段效果（沒有指定時由 abilities 自動拆開） */
+  assembleSplit?: AssembleSplit;
   /** 在你交易這張牌後觸發的效果 */
   onTrade?: Effect[];
   /** 條件成立時額外的攻擊力（手下或武器，例如「在你裝備武器時 +2 攻擊力」） */
@@ -1216,6 +1252,10 @@ export type MinionFlag =
   | 'heroesTakeExtra'
   // 奧特蘭克山谷
   | 'immovableObject'
+  // 黑暗帝國霸業
+  | 'protoPandaren'
+  | 'ravitz'
+  | 'lifestealBoth'
   // 貧瘠之地
   | 'gossiper'
   | 'natureSpellDamage3'

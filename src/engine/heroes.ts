@@ -183,6 +183,8 @@ export const EXTRA_POWERS: Record<string, HeroPowerSpec> = {
   GIL_504h: { passive: true, effects: [] },
   ICC_827p: { passive: true, effects: [] },
   YOD_009h: { passive: true, effects: [] },
+  // 拉頡：太陽光輝（組裝出的手下變成的被動英雄能力，效果在 game.ts）
+  BE_004p: { passive: true, effects: [] },
 };
 
 /** 每回合隨機換一種的英雄能力 */

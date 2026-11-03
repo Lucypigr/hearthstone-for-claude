@@ -1,5 +1,6 @@
 // 對戰狀態（純資料，可 structuredClone，供 AI 模擬使用）
-import type { Ability, Aura, CardClass, Effect, Keyword, PendingDiscount, Race } from './types';
+import type { AssembledCard } from './assemble';
+import type { Ability, Aura, CardClass, CardDef, Effect, Keyword, PendingDiscount, Race } from './types';
 
 export type PlayerId = 0 | 1;
 
@@ -132,6 +133,10 @@ export interface HandCard {
   golem?: [string, string];
   /** 隱蔽護罩：這個回合打出時獲得潛行直到你的下個回合 */
   shroudTurn?: number;
+  /** 這張牌在手中時你施放過的法術派系（力量主宰、灼拳學者） */
+  schools?: string[];
+  /** 組裝出的手下 */
+  assembled?: AssembledCard;
   /** 陰影鏡像：每當你打出一張牌就變成它的複製 */
   reflection?: boolean;
   /** 齊利亞斯豪華版 3000 的兩個模組 */
@@ -220,6 +225,8 @@ export interface Minion {
   linked?: number;
   /** 記住的卡（過期品商人棄掉的卡） */
   stash?: string;
+  /** 組裝出的手下 */
+  assembled?: AssembledCard;
   /** 凍結的長毛象：在擁有者施放火焰法術之前保持凍結 */
   mammoth?: boolean;
   /** 你對此手下施放過的法術 */
@@ -247,6 +254,8 @@ export interface Minion {
   /** 泰坦：已用過的能力，以及最近一次使用能力的回合 */
   titanUsed?: string[];
   titanTurn?: number;
+  /** 古神：這個回合用了幾個技能 */
+  titanUses?: { turn: number; n: number };
   /** 諾甘農：各能力的威力倍率 */
   titanPower?: Record<string, number>;
   /** 齊利亞斯豪華版 3000 的兩個模組 */
@@ -697,6 +706,25 @@ export interface PlayerState {
   felSpells?: number;
   /** 奧特蘭克山谷：施放的冰霜法術數、獲得的護甲總量、在對手回合受到的傷害、上一張二選一的選項等 */
   /** 貧瘠之地：召喚過的哨所數、英雄能力造成的傷害、本回合恢復的生命值等 */
+  /** 黑暗帝國霸業：克蘇恩技能、儀式、尤格薩倫、長老真言等 */
+  be?: {
+    cthun?: string[];
+    rituals?: number;
+    drSummoned?: number;
+    minionMana?: number;
+    yoggUsed?: boolean;
+    yoggNext?: boolean;
+    brainTurn?: number;
+    therazane?: string[];
+    elder?: string[];
+    elderNext?: string[];
+    neptulon?: boolean;
+    ammunae?: number;
+    discs?: boolean;
+    rushCharge?: boolean;
+    rajh?: string;
+    archaedas?: Record<number, string>;
+  };
   /** 迷你系列：月光指引、艾德溫、拷貝貓、上一張對友方手下施放的法術等 */
   ded?: {
     moonlit?: { turn: number; copyUid: number; origUid: number }[];
@@ -937,6 +965,8 @@ export interface ChoiceRequest {
   kind: 'discover';
   options: string[];
   title: string;
+  /** 動態合成的選項卡面（例如組裝出的手下），與 options 一一對應 */
+  defs?: CardDef[];
 }
 
 export interface GameState {
@@ -953,6 +983,8 @@ export interface GameState {
   fx: Fx[];
   fxSeq: number;
   pendingChoice: ChoiceRequest | null;
+  /** 主宰者尤格薩倫：這個玩家的這個回合由尤格薩倫（電腦）代為進行 */
+  yoggTurn?: PlayerId;
   deathsThisTurn: number;
   /** 焦油潑灑：這個回合手下受到雙倍傷害 */
   tarSlickTurn?: number;
