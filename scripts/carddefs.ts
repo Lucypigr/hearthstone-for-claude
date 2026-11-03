@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 // 固定在已驗證的版本（master 的新版本可能讓既有的卡牌解析失敗）
-export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/253932/CardDefs.xml';
+export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/255790/CardDefs.xml';
 
 export interface RawCard {
   id: string;
@@ -24,7 +24,11 @@ function decode(s: string): string {
     .replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&amp;/g, '&');
+    .replace(/&amp;/g, '&')
+    // 新版卡牌資料用「&」標記排版斷行（前面沒有空白）；文字中真正的「 & 」前後有空白
+    .replace(/(?<! )&/g, '')
+    // 新版卡牌資料在部分卡面結尾附上內部標記（例如「~GAMEPLAY_ASPROXY_RLK_066」）
+    .replace(/~GAMEPLAY_[A-Z0-9_]*/g, '');
 }
 
 export async function loadCardDefsXml(cachePath: string): Promise<string> {

@@ -42,6 +42,8 @@ export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' 
   heroPower?: HeroPowerSpec;
   /** 二選一的子卡 id（子卡不是 a / b 結尾時） */
   chooseOneIds?: string[];
+  /** 卡牌資料缺少繁中文字時使用的卡名與敘述 */
+  zh?: { name: string; text?: string };
   /** 覆寫中引用的衍生卡，需一起收錄 */
   tokens?: string[];
   /** 這張卡雖然有注入標籤，但沒有（或不需要自動產生）注入版本 */
