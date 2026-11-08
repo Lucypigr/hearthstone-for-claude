@@ -118,9 +118,9 @@ export const BLACK_EMPIRE_OVERRIDES: Record<string, Override> = {
   BE_085: { abilities: ritual(2, summon('BE_085t', 2)), tokens: ['BE_085t'] },
   // 克希斯：戰吼：若你本場對戰中完成過儀式，選擇一個邪惡儀式開始
   BE_090: { abilities: play(cond({ c: 'ritualDone' }, [fn('beKithix')])), tokens: ['BE_090t1', 'BE_090t2', 'BE_090t3'] },
-  BE_090t1: { abilities: ritual(3, fn('beFamine')) },
-  BE_090t2: { abilities: ritual(3, fn('beSubjugation')) },
-  BE_090t3: { abilities: ritual(3, fn('beConquest')) },
+  BE_090t1: { abilities: ritual(2, fn('beFamine')) },
+  BE_090t2: { abilities: ritual(2, fn('beSubjugation')) },
+  BE_090t3: { abilities: ritual(2, fn('beConquest')) },
   // 誓縛者光環：在你施放一張神聖法術後，召喚一個屬性值等同它消耗、有聖盾的士兵。持續 3 回合
   BE_146: { objective: 3, abilities: [...play(fn('objective')), { on: { k: 'spellCast', side: 'friendly', school: 'HOLY' }, effects: [fn('beOathbinder')] }], tokens: ['BE_142t'] },
   // 賽特胥：戰吼：獲得 20 點護甲值。在 2 個回合後，把你的護甲值變成一個有嘲諷的魔像
@@ -255,7 +255,7 @@ export const BLACK_EMPIRE_OVERRIDES: Record<string, Override> = {
   // 喚光者：對雙方玩家生命竊取
   BE_000: { keywords: ['LIFESTEAL'], flags: ['lifestealBoth'] },
   // 進軍戰事：這張牌上的數字等同你剩下的法力。召喚一個有聖盾的 @/@ 士兵
-  BE_142: { abilities: play(fn('beMarch')), tokens: ['BE_142t'] },
+  BE_142: { costIsMana: true, abilities: play(fn('beMarch')), tokens: ['BE_142t'] },
   // 『艾蜜特斯保護者』艾蜜特：嘲諷。戰吼：你牌堆中每有一張神聖法術，洗入一張「抽到時施放」的複製
   BE_143: { keywords: ['TAUNT'], abilities: play(fn('beAmitut')) },
   // 日舞者：在你的回合結束時，獲得一張 2 費的太陽祝福（+2/+3）

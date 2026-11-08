@@ -29,6 +29,21 @@ const CLASS_MAP: Record<number, CardClass> = {
 };
 const TYPE_MAP: Record<number, CardType> = { 4: 'MINION', 5: 'SPELL', 7: 'WEAPON' };
 const RARITY_MAP: Record<number, Rarity> = { 1: 'COMMON', 2: 'FREE', 3: 'RARE', 4: 'EPIC', 5: 'LEGENDARY' };
+/** 第二種族的標記編號（卡牌資料中這些標記沒有名稱；依已知的雙種族手下對照） */
+const EXTRA_RACE_TAGS: Record<number, Race> = {
+  2522: 'PIRATE',
+  2523: 'DRAGON',
+  2525: 'DRAENEI',
+  2534: 'UNDEAD',
+  2536: 'MURLOC',
+  2537: 'DEMON',
+  2539: 'MECHANICAL',
+  2540: 'ELEMENTAL',
+  2542: 'BEAST',
+  2546: 'QUILBOAR',
+  2553: 'NAGA',
+};
+
 const RACE_MAP: Record<number, Race> = {
   2: 'DRAENEI',
   11: 'UNDEAD',
@@ -249,6 +264,10 @@ async function main() {
     }
     const race = RACE_MAP[r.tags.CARDRACE];
     if (race) def.races = [race];
+    // 雙種族的手下：第二種族記在沒有名稱的標記上（以標記編號辨識）
+    for (const [tag, extra] of Object.entries(EXTRA_RACE_TAGS)) {
+      if (r.tags[`#${tag}`] && extra !== race) def.races = [...(def.races ?? []), extra];
+    }
     const school = SCHOOL_MAP[r.tags.SPELL_SCHOOL];
     if (school) def.spellSchool = school;
     if (r.tags.MULTIPLE_CLASSES) {

@@ -80,6 +80,8 @@ export function parseCardDefs(xml: string): RawCard[] {
       const name = t[3] || t[2];
       if (t[4] === 'Card' && t[1]) card.refs[name] = t[1];
       if (t[4] !== 'String' && t[4] !== 'LocString') card.tags[name] = Number(t[5]);
+      // 沒有名稱的標記（卡牌資料中 name="1"）會互相覆蓋，另外以編號保存（例如第二種族）
+      if (t[4] === 'Int') card.tags[`#${t[2]}`] = Number(t[5]);
     }
     cards.push(card);
   }

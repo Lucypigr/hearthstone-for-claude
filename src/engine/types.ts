@@ -1084,6 +1084,8 @@ export interface CardDef {
   locationLock?: Condition;
   /** 古神：與泰坦一樣有四個技能，但每回合可以使用兩個 */
   oldGod?: boolean;
+  /** 消耗等同你剩下的法力（進軍戰事） */
+  costIsMana?: boolean;
   /** 消耗護甲值而非法力 */
   costsArmor?: boolean;
   /** 組裝卡池：卡面文字的上下半段（卡牌資料中以「&」分界） */

@@ -1076,16 +1076,19 @@ export class Game {
       case 'BE_005':
       case 'BE_085':
       case 'BE_726':
+      case 'BE_090t1':
+      case 'BE_090t2':
+      case 'BE_090t3':
         // 儀式：在 2 個回合後
         res.nums = [2];
         break;
       case 'BE_142':
         // 進軍戰事：數字等同你剩下的法力
-        res.nums = [Math.max(1, p.mana), Math.max(1, p.mana)];
+        res.nums = [Math.max(0, p.mana), Math.max(0, p.mana)];
         break;
       case 'BE_287':
         // 古翰：依你打出過的血魄符文強化
-        res.nums = [6 + (p.playedCards ?? []).filter((id) => hasCard(id) && (getCard(id).runes?.blood ?? 0) > 0).length];
+        res.nums = [6 + (p.playedCards ?? []).reduce((t, id) => t + (hasCard(id) ? (getCard(id).runes?.blood ?? 0) : 0), 0)];
         break;
       case 'DED_504':
         res.nums = [2 + 2 * counter];
@@ -1300,6 +1303,8 @@ export class Game {
 
   costOf(p: PlayerState, hc: HandCard): number {
     const def = this.handDef(hc);
+    // 進軍戰事：消耗等同你剩下的法力
+    if (def.costIsMana) return Math.max(0, p.mana);
     let cost = (def.costIf && this.evalCond(def.costIf.cond, { ...this.baseCtx(p.id), playedCard: hc }, hc.uid) ? def.costIf.cost : def.cost) + hc.costMod;
     if (hc.costTurn?.turn === this.s.turn) cost -= hc.costTurn.amount;
     // 支援前線！：本回合你的手下消耗減少 (2)（但不會低於 1）
@@ -1762,10 +1767,11 @@ export class Game {
       if (this.hasKw(c, 'DORMANT')) return false;
       const def = getCard(c.cardId);
       // 泰坦：三個能力全部用完之前無法攻擊；用過能力的回合也不能攻擊
-      if (!c.silenced && def.titan && ((c.titanUsed?.length ?? 0) < def.titan.length || c.titanTurn === s.turn)) return false;
+      // 古神：用完最後一個技能的回合也能攻擊（古神具有衝鋒）
+      if (!c.silenced && def.titan && ((c.titanUsed?.length ?? 0) < def.titan.length || (c.titanTurn === s.turn && !def.oldGod))) return false;
       if (!c.silenced && def.attackIf && !this.evalCond(def.attackIf, { ...this.baseCtx(c.owner), sourceUid: c.uid })) return false;
       if (!c.silenced && def.flags?.includes('noAttackDamaged') && c.hp < c.maxHp) return false;
-      if (c.sleeping && !this.hasKw(c, 'CHARGE') && !this.hasKw(c, 'RUSH')) return false;
+      if (c.sleeping && !this.hasKw(c, 'CHARGE') && !this.hasKw(c, 'RUSH') && !def.oldGod) return false;
     }
     return this.attackTargets(uid).length > 0;
   }
@@ -1781,7 +1787,7 @@ export class Game {
     let heroAllowed = !taunts.length;
     if (!isHero(c)) {
       if (this.hasKw(c, 'CANT_ATTACK_HEROES')) heroAllowed = false;
-      if (c.sleeping && !this.hasKw(c, 'CHARGE')) heroAllowed = false; // 突襲
+      if (c.sleeping && !this.hasKw(c, 'CHARGE') && !getCard(c.cardId).oldGod) heroAllowed = false; // 突襲
     } else if (this.s.players[c.owner].weapon?.keywords.includes('CANT_ATTACK_HEROES') || this.s.players[c.owner].ded?.noHeroAttackTurn === this.s.turn) heroAllowed = false;
     if ((enemy.heroStealthUntil ?? -1) >= this.s.turn) heroAllowed = false;
     if (heroAllowed) targets = [...targets, enemy.hero];
@@ -2838,6 +2844,7 @@ export class Game {
     else if (kind === 'oppHealth') this.payHealth(s.players[opp(p.id)], Math.min(10, cost));
     else if (kind === 'armor') p.hero.armor -= cost;
     else p.mana -= cost;
+    (p.be ??= {}).lastPaid = cost;
     const finale = kind === 'mana' && p.mana === 0;
     // 腐化：打出消耗比手牌中的腐化牌更高的牌，它們就會變成腐化版本
     for (const h of p.hand) {
@@ -4229,6 +4236,7 @@ export class Game {
       card.drawnTurn = this.s.turn;
       p.hand.push(card);
       p.drawnTotal = (p.drawnTotal ?? 0) + 1;
+      this.protoPandaren(p);
       // 微縮 / 巨大化
       this.giveMinis(p, card);
       // 乾鱗副警長：下一次抽到法術時，獲得一張複製
@@ -4432,15 +4440,7 @@ export class Game {
       hc.costMod -= this.flagCount('vaultBreaker', p.id);
     }
     this.questFillHand(p);
-    // 原始熊貓人：在一張牌加入你的手牌後（它給的除外），使雙方玩家各獲得一張隨機法術
-    if (!this.pandaBusy && p.board.some((m) => this.alive(m) && !m.silenced && getCard(m.cardId).flags?.includes('protoPandaren'))) {
-      this.pandaBusy = true;
-      for (const pl of this.s.players) {
-        const c = pick(this.s, this.randomPool({ type: 'SPELL' }, pl.id, false));
-        if (c) this.addToHand(pl, c.id);
-      }
-      this.pandaBusy = false;
-    }
+    this.protoPandaren(p);
     if (this.isOtherClass(p, cardId)) {
       this.questProgress(p, 'otherClassCard');
       p.otherClassAdded = (p.otherClassAdded ?? 0) + 1;
@@ -11648,7 +11648,23 @@ export class Game {
     hc.drawnTurn = this.s.turn;
     p.hand.push(hc);
     this.questFillHand(p);
+    this.protoPandaren(p);
     return hc;
+  }
+
+  /** 原始熊貓人：在一張牌加入你的手牌後（它給的除外），使雙方玩家各獲得一張隨機法術 */
+  private protoPandaren(p: PlayerState) {
+    if (this.pandaBusy) return;
+    const n = p.board.filter((m) => this.alive(m) && !m.silenced && getCard(m.cardId).flags?.includes('protoPandaren')).length;
+    if (!n) return;
+    this.pandaBusy = true;
+    for (let i = 0; i < n; i++) {
+      for (const pl of this.s.players) {
+        const c = pick(this.s, this.randomPool({ type: 'SPELL' }, pl.id, false));
+        if (c) this.addToHand(pl, c.id);
+      }
+    }
+    this.pandaBusy = false;
   }
 
   /** 任務「填滿你的手牌，然後清空它」 */
@@ -25555,6 +25571,7 @@ export class Game {
         for (const m of live(me)) this.addStats(m, 6, 6);
         return true;
       case 'beOathbinder': {
+        if (ctx.itCardId === 'BE_146') return true;
         const cost = ctx.itCardId && hasCard(ctx.itCardId) ? getCard(ctx.itCardId).cost : 0;
         const m = yield* this.doSummon(ctx, me.id, 'BE_142t');
         if (m) this.setStats(m, cost, Math.max(1, cost));
@@ -25607,7 +25624,10 @@ export class Game {
         return true;
       case 'beGhuun': {
         // 古翰：從生命值最低的敵人身上偷取生命值
-        const n = 6 + (me.playedCards ?? []).filter((id) => hasCard(id) && (getCard(id).runes?.blood ?? 0) > 0).length;
+        // 依你打出過的牌上的血魄符文數量強化（古翰自己不算）
+        const played = [...(me.playedCards ?? [])];
+        played.splice(played.lastIndexOf('BE_287'), 1);
+        const n = 6 + played.reduce((t, id) => t + (hasCard(id) ? (getCard(id).runes?.blood ?? 0) : 0), 0);
         let stolen = 0;
         for (let i = 0; i < n && !this.over; i++) {
           const list = [foe.hero, ...live(foe)].filter((c) => this.alive(c));
@@ -25839,7 +25859,8 @@ export class Game {
       }
       // ------------------------------------------------------------ 聖騎士
       case 'beMarch': {
-        const n = Math.max(1, me.mana);
+        // 進軍戰事：數字等同打出時剩下的法力（也就是這張牌的消耗）
+        const n = Math.max(0, be.lastPaid ?? me.mana);
         const m = yield* this.doSummon(ctx, me.id, 'BE_142t');
         if (m) this.setStats(m, n, n);
         return true;

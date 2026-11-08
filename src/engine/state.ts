@@ -724,6 +724,8 @@ export interface PlayerState {
     rushCharge?: boolean;
     rajh?: string;
     archaedas?: Record<number, string>;
+    /** 上一張牌實際花費的法力 */
+    lastPaid?: number;
   };
   /** 迷你系列：月光指引、艾德溫、拷貝貓、上一張對友方手下施放的法術等 */
   ded?: {
