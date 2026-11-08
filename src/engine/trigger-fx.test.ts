@@ -108,6 +108,8 @@ const STATIC_FLAGS = new Set([
   'immovableObject', 'saidan',
   // 貧瘠之地
   'natureSpellDamage3',
+  // 黑暗帝國霸業
+  'lifestealBoth', 'ravitz', 'protoPandaren',
 ]);
 // 這些旗標在 game.ts 內有各自明確的 pulse（見 flag 觸發處）
 const PULSED_IN_ENGINE = new Set([

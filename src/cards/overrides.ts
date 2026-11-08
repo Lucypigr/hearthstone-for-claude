@@ -33,6 +33,7 @@ import { STORMWIND_OVERRIDES } from './stormwind';
 import { ALTERAC_OVERRIDES } from './alterac';
 import { BARRENS_OVERRIDES } from './barrens';
 import { MINISET_OVERRIDES } from './minisets';
+import { BLACK_EMPIRE_OVERRIDES } from './blackempire';
 import { SHADOWS_OVERRIDES } from './shadows';
 import { ADAPTATIONS, ANIMAL_COMPANIONS, ARTIFACTS, BRANCHING_PATHS, INVOCATIONS, LACKEYS, LICH_KING_CARDS, SIAMAT_OPTIONS, SPARE_PARTS, TREASURES } from './lists';
 import type { Ability, CardDef, Condition, Effect, HeroPowerSpec, Keyword, Race, SecretEvent, TargetReq } from '../engine/types';
@@ -42,6 +43,8 @@ export type Override = Partial<Omit<CardDef, 'id' | 'dbfId' | 'name' | 'nameEn' 
   heroPower?: HeroPowerSpec;
   /** 二選一的子卡 id（子卡不是 a / b 結尾時） */
   chooseOneIds?: string[];
+  /** 卡牌資料缺少繁中文字時使用的卡名與敘述 */
+  zh?: { name: string; text?: string };
   /** 覆寫中引用的衍生卡，需一起收錄 */
   tokens?: string[];
   /** 這張卡雖然有注入標籤，但沒有（或不需要自動產生）注入版本 */
@@ -2917,3 +2920,4 @@ Object.assign(OVERRIDES, STORMWIND_OVERRIDES);
 Object.assign(OVERRIDES, ALTERAC_OVERRIDES);
 Object.assign(OVERRIDES, BARRENS_OVERRIDES);
 Object.assign(OVERRIDES, MINISET_OVERRIDES);
+Object.assign(OVERRIDES, BLACK_EMPIRE_OVERRIDES);

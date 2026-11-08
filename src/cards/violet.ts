@@ -102,7 +102,7 @@ export const VIOLET_OVERRIDES: Record<string, Override> = {
     tokens: ['CAP_400t2t'],
   },
   // 審判的各種效果與長度
-  CAP_405t1: { abilities: play(fn('forceAllAttack')) },
+  CAP_405t1: { zh: { name: '扣留摧毀', text: '迫使每個手下攻擊另一個手下' }, abilities: play(fn('forceAllAttack')) },
   CAP_405t2: { abilities: play({ e: 'steal', target: { t: 'random', filter: { type: 'minion', side: 'enemy' }, count: 1 } }) },
   CAP_405t3: { abilities: play(fn('stealCards', { count: 2 })) },
   CAP_405t4: { abilities: play(draw(3)) },

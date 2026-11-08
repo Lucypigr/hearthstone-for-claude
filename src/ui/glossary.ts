@@ -85,6 +85,20 @@ export const GLOSSARY: GlossEntry[] = [
     has: (d) => !!d.titan,
   },
   {
+    group: '場上',
+    term: '古神',
+    desc: '古神和泰坦一樣有四個技能，但每回合可以使用其中兩個。四個技能都用過之後，古神才能攻擊；使用技能的回合不能攻擊。一副套牌只能放一張古神。',
+    how: '點一下你的古神，選擇要使用的技能。',
+    has: (d) => !!d.oldGod,
+  },
+  {
+    group: '特殊',
+    term: '組裝',
+    desc: '把一個手下加入你的手牌，再從另外兩個手下中選一個，用它的上半段或下半段卡面取代這個手下的同一段。組裝出的手下保留原本的名稱、屬性值與消耗。',
+    has: (d) => JSON.stringify(d.abilities ?? []).includes('beAssemble') || JSON.stringify(d.abilities ?? []).includes('beRajh'),
+  },
+  { group: '特殊', term: '被動', desc: '被動的英雄能力不能主動使用，而是一直生效。', words: ['被動'] },
+  {
     group: '特殊',
     term: '遊客',
     words: ['遊客', ...['死亡騎士', '惡魔獵人', '德魯伊', '獵人', '法師', '聖騎士', '牧師', '盜賊', '薩滿', '術士', '戰士'].map((c) => `${c}遊客`)],

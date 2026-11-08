@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 // 固定在已驗證的版本（master 的新版本可能讓既有的卡牌解析失敗）
-export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/253932/CardDefs.xml';
+export const CARDDEFS_URL = 'https://raw.githubusercontent.com/HearthSim/hsdata/255790/CardDefs.xml';
 
 export interface RawCard {
   id: string;
@@ -14,6 +14,8 @@ export interface RawCard {
   strs: Record<string, { enUS: string; zhTW: string }>;
   /** 參照其他卡牌的標籤（例如 HERO_POWER） */
   refs: Record<string, string>;
+  /** 組裝：卡面文字的上下半段 */
+  halves?: { enUS?: [string, string]; zhTW?: [string, string] };
 }
 
 function decode(s: string): string {
@@ -24,7 +26,21 @@ function decode(s: string): string {
     .replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&amp;/g, '&');
+    .replace(/&amp;/g, '&')
+    // 新版卡牌資料在部分卡面結尾附上內部標記（例如「~GAMEPLAY_ASPROXY_RLK_066」）
+    .replace(/~GAMEPLAY_[A-Z0-9_]*/g, '');
+}
+
+/** 組裝的上下半段分界：卡牌資料中前面沒有空白的「&」（文字中真正的「 & 」前後有空白） */
+const SPLIT_RE = /(?<! )&/;
+
+/** 去掉分界標記，並記下上下半段（沒有分界時 halves 為 undefined） */
+function splitText(s: string): { text: string; halves?: [string, string] } {
+  const i = s.search(SPLIT_RE);
+  if (i < 0) return { text: s };
+  const top = s.slice(0, i);
+  const bottom = s.slice(i + 1).replace(new RegExp(SPLIT_RE, 'g'), '');
+  return { text: top + bottom, halves: [top, bottom] };
 }
 
 export async function loadCardDefsXml(cachePath: string): Promise<string> {
@@ -54,13 +70,18 @@ export function parseCardDefs(xml: string): RawCard[] {
       const name = t[2] || t[1];
       const en = /<enUS>([\s\S]*?)<\/enUS>/.exec(t[3]);
       const zh = /<zhTW>([\s\S]*?)<\/zhTW>/.exec(t[3]);
-      card.strs[name] = { enUS: en ? decode(en[1]) : '', zhTW: zh ? decode(zh[1]) : '' };
+      const enS = splitText(en ? decode(en[1]) : '');
+      const zhS = splitText(zh ? decode(zh[1]) : '');
+      card.strs[name] = { enUS: enS.text, zhTW: zhS.text };
+      if (name === 'CARDTEXT' && (enS.halves || zhS.halves)) card.halves = { enUS: enS.halves, zhTW: zhS.halves };
     }
     tagRe.lastIndex = 0;
     while ((t = tagRe.exec(body))) {
       const name = t[3] || t[2];
       if (t[4] === 'Card' && t[1]) card.refs[name] = t[1];
       if (t[4] !== 'String' && t[4] !== 'LocString') card.tags[name] = Number(t[5]);
+      // 沒有名稱的標記（卡牌資料中 name="1"）會互相覆蓋，另外以編號保存（例如第二種族）
+      if (t[4] === 'Int') card.tags[`#${t[2]}`] = Number(t[5]);
     }
     cards.push(card);
   }

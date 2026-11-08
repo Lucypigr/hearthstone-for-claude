@@ -84,6 +84,8 @@ export const isStandardCard = (c: CardDef): boolean => STANDARD_SETS.has(c.set) 
 
 export function poolCards(pool: Pool, ownClass: CardClass, oppClass: CardClass): CardDef[] {
   return COLLECTIBLE.filter((c) => {
+    // 古神不會被隨機產生、發現或召喚
+    if (c.oldGod) return false;
     if (pool.type && c.type !== pool.type) return false;
     if (pool.race && !(c.races?.includes(pool.race) || c.races?.includes('ALL'))) return false;
     if (pool.cost !== undefined && c.cost !== pool.cost) return false;
