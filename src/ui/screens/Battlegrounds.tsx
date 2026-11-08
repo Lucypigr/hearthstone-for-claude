@@ -908,23 +908,37 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
         <main className="bg-main">
           {/* 酒館 */}
           <section className="bg-tavern" onDragOver={(e) => e.preventDefault()} onDrop={onDropShop}>
+            {/* 和爐石一樣：鮑伯在中間，左邊升級酒館，右邊刷新與凍結 */}
             <div className="bg-tavern-bar">
-              <div className="bg-bob">
-                <span className="bg-tier-badge" title="旅店等級">
+              <div className="bg-tav-side left">
+                <button
+                  className="bg-tav-btn up"
+                  disabled={me.tier >= G.maxTier(me) || me.gold < upCost || busy || G.hooks(me).some((hk) => hk.noUpgrade)}
+                  title={G.hooks(me).some((hk) => hk.noUpgrade) ? '自動升級' : me.tier < G.maxTier(me) ? `升級酒館：🪙${upCost}` : '已經是最高等級'}
+                  onClick={(e) => (e.stopPropagation(), act(() => G.upgrade(0)))}
+                >
+                  <span className="bg-tav-ico">⬆</span>
+                  <span className="bg-tav-label">{G.hooks(me).some((hk) => hk.noUpgrade) ? '自動' : me.tier < G.maxTier(me) ? '升級' : '最高'}</span>
+                  {me.tier < G.maxTier(me) && !G.hooks(me).some((hk) => hk.noUpgrade) && <span className="bg-tav-cost">{upCost}</span>}
+                </button>
+              </div>
+              <div className="bg-bob" title="鮑伯的酒館">
+                <div className="bg-bob-art">
+                  <Art cardId="TB_BaconShopBob" label="鮑伯" />
+                </div>
+                <span className="bg-tier-badge" title={`旅店等級 ${me.tier}`}>
                   {'★'.repeat(me.tier)}
                 </span>
-                <span>鮑伯的酒館</span>
               </div>
-              <div className="bg-tavern-btns">
-                <button className="btn small" disabled={me.tier >= G.maxTier(me) || me.gold < upCost || busy || G.hooks(me).some((hk) => hk.noUpgrade)} onClick={(e) => (e.stopPropagation(), act(() => G.upgrade(0)))}>
-                  ⬆ 升級 {G.hooks(me).some((hk) => hk.noUpgrade) ? '（自動升級）' : me.tier < G.maxTier(me) ? `🪙${upCost}` : '（最高）'}
+              <div className="bg-tav-side right">
+                <button className="bg-tav-btn refresh" disabled={me.gold < G.refreshCost(me) || busy} title="刷新酒館" onClick={(e) => (e.stopPropagation(), act(() => G.refresh(0)))}>
+                  <span className="bg-tav-ico">🔄</span>
+                  <span className="bg-tav-label">{me.freeRefreshes > 0 ? `免費×${me.freeRefreshes}` : '刷新'}</span>
+                  {G.refreshCost(me) > 0 && <span className="bg-tav-cost">{G.refreshCost(me)}</span>}
                 </button>
-                <button className="btn small" disabled={me.gold < G.refreshCost(me) || busy} onClick={(e) => (e.stopPropagation(), act(() => G.refresh(0)))}>
-                  🔄 刷新 {G.refreshCost(me) ? `🪙${G.refreshCost(me)}` : '免費'}
-                  {me.freeRefreshes > 0 && `（${me.freeRefreshes}）`}
-                </button>
-                <button className={`btn small ${me.frozen ? 'frozen-on' : ''}`} onClick={(e) => (e.stopPropagation(), act(() => G.freeze(0)))}>
-                  ❄ {me.frozen ? '已凍結' : '凍結'}
+                <button className={`bg-tav-btn freeze ${me.frozen ? 'on' : ''}`} title={me.frozen ? '取消凍結' : '凍結酒館：下回合保留這些手下'} onClick={(e) => (e.stopPropagation(), act(() => G.freeze(0)))}>
+                  <span className="bg-tav-ico">❄</span>
+                  <span className="bg-tav-label">{me.frozen ? '已凍結' : '凍結'}</span>
                 </button>
               </div>
             </div>
@@ -1022,8 +1036,42 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
 
           {/* 英雄與手牌 */}
           <section className="bg-me">
+            <div className="bg-me-extras">
+              {bst && (
+                <button
+                  className={`bg-buddy ${bst.usable ? 'usable' : ''}`}
+                  disabled={!bst.usable || busy}
+                  onClick={(e) => (e.stopPropagation(), act(() => G.pressBuddy(0)))}
+                >
+                  <Art cardId={bst.id} label="夥伴" />
+                  <span className="bg-power-cost">{bst.cost}</span>
+                  <div className="bg-tip-pop top">
+                    <div className="bg-tip">
+                      <div className="bg-tip-head">
+                        <b>🤝 {bgCard(bst.id).name}</b>
+                        <span className="muted small">
+                          {bgCard(bst.id).atk}/{bgCard(bst.id).hp}・{tierOf(bst.id)} 本
+                        </span>
+                      </div>
+                      <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(bst.id).text) }} />
+                      <div className="bg-tip-note">
+                        夥伴按鈕：🪙{bst.cost}（每回合便宜 1，最多拿 2 次，2 張就能做成金卡）・已拿 {me.buddy?.presses ?? 0} 次
+                      </div>
+                      {bst.reason && <div className="bg-tip-note">{bst.reason}</div>}
+                    </div>
+                  </div>
+                </button>
+              )}
+              {dst && (
+                <button className={`btn small bg-dark-btn ${dst.usable ? 'primary' : ''}`} disabled={!dst.usable || busy} title={dst.reason ?? ''} onClick={(e) => (e.stopPropagation(), act(() => G.pressDark(0)))}>
+                  🌑 黑暗發現 🪙{dst.cost}
+                  <small>（剩 {dst.left} 次）</small>
+                </button>
+              )}
+              <RelicBar G={G} p={me} />
+            </div>
             <div className="bg-me-hero">
-              <HeroPortrait p={me} size={64}>
+              <HeroPortrait p={me} size={72}>
                 <span className="bg-hero-hp">{me.hp}</span>
                 {me.armor > 0 && <span className="bg-hero-armor">{me.armor}</span>}
               </HeroPortrait>
@@ -1082,55 +1130,6 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
                   </div>
                 </button>
               )}
-              <div className="bg-gold" title="金幣">
-                🪙 {me.gold}
-                <small> / {(G.hooks(me).find((hk) => hk.goldBase)?.goldBase?.(G.round) ?? goldForTurn(G.round)) + me.maxGoldBonus}</small>
-                {G.s.tribes.includes('ABERRATION') && (
-                  <div className="bg-extra" title="你的神祇：4 個友方畸變體在戰鬥中死亡後甦醒">
-                    👁️ 克蘇恩 {1 + (me.c.deityA ?? 0)}/{1 + (me.c.deityH ?? 0)}
-                  </div>
-                )}
-                {(() => {
-                  const [a, h] = G.spellExtra(me);
-                  return a || h ? (
-                    <div className="bg-extra" title="你的酒館法術額外給的身材">
-                      📜 +{a}/+{h}
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-              {bst && (
-                <button
-                  className={`bg-buddy ${bst.usable ? 'usable' : ''}`}
-                  disabled={!bst.usable || busy}
-                  onClick={(e) => (e.stopPropagation(), act(() => G.pressBuddy(0)))}
-                >
-                  <Art cardId={bst.id} label="夥伴" />
-                  <span className="bg-power-cost">{bst.cost}</span>
-                  <div className="bg-tip-pop top">
-                    <div className="bg-tip">
-                      <div className="bg-tip-head">
-                        <b>🤝 {bgCard(bst.id).name}</b>
-                        <span className="muted small">
-                          {bgCard(bst.id).atk}/{bgCard(bst.id).hp}・{tierOf(bst.id)} 本
-                        </span>
-                      </div>
-                      <div className="bg-tip-text" dangerouslySetInnerHTML={{ __html: formatCardText(bgCard(bst.id).text) }} />
-                      <div className="bg-tip-note">
-                        夥伴按鈕：🪙{bst.cost}（每回合便宜 1，最多拿 2 次，2 張就能做成金卡）・已拿 {me.buddy?.presses ?? 0} 次
-                      </div>
-                      {bst.reason && <div className="bg-tip-note">{bst.reason}</div>}
-                    </div>
-                  </div>
-                </button>
-              )}
-              {dst && (
-                <button className={`btn small bg-dark-btn ${dst.usable ? 'primary' : ''}`} disabled={!dst.usable || busy} title={dst.reason ?? ''} onClick={(e) => (e.stopPropagation(), act(() => G.pressDark(0)))}>
-                  🌑 黑暗發現 🪙{dst.cost}
-                  <small>（剩 {dst.left} 次）</small>
-                </button>
-              )}
-              <RelicBar G={G} p={me} />
             </div>
             <div className="bg-hand">
               {me.hand.map((h) =>
@@ -1179,6 +1178,23 @@ export function BgMatch({ onExit }: { onExit: () => void }) {
               )}
             </div>
             <div className="bg-end">
+              <div className="bg-gold" title="金幣">
+                🪙 {me.gold}
+                <small> / {(G.hooks(me).find((hk) => hk.goldBase)?.goldBase?.(G.round) ?? goldForTurn(G.round)) + me.maxGoldBonus}</small>
+                {G.s.tribes.includes('ABERRATION') && (
+                  <div className="bg-extra" title="你的神祇：4 個友方畸變體在戰鬥中死亡後甦醒">
+                    👁️ 克蘇恩 {1 + (me.c.deityA ?? 0)}/{1 + (me.c.deityH ?? 0)}
+                  </div>
+                )}
+                {(() => {
+                  const [a, h] = G.spellExtra(me);
+                  return a || h ? (
+                    <div className="bg-extra" title="你的酒館法術額外給的身材">
+                      📜 +{a}/+{h}
+                    </div>
+                  ) : null;
+                })()}
+              </div>
               {nextOpp !== null && (
                 <div className="muted small bg-next">
                   下一場：{nextOpp < 0 ? `${G.ghost()?.name ?? ''} 的殘影` : G.player(nextOpp).name}
@@ -1611,7 +1627,7 @@ function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord
       <div className="bg-combat-field">
         <div className="bg-combat-hero opp">
           {opp && (
-            <HeroPortrait p={opp} size={70}>
+            <HeroPortrait p={opp} size={84}>
               <span className="bg-hero-hp">{opp.hp}</span>
               {opp.armor > 0 && <span className="bg-hero-armor">{opp.armor}</span>}
             </HeroPortrait>
@@ -1626,7 +1642,7 @@ function CombatView({ s, rec, speed, onDone }: { s: BgSession; rec: CombatRecord
         <div className="bg-combat-mid">{done && <div className={`bg-result ${won ? 'win' : myWin === null ? 'draw' : 'loss'}`}>{resultText}</div>}</div>
         {row(mine, 'me')}
         <div className="bg-combat-hero me">
-          <HeroPortrait p={front} size={70}>
+          <HeroPortrait p={front} size={84}>
             <span className="bg-hero-hp">{front.hp}</span>
             {front.armor > 0 && <span className="bg-hero-armor">{front.armor}</span>}
           </HeroPortrait>
